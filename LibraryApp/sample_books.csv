@@ -1,0 +1,6 @@
+Book ID,Title,Author,ISBN,Category,Total Copies
+BOOK001,Python Programming,Mark Lutz,978-1449355739,Technology,5
+BOOK002,Data Structures and Algorithms,Robert Sedgewick,978-0321573513,Technology,3
+BOOK003,Database Management Systems,Ramez Elmasri,978-0133970777,Technology,4
+BOOK004,Computer Networks,Andrew Tanenbaum,978-0132126953,Technology,2
+BOOK005,Operating Systems,Abraham Silberschatz,978-1118063330,Technology,6

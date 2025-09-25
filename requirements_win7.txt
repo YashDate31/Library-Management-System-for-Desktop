@@ -1,0 +1,7 @@
+# Legacy pins for Windows 7 SP1 / Python 3.8 builds
+pandas==1.5.3
+numpy==1.23.5
+openpyxl==3.1.2
+python-docx==0.8.11
+tkcalendar==1.6.1
+pyinstaller==5.13.0

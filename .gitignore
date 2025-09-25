@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# PyInstaller outputs (ignore at any depth)
+**/build/
+**/dist/
+# Keep spec files in source control
+
+# Logs and caches
+*.log
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.cache/
+
+# IDE/editor
+.vscode/
+.idea/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Data files generated at runtime
+library.db
+LibraryApp/library.db
+
+# Executables and installers
+*.exe
+*.msi
+
+# Excel and generated documents (optional)
+*.xlsx
+*.docx
+# Keep sample datasets in source control
+!LibraryApp/sample_*.xlsx
+!LibraryApp/sample_*.csv
+!LibraryApp/sample_students_import.xlsx
+
+# OneDrive temp files
+~$*

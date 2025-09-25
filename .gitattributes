@@ -1,0 +1,12 @@
+# Normalize line endings
+* text=auto
+
+# Treat these as binary
+*.db binary
+*.exe binary
+*.png binary
+*.jpg binary
+*.ico binary
+
+# Improve GitHub linguist detection
+LibraryApp/*.py linguist-language=Python
