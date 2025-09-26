@@ -12,7 +12,9 @@ a = Analysis(
     ],
     hiddenimports=[
         'pandas', 'openpyxl', 'docx', 'tkcalendar',
-        'tkinter', 'tkinter.ttk', 'tkinter.messagebox', 'tkinter.filedialog'
+        'tkinter', 'tkinter.ttk', 'tkinter.messagebox', 'tkinter.filedialog',
+        'matplotlib', 'matplotlib.pyplot', 'matplotlib.backends.backend_tkagg',
+        'matplotlib.figure', 'matplotlib.patches', 'numpy', 'xlsxwriter'
     ],
     hookspath=[],
     hooksconfig={},
