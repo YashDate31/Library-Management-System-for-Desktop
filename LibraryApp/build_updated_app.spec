@@ -6,6 +6,8 @@ a = Analysis(
     binaries=[],
     datas=[
         ('library.db', '.'),
+        ('college_logo.png', '.'),
+        ('college_logo.jpg', '.'),
     ],
     hiddenimports=[
         'pandas',
@@ -19,7 +21,10 @@ a = Analysis(
         'datetime',
         'webbrowser',
         'subprocess',
-        'platform'
+        'platform',
+        'PIL',
+        'PIL.Image',
+        'PIL.ImageTk'
     ],
     hookspath=[],
     hooksconfig={},
@@ -48,5 +53,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,
+    icon='college_logo.ico',
 )

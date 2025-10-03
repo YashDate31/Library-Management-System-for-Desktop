@@ -1,0 +1,4839 @@
+﻿#!/usr/bin/env python3
+"""
+Library of Computer Department Management System
+Version v3.7_DEVELOPER_LOGIN - Developer branding on login + visible version label
+"""
+
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+from datetime import datetime, timedelta
+import sqlite3
+import os
+import sys
+import pandas as pd
+from tkinter import font
+import webbrowser
+import subprocess
+import platform
+from io import BytesIO
+try:
+    from docx import Document
+    from docx.shared import Pt
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+except Exception:
+    Document = None  # Will handle gracefully if not installed
+
+# Calendar date picker support
+try:
+    from tkcalendar import DateEntry
+except Exception:
+    DateEntry = None  # Fallback to manual entry + dialog
+
+# Matplotlib for charts and analysis
+try:
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    from matplotlib.figure import Figure
+    import numpy as np
+    MATPLOTLIB_AVAILABLE = True
+except Exception:
+    MATPLOTLIB_AVAILABLE = False
+    print("matplotlib not available - Analysis tab will show installation prompt")
+
+# Advanced Excel export support
+try:
+    import xlsxwriter
+    XLSXWRITER_AVAILABLE = True
+except Exception:
+    XLSXWRITER_AVAILABLE = False
+
+# Add the current directory to path for imports
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from database import Database
+
+# ---------------------------------------------------------------------------
+# Application Version (update this each time you create a new packaged build)
+# ---------------------------------------------------------------------------
+APP_VERSION = "v5.0_FINAL"
+FINE_PER_DAY = 5  # monetary units per day late
+# Fixed loan period (teacher requirement): exactly 7 days between borrow and due date
+LOAN_PERIOD_DAYS = 7
+# Simple password required to perform full data wipe (change as needed)
+CLEAR_WIPE_PASSWORD = "clear123"  # EASY default; change for production use
+# Admin login credentials (required at startup)
+ADMIN_USERNAME = "gpa"
+ADMIN_PASSWORD = "gpa123"
+
+class LibraryApp:
+    def __init__(self, root):
+        self.root = root
+        # Set window title with current version so user can verify build
+        self.root.title(f"≡ƒôÜ Library of Computer Department {APP_VERSION}")
+        self.root.geometry("1400x900")
+        self.root.state('zoomed')  # Maximize window
+        
+        # Professional light color scheme (3 colors) - IMPROVED
+        self.colors = {
+            'primary': '#ffffff',      # Pure white (backgrounds)
+            'secondary': '#2E86AB',    # Professional blue (buttons, accents)
+            'accent': '#0F3460'        # Dark blue (text, headers)
+        }
+        
+        self.root.configure(bg=self.colors['primary'])
+        
+        # Initialize database
+        self.db = Database()
+
+        # Notify user if calendar support missing
+        if DateEntry is None:
+            print("tkcalendar not installed - falling back to manual date entry dialog.")
+        
+        # Configure styles
+        self.setup_styles()
+        
+        # Search/filter related variables
+        self.student_search_var = tk.StringVar()
+        self.student_year_filter = tk.StringVar(value="All")
+        self.book_search_var = tk.StringVar()
+        self.book_category_filter = tk.StringVar(value="All")
+        self.record_search_var = tk.StringVar()
+        self.record_type_filter = tk.StringVar(value="All")
+
+        # Launch login interface
+        self.create_login_interface()
+
+    def setup_styles(self):
+        """Configure ttk styles (restored after refactor)."""
+        try:
+            style = ttk.Style()
+            # Try a modern theme if available
+            for theme in ("clam", "vista", "default"):
+                try:
+                    style.theme_use(theme)
+                    break
+                except Exception:
+                    continue
+
+            # Treeview base
+            style.configure(
+                'Treeview',
+                background='white',
+                foreground='#222222',
+                fieldbackground='white',
+                rowheight=26,
+                font=('Segoe UI', 10)
+            )
+            style.configure(
+                'Treeview.Heading',
+                font=('Segoe UI', 10, 'bold'),
+                background=self.colors['secondary'],
+                foreground='white'
+            )
+            style.map('Treeview', background=[('selected', '#cfe9ff')])
+
+            # Buttons (ttk) - ensure consistent focus/hover colors if later used
+            style.configure('TButton', font=('Segoe UI', 10, 'bold'))
+        except Exception as e:
+            # Fail silently ΓÇô styling is not critical for functionality
+            print(f"Style setup warning: {e}")
+    def create_login_interface(self):
+        """Render the login screen (simplified)"""
+        for w in self.root.winfo_children():
+            w.destroy()
+        wrapper = tk.Frame(self.root, bg=self.colors['primary'])
+        wrapper.pack(expand=True)
+        card = tk.Frame(wrapper, bg='#3a5373', bd=0, relief='flat', padx=40, pady=30)
+        card.pack()
+        tk.Label(card, text="Admin Login", font=('Segoe UI', 18, 'bold'), bg='#3a5373', fg='white').pack(pady=(0,10))
+
+        tk.Label(card, text="Username", font=('Segoe UI', 10, 'bold'), bg='#3a5373', fg='white').pack(anchor='w')
+        user_entry = tk.Entry(card, font=('Segoe UI', 11), width=28, bg='#2b3e56', fg='white', insertbackground='white', relief='solid', bd=1)
+        user_entry.pack(pady=(2,12), ipady=6)
+
+        tk.Label(card, text="Password", font=('Segoe UI', 10, 'bold'), bg='#3a5373', fg='white').pack(anchor='w')
+        pass_entry = tk.Entry(card, font=('Segoe UI', 11), show='*', width=28, bg='#2b3e56', fg='white', insertbackground='white', relief='solid', bd=1)
+        pass_entry.pack(pady=(2,18), ipady=6)
+
+        def do_login():
+            username = user_entry.get().strip()
+            password = pass_entry.get().strip()
+            if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+                self.create_main_interface()
+            else:
+                messagebox.showerror('Login Error','Invalid username or password!')
+
+        login_btn = tk.Button(
+            card,
+            text='≡ƒæ¿ΓÇì≡ƒÆ╗ Login',
+            font=('Segoe UI',12,'bold'),
+            bg='#00bcd4', fg='white', bd=0, relief='flat', cursor='hand2',
+            command=do_login,
+            activebackground='#0097a7', activeforeground='white'
+        )
+        login_btn.pack(fill=tk.X, ipady=8)
+
+        def handle_enter(event):
+            # If entries no longer exist (e.g., after login), ignore
+            try:
+                if not (user_entry.winfo_exists() and pass_entry.winfo_exists()):
+                    return 'break'
+            except Exception:
+                return 'break'
+            do_login()
+            return 'break'  # Stop propagation (avoid duplicate triggers)
+        # Bind to the login card so it's automatically cleaned up when the login UI is destroyed
+        card.bind('<Return>', handle_enter)
+        user_entry.focus()
+    
+    def create_main_interface(self):
+        """Create the main application interface"""
+        # Remove any leftover global key bindings from the login screen
+        try:
+            self.root.unbind('<Return>')
+        except Exception:
+            pass
+        # Clear root
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        
+        # Main container
+        main_container = tk.Frame(self.root, bg=self.colors['primary'])
+        main_container.pack(fill=tk.BOTH, expand=True)
+        
+        # Header
+        self.create_header(main_container)
+        
+        # Create notebook for tabs
+        self.notebook = ttk.Notebook(main_container)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=20, pady=(10, 20))
+        
+        # Create tabs
+        self.create_dashboard_tab()
+        self.create_students_tab()
+        self.create_books_tab()
+        self.create_transactions_tab()
+        self.create_records_tab()  # New records tab
+        self.create_analysis_tab()  # New analysis tab with charts
+        
+        # Set focus to dashboard
+        self.notebook.select(0)
+        
+        # Initial data load
+        self.refresh_all_data()
+    
+    def create_header(self, parent):
+        """Create application header"""
+        header_frame = tk.Frame(parent, bg=self.colors['secondary'], height=90)
+        header_frame.pack(fill=tk.X, padx=15, pady=(15, 0))
+        header_frame.pack_propagate(False)
+        
+        # Add subtle shadow effect
+        shadow_frame = tk.Frame(parent, bg='#d1d1d1', height=2)
+        shadow_frame.pack(fill=tk.X, padx=15)
+        
+        # Logo and title container
+        logo_title_frame = tk.Frame(header_frame, bg=self.colors['secondary'])
+        logo_title_frame.pack(expand=True, fill=tk.BOTH, padx=25, pady=15)
+        
+        # Logo
+        logo_frame = tk.Frame(logo_title_frame, bg='white', width=70, height=70)
+        logo_frame.pack(side=tk.LEFT, padx=(0, 25))
+        logo_frame.pack_propagate(False)
+        
+        logo_label = tk.Label(
+            logo_frame,
+            text="≡ƒôÜ",
+            font=('Segoe UI', 28, 'bold'),
+            bg='white',
+            fg=self.colors['secondary'],
+            justify='center'
+        )
+        logo_label.pack(expand=True)
+        
+        # Title and subtitle
+        title_frame = tk.Frame(logo_title_frame, bg=self.colors['secondary'])
+        title_frame.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
+        
+        title_label = tk.Label(
+            title_frame,
+            text="Library of Computer Department",
+            font=('Segoe UI', 20, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white'
+        )
+        title_label.pack(anchor='w', pady=(15, 2))
+        
+        subtitle_label = tk.Label(
+            title_frame,
+            text="Comprehensive Book & Student Management System",
+            font=('Segoe UI', 12),
+            bg=self.colors['secondary'],
+            fg='#b8d4f0'
+        )
+        subtitle_label.pack(anchor='w')
+        
+        # User info
+        user_frame = tk.Frame(logo_title_frame, bg=self.colors['secondary'])
+        user_frame.pack(side=tk.RIGHT, padx=(25, 0))
+        
+        # Top-right row: Developer label + inline Promote link
+        user_top_row = tk.Frame(user_frame, bg=self.colors['secondary'])
+        user_top_row.pack(anchor='e', pady=(18, 2))
+        user_label = tk.Label(
+            user_top_row,
+            text="≡ƒæ¿ΓÇì≡ƒÆ╗ Developer",
+            font=('Segoe UI', 13, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            cursor='hand2'
+        )
+        user_label.pack(side=tk.LEFT)
+        user_label.bind('<Button-1>', lambda e: self.show_developer_info())
+        promote_btn_hdr = tk.Button(
+            user_top_row,
+            text="Γ¼å∩╕Å Promote Student YearsΓÇª",
+            font=('Segoe UI', 10, 'bold'),
+            bg='#0d6efd',
+            fg='white',
+            relief='flat',
+            padx=10,
+            pady=2,
+            cursor='hand2',
+            activebackground='#0b5ed7',
+            activeforeground='white',
+            command=self._prompt_and_promote
+        )
+        promote_btn_hdr.pack(side=tk.LEFT, padx=(10, 0))
+
+        # Version label (so you can visually confirm correct build)
+        version_label = tk.Label(
+            user_frame,
+            text=f"Version: {APP_VERSION}",
+            font=('Segoe UI', 9),
+            bg=self.colors['secondary'],
+            fg='#e0f2ff'
+        )
+        version_label.pack(pady=(0, 12))
+
+        # Developer Info button (kept, smaller and aligned right)
+        dev_btn = tk.Button(
+            user_frame,
+            text="≡ƒæ¿ΓÇì≡ƒÆ╗ Developer Info",
+            font=('Segoe UI', 9, 'bold'),
+            bg='white',
+            fg=self.colors['secondary'],
+            relief='flat',
+            padx=14,
+            pady=4,
+            command=self.show_developer_info,
+            cursor='hand2',
+            activebackground='#f0f8ff',
+            activeforeground=self.colors['secondary']
+        )
+        dev_btn.pack(anchor='e')
+
+        clear_btn = tk.Button(
+            user_frame,
+            text="≡ƒùæ∩╕Å Clear All Data",
+            font=('Segoe UI', 9, 'bold'),
+            bg='#dc3545',
+            fg='white',
+            relief='flat',
+            padx=14,
+            pady=4,
+            command=self.clear_all_data_ui,
+            cursor='hand2',
+            activebackground='#c82333',
+            activeforeground='white'
+        )
+        clear_btn.pack(pady=(6,0))
+    def show_developer_info(self):
+        """Minimal developer info dialog (only 4 fields)"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Developer Info")
+        dialog.configure(bg='white')
+        dialog.resizable(False, False)
+        dialog.geometry("320x210")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.update_idletasks()
+        dialog.geometry(f"+{self.root.winfo_rootx()+360}+{self.root.winfo_rooty()+240}")
+        header = tk.Label(dialog, text="≡ƒæ¿ΓÇì≡ƒÆ╗ Developer", font=('Segoe UI',14,'bold'), bg='white', fg=self.colors['accent'])
+        header.pack(pady=(14,6))
+        body = tk.Frame(dialog, bg='white')
+        body.pack(fill=tk.BOTH, expand=True, padx=24, pady=4)
+        items = [("Name","Yash Vijay Date"),("Enrollment","24210270230"),("Branch","Computer Engineering"),("Year","2nd Year")]
+        kf=('Segoe UI',10,'bold'); vf=('Segoe UI',10)
+        for r,(k,v) in enumerate(items):
+            tk.Label(body,text=f"{k}:",font=kf,bg='white',fg=self.colors['accent']).grid(row=r,column=0,sticky='w',padx=(0,10),pady=3)
+            tk.Label(body,text=v,font=vf,bg='white',fg='#222').grid(row=r,column=1,sticky='w',pady=3)
+        body.grid_columnconfigure(0,weight=0); body.grid_columnconfigure(1,weight=1)
+        tk.Button(dialog,text='Close',font=('Segoe UI',10,'bold'),bg=self.colors['secondary'],fg='white',relief='flat',padx=16,pady=6,cursor='hand2',command=dialog.destroy,activebackground=self.colors['accent'],activeforeground='white').pack(pady=(4,14))
+
+    def _prompt_and_promote(self):
+        """Prompt for password and, if correct, promote student years.
+        Required password: gpa123
+        """
+        from tkinter import simpledialog
+        pwd = simpledialog.askstring("Authentication Required", "Enter password to promote students:", show='*')
+        if pwd is None:
+            return
+        if pwd.strip() != 'gpa123':
+            messagebox.showerror("Access Denied", "Incorrect password. Promotion aborted.")
+            return
+        self.promote_student_years()
+
+    def clear_all_data_ui(self):
+        """UI handler to clear all data from database after confirmations"""
+        from tkinter import messagebox, simpledialog
+        # First confirmation
+        if not messagebox.askyesno(
+            "Confirm Data Wipe",
+            "This will permanently remove ALL students, books and transaction records.\n\nAre you absolutely sure?",
+            icon='warning'
+        ):
+            return
+        # Password prompt (must match CLEAR_WIPE_PASSWORD)
+        pwd = simpledialog.askstring(
+            "Enter Wipe Password",
+            "Enter password to continue (cancel to abort):",
+            show='*'
+        )
+        if pwd is None:
+            messagebox.showinfo("Cancelled", "Data wipe cancelled.")
+            return
+        if pwd.strip() != CLEAR_WIPE_PASSWORD:
+            messagebox.showerror("Incorrect", "Wrong password. Data wipe aborted.")
+            return
+        # Second, stronger confirmation
+        if not messagebox.askyesno(
+            "Final Confirmation",
+            "Last chance! This action cannot be undone. Proceed with complete wipe?",
+            icon='warning'
+        ):
+            return
+        try:
+            success, msg = self.db.clear_all_data()
+            if success:
+                # Refresh UI tables
+                try:
+                    self.refresh_all_data()
+                except Exception:
+                    pass
+                messagebox.showinfo("Data Cleared", "All data removed successfully.")
+            else:
+                messagebox.showerror("Error", msg or "Failed to clear data.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Unexpected error: {e}")
+    
+    def create_dashboard_tab(self):
+        """Create dashboard tab with statistics"""
+        dashboard_frame = tk.Frame(self.notebook, bg=self.colors['primary'])
+        self.notebook.add(dashboard_frame, text="≡ƒôè Dashboard")
+        
+        # Statistics cards container
+        self.stats_container = tk.Frame(dashboard_frame, bg=self.colors['primary'])
+        self.stats_container.pack(fill=tk.X, padx=20, pady=20)
+        
+        # Statistics cards
+        self.create_stats_cards(self.stats_container)
+        
+        # Current Issued Books (Dashboard Table)
+        borrowed_frame = tk.LabelFrame(
+            dashboard_frame,
+            text="≡ƒôï Currently Issued Books",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent'],
+            padx=10,
+            pady=10
+        )
+        borrowed_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+
+        columns = ('Enrollment No', 'Student Name', 'Book ID', 'Book Name', 'Issue Date', 'Due Date', 'Days Left')
+        self.dashboard_borrowed_tree = ttk.Treeview(borrowed_frame, columns=columns, show='headings', height=12)
+        for col in columns:
+            self.dashboard_borrowed_tree.heading(col, text=col)
+            self.dashboard_borrowed_tree.column(col, width=120 if col in ['Enrollment No', 'Book ID', 'Issue Date', 'Due Date', 'Days Left'] else 200)
+
+        v_scrollbar = ttk.Scrollbar(borrowed_frame, orient=tk.VERTICAL, command=self.dashboard_borrowed_tree.yview)
+        h_scrollbar = ttk.Scrollbar(borrowed_frame, orient=tk.HORIZONTAL, command=self.dashboard_borrowed_tree.xview)
+        self.dashboard_borrowed_tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+        self.dashboard_borrowed_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # Populate dashboard issued books
+        self.refresh_dashboard_borrowed()
+    def refresh_dashboard_borrowed(self):
+        """Refresh dashboard borrowed books table"""
+        for item in self.dashboard_borrowed_tree.get_children():
+            self.dashboard_borrowed_tree.delete(item)
+        borrowed_books = self.db.get_borrowed_books()
+        for record in borrowed_books:
+            enrollment_no = record[0]
+            student_name = record[1]
+            book_id = record[4]
+            book_name = record[5]
+            borrow_date = record[7]
+            due_date = record[8]
+            # Calculate days left
+            try:
+                days_left = (datetime.strptime(due_date, '%Y-%m-%d') - datetime.now()).days
+            except:
+                days_left = ''
+            self.dashboard_borrowed_tree.insert('', 'end', values=(enrollment_no, student_name, book_id, book_name, borrow_date, due_date, days_left))
+    
+    def create_stats_cards(self, parent):
+        """Create statistics cards"""
+        # Get statistics
+        stats = self.get_library_statistics()
+        
+        cards_data = [
+            ("≡ƒôÜ Total Books", stats['total_books'], self.colors['secondary']),
+            ("Γ£à Available Books", stats['available_books'], '#28a745'),
+            ("≡ƒôû Issued Books", stats['borrowed_books'], '#ffc107'),
+            ("≡ƒæÑ Total Students", stats['total_students'], '#17a2b8')
+        ]
+        
+        for i, (title, value, color) in enumerate(cards_data):
+            card = tk.Frame(parent, bg='white', relief='raised', bd=2)
+            card.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 15 if i < 3 else 0))
+            
+            # Icon/Title
+            title_label = tk.Label(
+                card,
+                text=title,
+                font=('Segoe UI', 12, 'bold'),
+                bg='white',
+                fg=self.colors['accent']
+            )
+            title_label.pack(pady=(15, 5))
+            
+            # Value
+            value_label = tk.Label(
+                card,
+                text=str(value),
+                font=('Segoe UI', 28, 'bold'),
+                bg='white',
+                fg=color
+            )
+            value_label.pack(pady=(0, 15))
+    
+    def get_library_statistics(self):
+        """Get library statistics"""
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            # Total books
+            cursor.execute("SELECT COUNT(*) FROM books")
+            total_books = cursor.fetchone()[0]
+            
+            # Available books (sum of available_copies)
+            cursor.execute("SELECT SUM(available_copies) FROM books")
+            available_books = cursor.fetchone()[0] or 0
+            
+            # Borrowed books
+            cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE status = 'borrowed'")
+            borrowed_books = cursor.fetchone()[0]
+            
+            # Total students (Computer department only)
+            cursor.execute("SELECT COUNT(*) FROM students WHERE department = 'Computer'")
+            total_students = cursor.fetchone()[0]
+            
+            conn.close()
+            
+            return {
+                'total_books': total_books,
+                'available_books': available_books,
+                'borrowed_books': borrowed_books,
+                'total_students': total_students
+            }
+        except Exception as e:
+            print(f"Error getting statistics: {e}")
+            return {
+                'total_books': 0,
+                'available_books': 0,
+                'borrowed_books': 0,
+                'total_students': 0
+            }
+    
+    def create_students_tab(self):
+        """Create students management tab"""
+        students_frame = tk.Frame(self.notebook, bg=self.colors['primary'])
+        self.notebook.add(students_frame, text="≡ƒæÑ Students")
+        
+        # Top frame for search and actions
+        top_frame = tk.Frame(students_frame, bg=self.colors['primary'])
+        top_frame.pack(fill=tk.X, padx=20, pady=20)
+        
+        # Search frame
+        search_frame = tk.LabelFrame(
+            top_frame,
+            text="≡ƒöì Search & Filter Students",
+            font=('Segoe UI', 11, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        )
+        search_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        
+        # Search controls
+        search_controls = tk.Frame(search_frame, bg=self.colors['primary'])
+        search_controls.pack(fill=tk.X, padx=10, pady=10)
+        
+        tk.Label(search_controls, text="Search:", bg=self.colors['primary'], fg=self.colors['accent'], font=('Segoe UI', 10)).pack(side=tk.LEFT)
+        search_entry = tk.Entry(search_controls, textvariable=self.student_search_var, font=('Segoe UI', 10), width=25)
+        search_entry.pack(side=tk.LEFT, padx=(5, 15))
+        # Live search while typing
+        search_entry.bind('<KeyRelease>', lambda e: self.search_students())
+        
+        tk.Label(search_controls, text="Year:", bg=self.colors['primary'], fg=self.colors['accent'], font=('Segoe UI', 10)).pack(side=tk.LEFT)
+        # Include 'Pass Out' instead of '4th' for final year
+        year_combo = ttk.Combobox(search_controls, textvariable=self.student_year_filter, values=["All", "1st", "2nd", "3rd", "Pass Out"], state="readonly", width=10)
+        year_combo.pack(side=tk.LEFT, padx=5)
+        year_combo.bind('<<ComboboxSelected>>', lambda e: self.search_students())
+        
+        # Actions frame
+        actions_frame = tk.LabelFrame(
+            top_frame,
+            text="ΓÜí Actions",
+            font=('Segoe UI', 11, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        )
+        actions_frame.pack(side=tk.RIGHT)
+        
+        # Action buttons
+        buttons_frame = tk.Frame(actions_frame, bg=self.colors['primary'])
+        buttons_frame.pack(padx=10, pady=10)
+        
+        add_student_btn = tk.Button(
+            buttons_frame,
+            text="Γ₧ò Add Student",
+            font=('Segoe UI', 10, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            relief='flat',
+            padx=15,
+            pady=8,
+            command=self.show_add_student_dialog,
+            cursor='hand2'
+        )
+        add_student_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        import_students_btn = tk.Button(
+            buttons_frame,
+            text="≡ƒôÑ Import Excel",
+            font=('Segoe UI', 10, 'bold'),
+            bg='#6f42c1',
+            fg='white',
+            relief='flat',
+            padx=15,
+            pady=8,
+            command=self.import_students_from_excel,
+            cursor='hand2'
+        )
+        import_students_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Students list
+        students_list_frame = tk.LabelFrame(
+            students_frame,
+            text="≡ƒôï Students List",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent'],
+            padx=10,
+            pady=10
+        )
+        students_list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+        
+        # Students treeview
+        columns = ('Enrollment No', 'Name', 'Email', 'Phone', 'Year')
+        self.students_tree = ttk.Treeview(students_list_frame, columns=columns, show='headings', height=15)
+        col_widths = {'Enrollment No': 120, 'Name': 150, 'Email': 180, 'Phone': 120, 'Year': 80}
+        for col in columns:
+            self.students_tree.heading(col, text=col)
+            self.students_tree.column(col, width=col_widths[col])
+        students_v_scrollbar = ttk.Scrollbar(students_list_frame, orient=tk.VERTICAL, command=self.students_tree.yview)
+        students_h_scrollbar = ttk.Scrollbar(students_list_frame, orient=tk.HORIZONTAL, command=self.students_tree.xview)
+        self.students_tree.configure(yscrollcommand=students_v_scrollbar.set, xscrollcommand=students_h_scrollbar.set)
+        self.students_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        students_v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        students_h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        # Add double-click binding for delete option
+        self.students_tree.bind('<Double-1>', self.on_student_double_click)
+    
+    def create_books_tab(self):
+        """Create books management tab"""
+        books_frame = tk.Frame(self.notebook, bg=self.colors['primary'])
+        self.notebook.add(books_frame, text="≡ƒôÜ Books")
+        
+        # Top frame for search and actions
+        top_frame = tk.Frame(books_frame, bg=self.colors['primary'])
+        top_frame.pack(fill=tk.X, padx=20, pady=20)
+        
+        # Search frame
+        search_frame = tk.LabelFrame(
+            top_frame,
+            text="≡ƒöì Search & Filter Books",
+            font=('Segoe UI', 11, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        )
+        search_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        
+        # Search controls
+        search_controls = tk.Frame(search_frame, bg=self.colors['primary'])
+        search_controls.pack(fill=tk.X, padx=10, pady=10)
+        
+        tk.Label(search_controls, text="Search:", bg=self.colors['primary'], fg=self.colors['accent'], font=('Segoe UI', 10)).pack(side=tk.LEFT)
+        book_search_entry = tk.Entry(search_controls, textvariable=self.book_search_var, font=('Segoe UI', 10), width=25)
+        book_search_entry.pack(side=tk.LEFT, padx=(5, 15))
+        # Live book search while typing
+        book_search_entry.bind('<KeyRelease>', lambda e: self.search_books())
+        
+        tk.Label(search_controls, text="Category:", bg=self.colors['primary'], fg=self.colors['accent'], font=('Segoe UI', 10)).pack(side=tk.LEFT)
+        category_combo = ttk.Combobox(search_controls, textvariable=self.book_category_filter, 
+                                    values=["All", "Technology", "Textbook", "Research"], state="readonly", width=12)
+        category_combo.pack(side=tk.LEFT, padx=5)
+        category_combo.bind('<<ComboboxSelected>>', lambda e: self.search_books())
+        
+        # Actions frame
+        actions_frame = tk.LabelFrame(
+            top_frame,
+            text="ΓÜí Actions",
+            font=('Segoe UI', 11, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        )
+        actions_frame.pack(side=tk.RIGHT)
+        
+        # Action buttons
+        buttons_frame = tk.Frame(actions_frame, bg=self.colors['primary'])
+        buttons_frame.pack(padx=10, pady=10)
+        
+        add_book_btn = tk.Button(
+            buttons_frame,
+            text="Γ₧ò Add Book",
+            font=('Segoe UI', 10, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            relief='flat',
+            padx=15,
+            pady=8,
+            command=self.show_add_book_dialog,
+            cursor='hand2'
+        )
+        add_book_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        import_books_btn = tk.Button(
+            buttons_frame,
+            text="≡ƒôÑ Import Excel",
+            font=('Segoe UI', 10, 'bold'),
+            bg='#6f42c1',
+            fg='white',
+            relief='flat',
+            padx=15,
+            pady=8,
+            command=self.import_books_from_excel,
+            cursor='hand2'
+        )
+        import_books_btn.pack(side=tk.LEFT, padx=5)
+        
+        export_books_btn = tk.Button(
+            buttons_frame,
+            text="≡ƒôè Export to Excel",
+            font=('Segoe UI', 10, 'bold'),
+            bg='#28a745',
+            fg='white',
+            relief='flat',
+            padx=15,
+            pady=8,
+            command=self.export_books_to_excel,
+            cursor='hand2'
+        )
+        # Books list
+        books_list_frame = tk.LabelFrame(
+            books_frame,
+            text="≡ƒôÜ Books Collection",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent'],
+            padx=10,
+            pady=10
+        )
+        books_list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+        
+        # Books treeview
+        columns = ('Book ID', 'Title', 'Author', 'ISBN', 'Category', 'Total Copies', 'Available')
+        self.books_tree = ttk.Treeview(books_list_frame, columns=columns, show='headings', height=15)
+        
+        # Define headings and widths
+        column_widths = {'Book ID': 100, 'Title': 250, 'Author': 180, 'ISBN': 120, 
+                        'Category': 100, 'Total Copies': 100, 'Available': 100}
+        
+        for col in columns:
+            self.books_tree.heading(col, text=col)
+            self.books_tree.column(col, width=column_widths[col])
+        
+        # Scrollbars
+        books_v_scrollbar = ttk.Scrollbar(books_list_frame, orient=tk.VERTICAL, command=self.books_tree.yview)
+        books_h_scrollbar = ttk.Scrollbar(books_list_frame, orient=tk.HORIZONTAL, command=self.books_tree.xview)
+        self.books_tree.configure(yscrollcommand=books_v_scrollbar.set, xscrollcommand=books_h_scrollbar.set)
+        
+        # Pack treeview and scrollbars
+        self.books_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        books_v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        books_h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        # Add double-click binding for delete option
+        self.books_tree.bind('<Double-1>', self.on_book_double_click)
+    
+    def create_transactions_tab(self):
+        """Create transactions tab with full-page scrolling (borrow + return + list)"""
+        transactions_frame = tk.Frame(self.notebook, bg=self.colors['primary'])
+        self.notebook.add(transactions_frame, text="≡ƒôï Transactions")
+
+        # Outer canvas + single scrollbar for whole page
+        outer_container = tk.Frame(transactions_frame, bg=self.colors['primary'])
+        outer_container.pack(fill=tk.BOTH, expand=True)
+
+        canvas = tk.Canvas(outer_container, bg=self.colors['primary'], highlightthickness=0)
+        v_scroll = ttk.Scrollbar(outer_container, orient=tk.VERTICAL, command=canvas.yview)
+        h_scroll = ttk.Scrollbar(outer_container, orient=tk.HORIZONTAL, command=canvas.xview)
+        canvas.configure(yscrollcommand=v_scroll.set, xscrollcommand=h_scroll.set)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        # Horizontal scrollbar will be packed only if needed (dynamic)
+        def _toggle_hbar():
+            bbox = canvas.bbox('all')
+            if not bbox:
+                return
+            content_width = bbox[2] - bbox[0]
+            visible_width = canvas.winfo_width()
+            if content_width > visible_width and not getattr(h_scroll, '_visible', False):
+                h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
+                h_scroll._visible = True
+            elif content_width <= visible_width and getattr(h_scroll, '_visible', False):
+                h_scroll.pack_forget()
+                h_scroll._visible = False
+        h_scroll._visible = False
+
+        # Internal frame that will hold all sections
+        main_container = tk.Frame(canvas, bg=self.colors['primary'])
+        _mc_window = canvas.create_window((0, 0), window=main_container, anchor='nw')
+
+        def _update_scroll_region(event):
+            canvas.configure(scrollregion=canvas.bbox('all'))
+            _toggle_hbar()
+        main_container.bind('<Configure>', _update_scroll_region)
+
+        # Also re-evaluate horizontal bar on canvas resize
+        def _resize_content(event):
+            # Match internal frame width to canvas width to remove empty right side
+            canvas.itemconfig(_mc_window, width=canvas.winfo_width())
+            _toggle_hbar()
+        canvas.bind('<Configure>', _resize_content)
+
+        # Mouse wheel scrolling (Windows/Linux) with Shift for horizontal
+        def _tx_units(delta):
+            return -1 if delta > 0 else (1 if delta < 0 else 0)
+        # Handlers when bound directly to the scrollable canvas/main container
+        def _tx_vwheel(event):
+            u = _tx_units(event.delta)
+            if u:
+                canvas.yview_scroll(u, 'units')
+            return 'break'
+        def _tx_hwheel(event):
+            u = _tx_units(event.delta)
+            if u:
+                canvas.xview_scroll(u, 'units')
+            return 'break'
+        # Child-binding variants: scroll page but don't cancel widget defaults
+        def _tx_vwheel_child(event):
+            u = _tx_units(getattr(event, 'delta', 0))
+            if u:
+                canvas.yview_scroll(u, 'units')
+            # no return => allow widget default if any
+        def _tx_hwheel_child(event):
+            u = _tx_units(getattr(event, 'delta', 0))
+            if u:
+                canvas.xview_scroll(u, 'units')
+            # no return => allow widget default if any
+        canvas.bind('<MouseWheel>', _tx_vwheel)
+        canvas.bind('<Shift-MouseWheel>', _tx_hwheel)
+        main_container.bind('<MouseWheel>', _tx_vwheel)
+        main_container.bind('<Shift-MouseWheel>', _tx_hwheel)
+        # Pointer-scoped global binds while cursor is over the Transactions tab
+        def _enter_tx(_e=None):
+            try:
+                transactions_frame.bind_all('<MouseWheel>', _tx_vwheel, add='+')
+                transactions_frame.bind_all('<Shift-MouseWheel>', _tx_hwheel, add='+')
+            except Exception:
+                pass
+        def _leave_tx(_e=None):
+            try:
+                transactions_frame.unbind_all('<MouseWheel>')
+                transactions_frame.unbind_all('<Shift-MouseWheel>')
+            except Exception:
+                pass
+        transactions_frame.bind('<Enter>', _enter_tx)
+        transactions_frame.bind('<Leave>', _leave_tx)
+        # Focus canvas when pointer enters so wheel events target it
+        canvas.bind('<Enter>', lambda e: canvas.focus_set())
+        main_container.bind('<Enter>', lambda e: canvas.focus_set())
+        # Linux-style wheel events fallback
+        def _tx_btn4(_e=None):
+            canvas.yview_scroll(-1, 'units'); return 'break'
+        def _tx_btn5(_e=None):
+            canvas.yview_scroll(1, 'units'); return 'break'
+        canvas.bind('<Button-4>', _tx_btn4)
+        canvas.bind('<Button-5>', _tx_btn5)
+
+        # Recursively bind wheel events to children so hovering any element scrolls the page
+        def _bind_wheel_recursive(widget):
+            try:
+                # Skip Treeview to avoid double-scrolling its own content
+                if isinstance(widget, ttk.Treeview):
+                    return
+            except Exception:
+                pass
+            try:
+                widget.bind('<MouseWheel>', _tx_vwheel_child, add='+')
+                widget.bind('<Shift-MouseWheel>', _tx_hwheel_child, add='+')
+            except Exception:
+                pass
+            for child in getattr(widget, 'winfo_children', lambda: [])():
+                _bind_wheel_recursive(child)
+
+        # Defer binding until content is populated; schedule after idle
+        try:
+            widget_ref = main_container
+            widget_ref.after(200, lambda: _bind_wheel_recursive(widget_ref))
+        except Exception:
+            pass
+        
+        # =================================================================
+        # ISSUE BOOK SECTION - Fixed UI Layout
+        # =================================================================
+        borrow_frame = tk.LabelFrame(
+            main_container,
+            text="≡ƒôÜ Issue Book",
+            font=('Segoe UI', 16, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent'],
+            padx=20,
+            pady=20
+        )
+        borrow_frame.pack(fill=tk.X, expand=True, pady=(0, 25))
+        
+        # Borrow form container
+        borrow_form = tk.Frame(borrow_frame, bg=self.colors['primary'])
+        borrow_form.pack(fill=tk.X, padx=20, pady=10)
+        
+        # Row 1: Student and Book Input - Properly Spaced
+        input_row = tk.Frame(borrow_form, bg=self.colors['primary'])
+        input_row.pack(fill=tk.X, pady=(0, 20))
+        
+        # Student Enrollment Column
+        student_col = tk.Frame(input_row, bg=self.colors['primary'])
+        student_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 20))
+        
+        tk.Label(student_col, text="Student Enrollment No:", 
+                font=('Segoe UI', 12, 'bold'), 
+                bg=self.colors['primary'], 
+                fg=self.colors['accent']).pack(anchor='w', pady=(0, 8))
+        
+        self.borrow_enrollment_entry = tk.Entry(student_col, 
+                                              font=('Segoe UI', 12), 
+                                              width=25, 
+                                              relief='solid', 
+                                              bd=2)
+        self.borrow_enrollment_entry.pack(fill=tk.X, pady=(0, 8))
+        self.borrow_enrollment_entry.bind('<KeyRelease>', lambda e: self.show_student_details('borrow'))
+
+        # Student details display
+        self.borrow_student_details = tk.Label(student_col, 
+                                             text="", 
+                                             font=('Segoe UI', 10), 
+                                             bg=self.colors['primary'], 
+                                             fg='#666666',
+                                             wraplength=300)
+        self.borrow_student_details.pack(anchor='w')
+        
+        # Book ID Column
+        book_col = tk.Frame(input_row, bg=self.colors['primary'])
+        book_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(20, 0))
+        
+        tk.Label(book_col, text="Book ID:", 
+                font=('Segoe UI', 12, 'bold'), 
+                bg=self.colors['primary'], 
+                fg=self.colors['accent']).pack(anchor='w', pady=(0, 8))
+        
+        self.borrow_book_id_entry = tk.Entry(book_col, 
+                                           font=('Segoe UI', 12), 
+                                           width=25, 
+                                           relief='solid', 
+                                           bd=2)
+        self.borrow_book_id_entry.pack(fill=tk.X, pady=(0, 8))
+        self.borrow_book_id_entry.bind('<KeyRelease>', lambda e: self.show_book_details('borrow'))
+        
+        # Book details display
+        self.borrow_book_details = tk.Label(book_col, 
+                                          text="", 
+                                          font=('Segoe UI', 10), 
+                                          bg=self.colors['primary'], 
+                                          fg='#666666',
+                                          wraplength=300)
+        self.borrow_book_details.pack(anchor='w')
+        
+    # Row 2: Issue & Due Dates and Action Button - Better Layout
+        action_row = tk.Frame(borrow_form, bg=self.colors['primary'])
+        action_row.pack(fill=tk.X, pady=(15, 0))
+        
+        # Issue Date Section (uses DateEntry if available)
+        borrow_date_section = tk.Frame(action_row, bg=self.colors['primary'])
+        borrow_date_section.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        tk.Label(borrow_date_section, text="Issue Date:", font=('Segoe UI', 12, 'bold'), bg=self.colors['primary'], fg=self.colors['accent']).pack(anchor='w', pady=(0,8))
+        borrow_date_input_frame = tk.Frame(borrow_date_section, bg=self.colors['primary'])
+        borrow_date_input_frame.pack(anchor='w')
+        if DateEntry:
+            self.borrow_borrow_date_entry = DateEntry(borrow_date_input_frame, width=13, date_pattern='yyyy-mm-dd', state='readonly')
+            self.borrow_borrow_date_entry.pack(side=tk.LEFT)
+            # Auto-update due date when borrow date picked
+            self.borrow_borrow_date_entry.bind('<<DateEntrySelected>>', self.on_borrow_date_changed)
+        else:
+            self.borrow_borrow_date_entry = tk.Entry(borrow_date_input_frame, font=('Segoe UI',12), width=15, relief='solid', bd=2)
+            self.borrow_borrow_date_entry.pack(side=tk.LEFT)
+            tk.Button(
+                borrow_date_input_frame,
+                text="≡ƒôà",
+                font=('Segoe UI', 14),
+                bg=self.colors['secondary'],
+                fg='white',
+                relief='flat',
+                padx=10,
+                pady=6,
+                command=lambda: self.show_date_picker(self.borrow_borrow_date_entry),
+                cursor='hand2'
+            ).pack(side=tk.LEFT, padx=(8,0))
+            # Prevent manual typing; force picker
+            self.borrow_borrow_date_entry.bind('<Key>', lambda e: 'break')
+
+        # Due Date Section (DateEntry if available)
+        date_section = tk.Frame(action_row, bg=self.colors['primary'])
+        date_section.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(20,0))
+        tk.Label(date_section, text="Due Date:", font=('Segoe UI', 12, 'bold'), bg=self.colors['primary'], fg=self.colors['accent']).pack(anchor='w', pady=(0,8))
+        date_input_frame = tk.Frame(date_section, bg=self.colors['primary'])
+        date_input_frame.pack(anchor='w')
+        if DateEntry:
+            self.borrow_due_date_entry = DateEntry(date_input_frame, width=13, date_pattern='yyyy-mm-dd', state='readonly')
+            self.borrow_due_date_entry.pack(side=tk.LEFT)
+            # Intercept any manual selection attempts
+            self.borrow_due_date_entry.bind('<<DateEntrySelected>>', lambda e: self.on_due_date_attempt_change())
+        else:
+            self.borrow_due_date_entry = tk.Entry(date_input_frame, font=('Segoe UI', 12), width=15, relief='solid', bd=2)
+            self.borrow_due_date_entry.pack(side=tk.LEFT)
+            tk.Button(
+                date_input_frame,
+                text="≡ƒôà",
+                font=('Segoe UI', 14),
+                bg=self.colors['secondary'],
+                fg='white',
+                relief='flat',
+                padx=10,
+                pady=6,
+                command=lambda: self.show_date_picker(self.borrow_due_date_entry),
+                cursor='hand2'
+            ).pack(side=tk.LEFT, padx=(8,0))
+            # Block manual typing; will be auto-set
+            self.borrow_due_date_entry.bind('<Key>', lambda e: 'break')
+        
+        # Action Button Section - Right Side
+        button_section = tk.Frame(action_row, bg=self.colors['primary'])
+        button_section.pack(side=tk.RIGHT, padx=(20, 0))
+        
+        # Issue button - Prominent and well-positioned
+        borrow_btn = tk.Button(
+            button_section,
+            text="≡ƒôÜ Issue Book",
+            font=('Segoe UI', 14, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            relief='flat',
+            padx=30,
+            pady=12,
+            command=self.borrow_book,
+            cursor='hand2'
+        )
+        borrow_btn.pack(pady=(25, 0))
+        
+        # Set default due date (exact 7-day loan period per requirement)
+        from datetime import datetime, timedelta
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        default_due = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+        try:
+            if DateEntry:
+                self.borrow_borrow_date_entry.set_date(datetime.now())
+                self.borrow_due_date_entry.set_date(datetime.now() + timedelta(days=7))
+                # Ensure readonly state remains
+                try:
+                    self.borrow_borrow_date_entry.config(state='readonly')
+                    self.borrow_due_date_entry.config(state='readonly')
+                except Exception:
+                    pass
+            else:
+                self.borrow_borrow_date_entry.delete(0, tk.END)
+                self.borrow_borrow_date_entry.insert(0, today_str)
+                self.borrow_due_date_entry.delete(0, tk.END)
+                self.borrow_due_date_entry.insert(0, default_due)
+        except Exception:
+            pass
+        
+        # =================================================================
+        # VISUAL SEPARATOR
+        # =================================================================
+        separator = tk.Frame(main_container, height=3, bg=self.colors['accent'])
+        separator.pack(fill=tk.X, pady=30)
+        
+        # =================================================================
+        # RETURN BOOK SECTION
+        # =================================================================
+        return_outer = tk.Frame(main_container, bg=self.colors['primary'], highlightthickness=0)
+        return_outer.pack(fill=tk.X, pady=(0, 25))
+        heading_bar = tk.Frame(return_outer, bg=self.colors['primary'])
+        heading_bar.pack(fill=tk.X)
+        heading_label = tk.Label(
+            heading_bar,
+            text="≡ƒöä Return Book",
+            font=('Segoe UI', 16, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        )
+        heading_label.pack(anchor='w')
+        # Return input row - directly in outer frame now
+        return_input_row = tk.Frame(return_outer, bg=self.colors['primary'])
+        return_input_row.pack(fill=tk.X, pady=(0, 20))
+        
+        # Student section
+        return_student_col = tk.Frame(return_input_row, bg=self.colors['primary'])
+        return_student_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 20))
+        
+        tk.Label(return_student_col, text="Student Enrollment No:", 
+                font=('Segoe UI', 12, 'bold'), 
+                bg=self.colors['primary'], 
+                fg=self.colors['accent']).pack(anchor='w', pady=(0, 8))
+        
+        self.return_enrollment_entry = tk.Entry(return_student_col, 
+                                              font=('Segoe UI', 12), 
+                                              width=25, 
+                                              relief='solid', 
+                                              bd=2)
+        self.return_enrollment_entry.pack(fill=tk.X, pady=(0, 8))
+        self.return_enrollment_entry.bind('<KeyRelease>', lambda e: self.show_student_details('return'))
+        
+        self.return_student_details = tk.Label(return_student_col, 
+                                             text="", 
+                                             font=('Segoe UI', 10), 
+                                             bg=self.colors['primary'], 
+                                             fg='#666666',
+                                             wraplength=300)
+        self.return_student_details.pack(anchor='w')
+        
+        # Book section
+        return_book_col = tk.Frame(return_input_row, bg=self.colors['primary'])
+        return_book_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(20, 0))
+        
+        tk.Label(return_book_col, text="Book ID:", 
+                font=('Segoe UI', 12, 'bold'), 
+                bg=self.colors['primary'], 
+                fg=self.colors['accent']).pack(anchor='w', pady=(0, 8))
+        
+        self.return_book_id_entry = tk.Entry(return_book_col, 
+                                           font=('Segoe UI', 12), 
+                                           width=25, 
+                                           relief='solid', 
+                                           bd=2)
+        self.return_book_id_entry.pack(fill=tk.X, pady=(0, 8))
+        self.return_book_id_entry.bind('<KeyRelease>', lambda e: self.show_book_details('return'))
+        
+        self.return_book_details = tk.Label(return_book_col, 
+                                          text="", 
+                                          font=('Segoe UI', 10), 
+                                          bg=self.colors['primary'], 
+                                          fg='#666666',
+                                          wraplength=300)
+        self.return_book_details.pack(anchor='w')
+        
+        # Return button - Centered and prominent
+        return_button_frame = tk.Frame(return_outer, bg=self.colors['primary'])
+        # Return date row
+        return_date_row = tk.Frame(return_outer, bg=self.colors['primary'])
+        return_date_row.pack(fill=tk.X, pady=(10, 5))
+        tk.Label(return_date_row, text="Return Date:", font=('Segoe UI', 12, 'bold'), bg=self.colors['primary'], fg=self.colors['accent']).pack(side=tk.LEFT, padx=(0,8))
+        if DateEntry:
+            self.return_date_entry = DateEntry(return_date_row, width=13, date_pattern='yyyy-mm-dd', state='readonly')
+            self.return_date_entry.pack(side=tk.LEFT)
+            try:
+                self.return_date_entry.set_date(datetime.now())
+            except Exception:
+                pass
+        else:
+            self.return_date_entry = tk.Entry(return_date_row, font=('Segoe UI', 12), width=15, relief='solid', bd=2)
+            self.return_date_entry.pack(side=tk.LEFT)
+            tk.Button(return_date_row, text="≡ƒôà", font=('Segoe UI', 14), bg=self.colors['secondary'], fg='white', relief='flat', padx=10, pady=6, cursor='hand2', command=lambda: self.show_date_picker(self.return_date_entry)).pack(side=tk.LEFT, padx=(8,0))
+            # Set default return date to today
+            try:
+                from datetime import datetime as _dt
+                self.return_date_entry.delete(0, tk.END)
+                self.return_date_entry.insert(0, _dt.now().strftime('%Y-%m-%d'))
+            except Exception:
+                pass
+            self.return_date_entry.bind('<Key>', lambda e: 'break')
+        return_button_frame.pack(pady=(10, 0))
+        
+        return_btn = tk.Button(
+            return_button_frame,
+            text="≡ƒöä Return Book",
+            font=('Segoe UI', 14, 'bold'),
+            bg='#28a745',
+            fg='white',
+            relief='flat',
+            padx=30,
+            pady=12,
+            command=self.return_book,
+            cursor='hand2'
+        )
+        return_btn.pack()
+        
+        # =================================================================
+        # CURRENTLY ISSUED BOOKS SECTION - Improved Layout
+        # =================================================================
+        borrowed_frame = tk.LabelFrame(
+            main_container,
+            text="≡ƒôï Currently Issued Books",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent'],
+            padx=10,
+            pady=10
+        )
+        borrowed_frame.pack(fill=tk.BOTH, expand=True, pady=(0,40))
+        
+        borrowed_columns = ('Student', 'Book ID', 'Book Title', 'Issue Date', 'Due Date', 'Days Left')
+        self.borrowed_tree = ttk.Treeview(borrowed_frame, columns=borrowed_columns, show='headings', height=10)
+        borrowed_widths = {'Student': 150, 'Book ID': 100, 'Book Title': 250, 'Issue Date': 120, 'Due Date': 120, 'Days Left': 100}
+        
+        for col in borrowed_columns:
+            self.borrowed_tree.heading(col, text=col)
+            self.borrowed_tree.column(col, width=borrowed_widths[col])
+        
+        borrowed_v_scrollbar = ttk.Scrollbar(borrowed_frame, orient=tk.VERTICAL, command=self.borrowed_tree.yview)
+        borrowed_h_scrollbar = ttk.Scrollbar(borrowed_frame, orient=tk.HORIZONTAL, command=self.borrowed_tree.xview)
+        self.borrowed_tree.configure(yscrollcommand=borrowed_v_scrollbar.set, xscrollcommand=borrowed_h_scrollbar.set)
+        
+        self.borrowed_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        borrowed_v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        borrowed_h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+    
+    # Commented out - no longer needed since we removed combobox autocomplete
+    # def filter_student_suggestions(self, event, mode):
+    #     """Filter student suggestions as user types"""
+    #     try:
+    #         current_text = event.widget.get().lower().strip()
+    #         if len(current_text) < 1:  # Start filtering after 1 character
+    #             return
+    #         
+    #         # Get all students
+    #         students = self.db.get_students()
+    #         # Filter students that match the current text (enrollment number or name)
+    #         matching_students = []
+    #         for s in students:
+    #             enrollment = str(s[0]).lower()
+    #             name = str(s[1]).lower()
+    #             if current_text in enrollment or current_text in name:
+    #                 matching_students.append(f"{s[0]} - {s[1]}")  # Format as "enrollment - name"
+    #         
+    #         # Update combobox values
+    #         event.widget['values'] = matching_students[:10]  # Limit to 10 suggestions
+    #         
+    #         # Auto-open dropdown if there are matches
+    #         if matching_students and len(current_text) >= 1:
+    #             event.widget.event_generate('<Down>')
+    #             
+    #     except Exception as e:
+    #         print(f"Error filtering student suggestions: {e}")
+    # 
+    # def filter_book_suggestions(self, event, mode):
+    #     """Filter book suggestions as user types"""
+    #     try:
+    #         current_text = event.widget.get().lower().strip()
+    #         if len(current_text) < 1:  # Start filtering after 1 character
+    #             return
+    #         
+    #         # Get all books
+    #         books = self.db.get_books()
+    #         # Filter books that match the current text (book ID or title)
+    #         matching_books = []
+    #         for b in books:
+    #             book_id = str(b[0]).lower()
+    #             title = str(b[1]).lower()
+    #             if current_text in book_id or current_text in title:
+    #                 matching_books.append(f"{b[0]} - {b[1]}")  # Format as "ID - title"
+    #         
+    #         # Update combobox values
+    #         event.widget['values'] = matching_books[:10]  # Limit to 10 suggestions
+    #         
+    #         # Auto-open dropdown if there are matches
+    #         if matching_books and len(current_text) >= 1:
+    #             event.widget.event_generate('<Down>')
+    #             
+    #     except Exception as e:
+    #         print(f"Error filtering book suggestions: {e}")
+    
+    def show_student_details(self, mode):
+        """Show student details below enrollment field in transactions tab"""
+        if mode == 'borrow':
+            enrollment_no = self.borrow_enrollment_entry.get().strip()
+        else:
+            enrollment_no = self.return_enrollment_entry.get().strip()
+        
+        if not enrollment_no:
+            details = ""
+        else:
+            try:
+                students = self.db.get_students()
+                student = next((s for s in students if str(s[1]) == enrollment_no), None)
+                if student:
+                    details = f"Name: {student[2]} | Email: {student[3]} | Phone: {student[4]} | Year: {student[6]}"
+                else:
+                    details = "Student not found."
+            except Exception as e:
+                details = "Error loading student data."
+                
+        if mode == 'borrow':
+            self.borrow_student_details.config(text=details)
+        else:
+            self.return_student_details.config(text=details)
+    
+    def show_book_details(self, mode):
+        """Show book details when book ID is entered"""
+        if mode == 'borrow':
+            book_id = self.borrow_book_id_entry.get().strip()
+        else:
+            book_id = self.return_book_id_entry.get().strip()
+        
+        if not book_id:
+            details = ""
+        else:
+            try:
+                books = self.db.get_books()
+                book = next((b for b in books if str(b[1]) == book_id), None)
+                if book:
+                    details = f"Title: {book[2]} | Author: {book[3]} | Available: {book[7]}"
+                else:
+                    details = "Book not found."
+            except Exception as e:
+                details = "Error loading book data."
+                
+        # Update the appropriate book details label
+        if mode == 'borrow':
+            self.borrow_book_details.config(text=details)
+        else:
+            self.return_book_details.config(text=details)
+    
+    def on_student_double_click(self, event):
+        """Handle double-click on student to show delete option"""
+        item = self.students_tree.selection()[0] if self.students_tree.selection() else None
+        if not item:
+            return
+
+        student_data = self.students_tree.item(item, 'values')
+        if not student_data:
+            return
+
+        enrollment_no = student_data[0]
+        student_name = student_data[1]
+
+        # Default placeholders
+        branch = "(branch unknown)"
+        year = "(year unknown)"
+
+        try:
+            # Use search term to narrow results
+            candidates = self.db.get_students(enrollment_no)
+            for s in candidates:
+                # Expected schema: (enrollment_no, name, email, phone, department, year)
+                if len(s) >= 6 and str(s[0]) == str(enrollment_no):
+                    branch = s[4] or branch
+                    year = s[5] or year
+                    break
+        except Exception:
+            pass
+
+        confirm_text = (
+            f"Delete this student?\n\n"
+            f"Name: {student_name}\n"
+            f"Branch: {branch}\n"
+            f"Year: {year}"
+        )
+
+        result = messagebox.askyesno(
+            "Delete Student",
+            confirm_text,
+            icon='warning'
+        )
+
+        if result:
+            success, message = self.db.delete_student(enrollment_no)
+            if success:
+                try:
+                    self.refresh_students()
+                    # Also refresh dashboard statistics so counts update immediately
+                    self.refresh_dashboard()
+                except Exception:
+                    pass
+                messagebox.showinfo("Success", "Student deleted successfully.")
+            else:
+                messagebox.showerror("Error", message or "Failed to delete student.")
+
+    def on_book_double_click(self, event):
+        """Handle double-click on book to show delete option"""
+        item = self.books_tree.selection()[0] if self.books_tree.selection() else None
+        if not item:
+            return
+        book_data = self.books_tree.item(item, 'values')
+        if not book_data:
+            return
+        book_id = book_data[0]
+        book_title = book_data[1]
+        result = messagebox.askyesno(
+            "Delete Book",
+            f"Delete this book?\n\nID: {book_id}\nTitle: {book_title}",
+            icon='warning'
+        )
+        if result:
+            success, message = self.db.delete_book(book_id)
+            if success:
+                try:
+                    self.refresh_books()
+                    # Refresh dashboard statistics to reflect updated totals
+                    self.refresh_dashboard()
+                except Exception:
+                    pass
+                messagebox.showinfo("Success", "Book deleted successfully.")
+            else:
+                messagebox.showerror("Error", message or "Failed to delete book.")
+        
+    # ...existing code...
+        # ...existing code...
+        # ...existing code...
+    
+    def create_records_tab(self):
+        """Create comprehensive records tab"""
+        records_frame = tk.Frame(self.notebook, bg=self.colors['primary'])
+        self.notebook.add(records_frame, text="≡ƒôè Records")
+        
+        # Top frame for search, filters and actions
+        top_frame = tk.Frame(records_frame, bg=self.colors['primary'])
+        top_frame.pack(fill=tk.X, padx=20, pady=20)
+        
+        # Search and filter frame
+        search_filter_frame = tk.LabelFrame(
+            top_frame,
+            text="≡ƒöì Search & Filter Records",
+            font=('Segoe UI', 11, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        )
+        search_filter_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        
+        # Search controls
+        search_controls = tk.Frame(search_filter_frame, bg=self.colors['primary'])
+        search_controls.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Row 1: Search and type filter
+        row1 = tk.Frame(search_controls, bg=self.colors['primary'])
+        row1.pack(fill=tk.X, pady=(0, 10))
+        
+        tk.Label(row1, text="Search:", bg=self.colors['primary'], fg=self.colors['accent'], font=('Segoe UI', 10)).pack(side=tk.LEFT)
+        record_search_entry = tk.Entry(row1, textvariable=self.record_search_var, font=('Segoe UI', 10), width=25)
+        record_search_entry.pack(side=tk.LEFT, padx=(5, 15))
+        
+        tk.Label(row1, text="Type:", bg=self.colors['primary'], fg=self.colors['accent'], font=('Segoe UI', 10)).pack(side=tk.LEFT)
+        type_combo = ttk.Combobox(row1, textvariable=self.record_type_filter, 
+                                  values=["All", "Issued", "Returned", "Overdue"], state="readonly", width=12)
+        type_combo.pack(side=tk.LEFT, padx=5)
+        type_combo.bind('<<ComboboxSelected>>', lambda e: self.search_records())
+        
+        # Row 2: Date filters
+        row2 = tk.Frame(search_controls, bg=self.colors['primary'])
+        row2.pack(fill=tk.X)
+        
+        tk.Label(row2, text="From Date:", bg=self.colors['primary'], fg=self.colors['accent'], font=('Segoe UI', 10)).pack(side=tk.LEFT)
+        if DateEntry:
+            self.record_from_date = DateEntry(row2, width=11, date_pattern='yyyy-mm-dd')
+            self.record_from_date.pack(side=tk.LEFT, padx=(5, 15))
+        else:
+            self.record_from_date = tk.Entry(row2, font=('Segoe UI', 10), width=12)
+            self.record_from_date.pack(side=tk.LEFT, padx=(5, 15))
+        
+        tk.Label(row2, text="To Date:", bg=self.colors['primary'], fg=self.colors['accent'], font=('Segoe UI', 10)).pack(side=tk.LEFT)
+        if DateEntry:
+            self.record_to_date = DateEntry(row2, width=11, date_pattern='yyyy-mm-dd')
+            self.record_to_date.pack(side=tk.LEFT, padx=(5, 15))
+        else:
+            self.record_to_date = tk.Entry(row2, font=('Segoe UI', 10), width=12)
+            self.record_to_date.pack(side=tk.LEFT, padx=(5, 15))
+        
+        filter_btn = tk.Button(
+            row2,
+            text="≡ƒöì Filter",
+            font=('Segoe UI', 9, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            relief='flat',
+            padx=10,
+            pady=5,
+            command=self.search_records,
+            cursor='hand2'
+        )
+        filter_btn.pack(side=tk.LEFT, padx=5)
+        
+        clear_filter_btn = tk.Button(
+            row2,
+            text="≡ƒùæ∩╕Å Clear",
+            font=('Segoe UI', 9, 'bold'),
+            bg='#6c757d',
+            fg='white',
+            relief='flat',
+            padx=10,
+            pady=5,
+            command=self.clear_record_filters,
+            cursor='hand2'
+        )
+        clear_filter_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Actions frame
+        actions_frame = tk.LabelFrame(
+            top_frame,
+            text="ΓÜí Actions",
+            font=('Segoe UI', 11, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        )
+        actions_frame.pack(side=tk.RIGHT)
+        
+        # Action buttons
+        buttons_frame = tk.Frame(actions_frame, bg=self.colors['primary'])
+        buttons_frame.pack(padx=10, pady=10)
+        
+        export_records_btn = tk.Button(
+            buttons_frame,
+            text="≡ƒôè Export Records",
+            font=('Segoe UI', 10, 'bold'),
+            bg='#28a745',
+            fg='white',
+            relief='flat',
+            padx=15,
+            pady=8,
+            command=self.export_records_to_excel,
+            cursor='hand2'
+        )
+        export_records_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        share_records_btn = tk.Button(
+            buttons_frame,
+            text="≡ƒôñ Share Data",
+            font=('Segoe UI', 10, 'bold'),
+            bg='#6f42c1',
+            fg='white',
+            relief='flat',
+            padx=15,
+            pady=8,
+            command=self.share_data_dialog,
+            cursor='hand2'
+        )
+        share_records_btn.pack(side=tk.LEFT, padx=5)
+
+        # New: Overdue notice letter generation button
+        overdue_letter_btn = tk.Button(
+            buttons_frame,
+            text="≡ƒôä Overdue Letter (Word)",
+            font=('Segoe UI', 10, 'bold'),
+            bg='#d35400',
+            fg='white',
+            relief='flat',
+            padx=15,
+            pady=8,
+            command=self.export_overdue_notice_letter_word,
+            cursor='hand2'
+        )
+        overdue_letter_btn.pack(side=tk.LEFT, padx=5)
+        # Optional Excel version button retained for users wanting spreadsheet format
+        # Excel overdue letter button removed per user request (Word only)
+        
+        # Records list
+        records_list_frame = tk.LabelFrame(
+            records_frame,
+            text="≡ƒôï Complete Transaction Records",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent'],
+            padx=10,
+            pady=10
+        )
+        records_list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+        
+        # Records treeview
+        record_columns = ('Enrollment No', 'Student Name', 'Book ID', 'Book Title', 'Issue Date', 'Due Date', 'Return Date', 'Status', 'Fine')
+        self.records_tree = ttk.Treeview(records_list_frame, columns=record_columns, show='headings', height=15)
+        record_widths = {'Enrollment No': 120, 'Student Name': 150, 'Book ID': 100, 'Book Title': 200, 'Issue Date': 100, 'Due Date': 100, 'Return Date': 100, 'Status': 80, 'Fine': 80}
+        for col in record_columns:
+            self.records_tree.heading(col, text=col)
+            self.records_tree.column(col, width=record_widths[col])
+        # Scrollbars for records
+        records_v_scrollbar = ttk.Scrollbar(records_list_frame, orient=tk.VERTICAL, command=self.records_tree.yview)
+        records_h_scrollbar = ttk.Scrollbar(records_list_frame, orient=tk.HORIZONTAL, command=self.records_tree.xview)
+        self.records_tree.configure(yscrollcommand=records_v_scrollbar.set, xscrollcommand=records_h_scrollbar.set)
+        # Pack records treeview and scrollbars
+        self.records_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        records_v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        records_h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # Free scrolling in Records: vertical and Shift+Wheel horizontal, pointer-scoped
+        def _rec_units(delta):
+            return -1 if delta > 0 else (1 if delta < 0 else 0)
+        def _records_vwheel(event):
+            u = _rec_units(event.delta)
+            if u:
+                self.records_tree.yview_scroll(u, 'units')
+            return 'break'
+        def _records_hwheel(event):
+            u = _rec_units(event.delta)
+            if u:
+                self.records_tree.xview_scroll(u, 'units')
+            return 'break'
+        self.records_tree.bind('<MouseWheel>', _records_vwheel)
+        self.records_tree.bind('<Shift-MouseWheel>', _records_hwheel)
+
+        # Initial population of records (avoid empty first view)
+        try:
+            self.clear_record_filters()  # resets inputs and calls search_records
+        except Exception:
+            # Fallback: directly populate with all records
+            try:
+                self.populate_records_tree(self.get_all_records())
+            except Exception:
+                pass
+    
+    def show_date_picker(self, entry_widget):
+        """Show a simple date picker dialog"""
+        from tkinter import simpledialog
+        
+        # Create a simple date input dialog
+        date_str = simpledialog.askstring(
+            "Select Date",
+            "Enter date (YYYY-MM-DD):",
+            initialvalue=entry_widget.get() or datetime.now().strftime('%Y-%m-%d')
+        )
+        
+        if date_str:
+            try:
+                # Validate date format
+                datetime.strptime(date_str, '%Y-%m-%d')
+                entry_widget.delete(0, tk.END)
+                entry_widget.insert(0, date_str)
+            except ValueError:
+                messagebox.showerror("Error", "Invalid date format! Please use YYYY-MM-DD")
+    
+    def show_add_student_dialog(self):
+        """Show add student dialog with Computer department default"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Add New Student")
+        dialog.geometry("500x400")
+        dialog.configure(bg='white')
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.geometry("+%d+%d" % (self.root.winfo_rootx() + 100, self.root.winfo_rooty() + 100))
+        
+        # Title
+        title_label = tk.Label(
+            dialog,
+            text="≡ƒæÑ Add New Student",
+            font=('Segoe UI', 16, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        )
+        title_label.pack(pady=(20, 30))
+        
+        # Form frame
+        form_frame = tk.Frame(dialog, bg='white')
+        form_frame.pack(expand=True, padx=40)
+        
+        # Form fields
+        fields = [
+            ("Enrollment No:", "enrollment"),
+            ("Full Name:", "name"),
+            ("Email:", "email"),
+            ("Phone:", "phone"),
+            ("Year:", "year")
+        ]
+        
+        entries = {}
+        
+        for i, (label_text, field_name) in enumerate(fields):
+            # Label
+            label = tk.Label(
+                form_frame,
+                text=label_text,
+                font=('Segoe UI', 11, 'bold'),
+                bg='white',
+                fg=self.colors['accent']
+            )
+            label.grid(row=i, column=0, sticky='w', pady=(0, 15), padx=(0, 20))
+            
+            # Entry or Combobox
+            if field_name == "year":
+                entry = ttk.Combobox(
+                    form_frame,
+                    values=["1st", "2nd", "3rd", "4th"],
+                    font=('Segoe UI', 11),
+                    width=25,
+                    state="readonly"
+                )
+                entry.set("1st")  # Default to 1st year
+            else:
+                entry = tk.Entry(
+                    form_frame,
+                    font=('Segoe UI', 11),
+                    width=30,
+                    relief='solid',
+                    bd=2
+                )
+            
+            entry.grid(row=i, column=1, pady=(0, 15))
+            entries[field_name] = entry
+        
+        # Department info (read-only, always Computer)
+        dept_label = tk.Label(
+            form_frame,
+            text="Department:",
+            font=('Segoe UI', 11, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        )
+        dept_label.grid(row=len(fields), column=0, sticky='w', pady=(0, 15), padx=(0, 20))
+        
+        dept_value = tk.Label(
+            form_frame,
+            text="Computer (Default)",
+            font=('Segoe UI', 11),
+            bg='white',
+            fg=self.colors['secondary']
+        )
+        dept_value.grid(row=len(fields), column=1, sticky='w', pady=(0, 15))
+        
+        # Buttons
+        btn_frame = tk.Frame(dialog, bg='white')
+        btn_frame.pack(pady=20)
+        
+        def save_student():
+            # Validate fields
+            if not all([entries['enrollment'].get(), entries['name'].get()]):
+                messagebox.showerror("Error", "Enrollment No and Name are required!")
+                return
+            
+            # Add student with Computer department default
+            success, message = self.db.add_student(
+                entries['enrollment'].get(),
+                entries['name'].get(),
+                entries['email'].get(),
+                entries['phone'].get(),
+                "Computer",  # Always Computer department
+                entries['year'].get()
+            )
+            
+            if success:
+                messagebox.showinfo("Success", message)
+                dialog.destroy()
+                self.refresh_students()
+                # Refresh dashboard so total student count updates immediately
+                try:
+                    self.refresh_dashboard()
+                except Exception:
+                    pass
+            else:
+                messagebox.showerror("Error", message)
+        
+        save_btn = tk.Button(
+            btn_frame,
+            text="≡ƒÆ╛ Save Student",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=10,
+            command=save_student,
+            cursor='hand2'
+        )
+        save_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        cancel_btn = tk.Button(
+            btn_frame,
+            text="Γ¥î Cancel",
+            font=('Segoe UI', 12, 'bold'),
+            bg='#6c757d',
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=10,
+            command=dialog.destroy,
+            cursor='hand2'
+        )
+        cancel_btn.pack(side=tk.LEFT)
+        
+        # Focus on first field
+        entries['enrollment'].focus()
+    
+    def show_add_book_dialog(self):
+        """Show add book dialog"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Add New Book")
+        dialog.geometry("500x450")
+        dialog.configure(bg='white')
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.geometry("+%d+%d" % (self.root.winfo_rootx() + 100, self.root.winfo_rooty() + 100))
+        
+        # Title
+        title_label = tk.Label(
+            dialog,
+            text="≡ƒôÜ Add New Book",
+            font=('Segoe UI', 16, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        )
+        title_label.pack(pady=(20, 30))
+        
+        # Form frame
+        form_frame = tk.Frame(dialog, bg='white')
+        form_frame.pack(expand=True, padx=40)
+        
+        # Form fields
+        fields = [
+            ("Book ID:", "book_id"),
+            ("Title:", "title"),
+            ("Author:", "author"),
+            ("ISBN:", "isbn"),
+            ("Category:", "category"),
+            ("Total Copies:", "copies")
+        ]
+        
+        entries = {}
+        
+        for i, (label_text, field_name) in enumerate(fields):
+            # Label
+            label = tk.Label(
+                form_frame,
+                text=label_text,
+                font=('Segoe UI', 11, 'bold'),
+                bg='white',
+                fg=self.colors['accent']
+            )
+            label.grid(row=i, column=0, sticky='w', pady=(0, 15), padx=(0, 20))
+            
+            # Entry or Combobox
+            if field_name == "category":
+                entry = ttk.Combobox(
+                    form_frame,
+                    values=["Technology", "Textbook", "Research"],
+                    font=('Segoe UI', 11),
+                    width=25,
+                    state="readonly"
+                )
+                entry.set("Technology")  # Default category
+            else:
+                entry = tk.Entry(
+                    form_frame,
+                    font=('Segoe UI', 11),
+                    width=30,
+                    relief='solid',
+                    bd=2
+                )
+                if field_name == "copies":
+                    entry.insert(0, "1")  # Default to 1 copy
+            
+            entry.grid(row=i, column=1, pady=(0, 15))
+            entries[field_name] = entry
+        
+        # Buttons
+        btn_frame = tk.Frame(dialog, bg='white')
+        btn_frame.pack(pady=20)
+        
+        def save_book():
+            # Validate required fields
+            required_fields = ['book_id', 'title']
+            for field in required_fields:
+                if not entries[field].get().strip():
+                    messagebox.showerror("Error", f"{field.replace('_', ' ').title()} is required!")
+                    return
+            # Validate copies
+            try:
+                copies = int(entries['copies'].get())
+                if copies <= 0:
+                    raise ValueError()
+            except ValueError:
+                messagebox.showerror("Error", "Total copies must be a positive number!")
+                return
+            # Add book
+            success, message = self.db.add_book(
+                entries['book_id'].get().strip(),
+                entries['title'].get().strip(),
+                entries['author'].get().strip(),
+                entries['isbn'].get().strip(),
+                entries['category'].get(),
+                copies
+            )
+            if success:
+                messagebox.showinfo("Success", message)
+                dialog.destroy()
+                # Refresh books view
+                self.refresh_books()
+                # Update dashboard statistics
+                self.refresh_dashboard()
+            else:
+                messagebox.showerror("Error", message)
+        
+        save_btn = tk.Button(
+            btn_frame,
+            text="≡ƒÆ╛ Save Book",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=10,
+            command=save_book,
+            cursor='hand2'
+        )
+        save_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        cancel_btn = tk.Button(
+            btn_frame,
+            text="Γ¥î Cancel",
+            font=('Segoe UI', 12, 'bold'),
+            bg='#6c757d',
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=10,
+            command=dialog.destroy,
+            cursor='hand2'
+        )
+        cancel_btn.pack(side=tk.LEFT)
+        
+        # Focus on first field
+        entries['book_id'].focus()
+    
+    def borrow_book(self):
+        """Handle book borrowing"""
+        enrollment_text = self.borrow_enrollment_entry.get().strip()
+        book_text = self.borrow_book_id_entry.get().strip()
+        borrow_date = self.borrow_borrow_date_entry.get().strip()
+        due_date = self.borrow_due_date_entry.get().strip()
+        
+        if not all([enrollment_text, book_text, borrow_date, due_date]):
+            messagebox.showerror("Error", "All fields are required!")
+            return
+        
+        # Extract enrollment number (before " - " if formatted, otherwise use as is)
+        enrollment_no = enrollment_text.split(' - ')[0] if ' - ' in enrollment_text else enrollment_text
+        
+        # Extract book ID (before " - " if formatted, otherwise use as is)
+        book_id = book_text.split(' - ')[0] if ' - ' in book_text else book_text
+        
+        # Validate date format (borrow & due)
+        try:
+            from datetime import datetime, timedelta
+            datetime.strptime(borrow_date, '%Y-%m-%d')
+            datetime.strptime(due_date, '%Y-%m-%d')
+        except ValueError:
+            messagebox.showerror("Error", "Invalid date format! Please use YYYY-MM-DD")
+            return
+        # Ensure due >= borrow
+        from datetime import datetime as _dt
+        if _dt.strptime(due_date, '%Y-%m-%d') < _dt.strptime(borrow_date, '%Y-%m-%d'):
+            messagebox.showerror("Error", "Due date cannot be before issue date")
+            return
+
+        # UI-side validation for allowed range: 1..LOAN_PERIOD_DAYS days from borrow
+        try:
+            bd_obj = datetime.strptime(borrow_date, '%Y-%m-%d')
+            dd_obj = datetime.strptime(due_date, '%Y-%m-%d')
+            diff_days = (dd_obj - bd_obj).days
+            if not (1 <= diff_days <= LOAN_PERIOD_DAYS):
+                messagebox.showerror(
+                    "Invalid Due Date",
+                    f"Due date must be between 1 and {LOAN_PERIOD_DAYS} days after the issue date."
+                )
+                return
+        except Exception:
+            pass
+
+        success, message = self.db.borrow_book(enrollment_no, book_id, borrow_date, due_date)
+        
+        if success:
+            # Determine if late and show punishment popup if overdue
+            late_popup_shown = False
+            try:
+                conn = self.db.get_connection()
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT br.due_date, br.return_date
+                    FROM borrow_records br
+                    WHERE br.enrollment_no = ? AND br.book_id = ? AND br.status = 'returned'
+                    ORDER BY br.id DESC LIMIT 1
+                """, (enrollment_no, book_id))
+                row = cur.fetchone()
+                conn.close()
+                if row:
+                    due_date_val, return_date_val = row
+                    from datetime import datetime as _dt
+                    try:
+                        dd = _dt.strptime(due_date_val, '%Y-%m-%d').date()
+                        rd = _dt.strptime(return_date_val, '%Y-%m-%d').date()
+                        if rd > dd:
+                            overdue_days = (rd - dd).days
+                            fine_amount = overdue_days * FINE_PER_DAY
+                            messagebox.showwarning(
+                                "Late Return",
+                                f"You failed to return the book on time.\n\nDue Date: {due_date_val}\nReturn Date: {return_date_val}\nOverdue Days: {overdue_days}\nFine: {fine_amount} units\n\nYou are punished for late submission!"
+                            )
+                            late_popup_shown = True
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            if not late_popup_shown:
+                messagebox.showinfo("Success", message)
+            # Clear fields
+            self.borrow_enrollment_entry.delete(0, tk.END)
+            self.borrow_book_id_entry.delete(0, tk.END)
+            # Reset due date to default (suggest max window of 7 days)
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            self.borrow_borrow_date_entry.delete(0, tk.END)
+            self.borrow_borrow_date_entry.insert(0, today_str)
+            self.borrow_due_date_entry.delete(0, tk.END)
+            # Suggest 7-day period by default; user may change to 1..7 days
+            default_due = (datetime.now() + timedelta(days=LOAN_PERIOD_DAYS)).strftime('%Y-%m-%d')
+            self.borrow_due_date_entry.insert(0, default_due)
+
+            # Clear student and book details
+            self.borrow_student_details.config(text="")
+            self.borrow_book_details.config(text="")
+
+            # Refresh views
+            self.refresh_borrowed()
+            self.refresh_books()
+            self.refresh_dashboard()
+            self.refresh_records()
+        else:
+            messagebox.showerror("Error", message)
+    
+    def return_book(self):
+        """Handle book return"""
+        enrollment_text = self.return_enrollment_entry.get().strip()
+        book_text = self.return_book_id_entry.get().strip()
+        
+        if not all([enrollment_text, book_text]):
+            messagebox.showerror("Error", "Both Enrollment No and Book ID are required!")
+            return
+        
+        # Extract enrollment number (before " - " if formatted, otherwise use as is)
+        enrollment_no = enrollment_text.split(' - ')[0] if ' - ' in enrollment_text else enrollment_text
+        
+        # Extract book ID (before " - " if formatted, otherwise use as is)
+        book_id = book_text.split(' - ')[0] if ' - ' in book_text else book_text
+        
+        # Get optional return date from UI
+        return_date_input = getattr(self, 'return_date_entry', None)
+        user_return_date = return_date_input.get().strip() if return_date_input else None
+        if user_return_date == '':
+            user_return_date = None
+
+        success, message = self.db.return_book(enrollment_no, book_id, user_return_date)
+        
+        if success:
+            messagebox.showinfo("Success", message)
+            # Late return fine popup
+            try:
+                conn = self.db.get_connection()
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT due_date, return_date FROM borrow_records
+                    WHERE enrollment_no=? AND book_id=?
+                    ORDER BY id DESC LIMIT 1
+                """, (enrollment_no, book_id))
+                row = cur.fetchone()
+                conn.close()
+                if row and row[0] and row[1]:
+                    from datetime import datetime as _dt
+                    due_dt = _dt.strptime(row[0], '%Y-%m-%d')
+                    ret_dt = _dt.strptime(row[1], '%Y-%m-%d')
+                    days_late = (ret_dt - due_dt).days
+                    if days_late > 0:
+                        fine_amount = days_late * FINE_PER_DAY
+                        messagebox.showwarning(
+                            "Late Return",
+                            f"This book is returned {days_late} day(s) late.\nFine: Rs {fine_amount}"
+                        )
+            except Exception as e:
+                print(f"Late return fine computation failed: {e}")
+            # Clear fields
+            self.return_enrollment_entry.delete(0, tk.END)
+            self.return_book_id_entry.delete(0, tk.END)
+            
+            # Clear student details and return date (reset to today for convenience)
+            self.return_student_details.config(text="")
+            if return_date_input:
+                return_date_input.delete(0, tk.END)
+                return_date_input.insert(0, datetime.now().strftime('%Y-%m-%d'))
+            
+            # Refresh views
+            self.refresh_borrowed()
+            self.refresh_books()
+            self.refresh_dashboard()
+            self.refresh_records()
+        else:
+            messagebox.showerror("Error", message)
+    
+    def import_students_from_excel(self):
+        """Import students from Excel file (append; skip invalid or duplicate)."""
+        file_path = filedialog.askopenfilename(
+            title="Select Students Excel file",
+            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
+        )
+        if not file_path:
+            return
+        try:
+            df = pd.read_excel(file_path)
+            # Normalize columns
+            df.columns = df.columns.str.lower().str.replace(' ', '_')
+            # Accept some synonyms
+            column_map = {
+                'enrollment': 'enrollment_no',
+                'enrollmentno': 'enrollment_no',
+                'enrollment_number': 'enrollment_no'
+            }
+            df.rename(columns={k: v for k, v in column_map.items() if k in df.columns}, inplace=True)
+            required = ['enrollment_no', 'name']
+            missing = [c for c in required if c not in df.columns]
+            if missing:
+                messagebox.showerror("Error", f"Missing required columns: {', '.join(missing)}")
+                return
+            added = 0
+            skipped = 0
+            duplicate = 0
+            errors = 0
+            error_list = []
+            for idx, row in df.iterrows():
+                row_no = idx + 2
+                try:
+                    enrollment = str(row.get('enrollment_no', '')).strip()
+                    name = str(row.get('name', '')).strip()
+                    email = str(row.get('email', '')).strip()
+                    phone = str(row.get('phone', '')).strip()
+                    department = str(row.get('department', 'Computer')).strip() or 'Computer'
+                    year = str(row.get('year', '2nd Year')).strip() or '2nd Year'
+                    if not enrollment or not name or enrollment.lower() == 'nan' or name.lower() == 'nan':
+                        skipped += 1
+                        continue
+                    success, message = self.db.add_student(enrollment, name, email, phone, department, year)
+                    if success:
+                        added += 1
+                    else:
+                        # Determine if it's duplicate vs generic error
+                        if 'exists' in message.lower() or 'duplicate' in message.lower():
+                            duplicate += 1
+                        else:
+                            errors += 1
+                            error_list.append(f"Row {row_no}: {message}")
+                except Exception as e:
+                    errors += 1
+                    error_list.append(f"Row {row_no}: {e}")
+            summary = (
+                f"Import completed!\n\nAdded: {added}\nDuplicates: {duplicate}\n"
+                f"Skipped (missing enrollment/name): {skipped}\nErrors: {errors}"
+            )
+            if error_list:
+                summary += "\n\nFirst few errors:\n" + "\n".join(error_list[:5])
+                if len(error_list) > 5:
+                    summary += f"\n... and {len(error_list) - 5} more errors."
+            messagebox.showinfo("Import Results", summary)
+            if added or duplicate:
+                self.refresh_students()
+                self.refresh_dashboard()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to import Excel file: {e}")
+    def search_students(self):
+        """Search and filter students"""
+        search_term = self.student_search_var.get().lower()
+        year_filter = self.student_year_filter.get()
+        
+        # Get all students from database
+        try:
+            students = self.db.get_students()
+
+            # DB students columns:
+            # (id, enrollment_no, name, email, phone, department, year, date_registered)
+            filtered_students = []
+            for s in students:
+                if search_term:
+                    text = f"{s[1]} {s[2]} {s[3]} {s[4]} {s[6]} {s[5]}".lower()
+                    if search_term not in text:
+                        continue
+                if year_filter != "All":
+                    if (s[6] or '').strip() != year_filter:
+                        continue
+                filtered_students.append(s)
+
+            self.populate_students_tree(filtered_students)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Error searching students: {str(e)}")
+    
+    def search_books(self):
+        """Search and filter books"""
+        try:
+            if hasattr(self, 'books_tree'):
+                term = (self.book_search_var.get() or '').strip()
+                category = self.book_category_filter.get()
+                # Fetch from DB with optional LIKE filtering when term present
+                books = self.db.get_books(term)
+                # DB books columns:
+                # (id, book_id, title, author, isbn, category, total_copies, available_copies, date_added)
+                filtered = []
+                for b in books:
+                    if category and category != 'All':
+                        if (b[5] or '').strip() != category:
+                            continue
+                    filtered.append(b)
+                self.populate_books_tree(filtered)
+        except Exception as e:
+            print(f"Error searching books: {str(e)}")
+    
+    def search_records(self):
+        """Search and filter records"""
+        search_term = self.record_search_var.get().lower()
+        type_filter = self.record_type_filter.get()
+        from_date = self.record_from_date.get()
+        to_date = self.record_to_date.get()
+        
+        records = self.get_all_records()
+        
+        # Filter records
+        filtered_records = []
+        for record in records:
+            # record: (enroll, name, book_id, title, borrow_date, due_date, return_date, status, fine)
+            status_val = record[7]
+            fine_val = record[8]
+            if type_filter != "All":
+                if type_filter == "Overdue":
+                    if fine_val == '0':
+                        continue
+                else:
+                    if status_val.lower() != type_filter.lower():
+                        continue
+            
+            # Apply search filter
+            if search_term:
+                if not any(search_term in str(field).lower() for field in record):
+                    continue
+            
+            # Apply date filters
+            if from_date:
+                try:
+                    record_date = datetime.strptime(record[4], '%Y-%m-%d')  # borrow_date index 4
+                    from_date_obj = datetime.strptime(from_date, '%Y-%m-%d')
+                    if record_date < from_date_obj:
+                        continue
+                except ValueError:
+                    pass
+            
+            if to_date:
+                try:
+                    record_date = datetime.strptime(record[4], '%Y-%m-%d')
+                    to_date_obj = datetime.strptime(to_date, '%Y-%m-%d')
+                    if record_date > to_date_obj:
+                        continue
+                except ValueError:
+                    pass
+            
+            filtered_records.append(record)
+        
+        self.populate_records_tree(filtered_records)
+    
+    def clear_record_filters(self):
+        """Clear all record filters"""
+        self.record_search_var.set("")
+        self.record_type_filter.set("All")
+        self.record_from_date.delete(0, tk.END)
+        self.record_to_date.delete(0, tk.END)
+        self.search_records()
+    
+    def refresh_all_data(self):
+        """Refresh all data in the application"""
+        self.refresh_dashboard()
+        self.refresh_students()
+        self.refresh_books()
+        self.refresh_borrowed()
+        self.refresh_records()
+    
+    def refresh_dashboard(self):
+        """Refresh dashboard statistics"""
+        # Refresh dashboard borrowed books
+        if hasattr(self, 'dashboard_borrowed_tree'):
+            self.refresh_dashboard_borrowed()
+        
+        # Refresh statistics cards if they exist
+        if hasattr(self, 'stats_container'):
+            # Clear existing stats
+            for widget in self.stats_container.winfo_children():
+                widget.destroy()
+            # Recreate stats cards
+            self.create_stats_cards(self.stats_container)
+    
+    def refresh_students(self):
+        """Refresh students list"""
+        self.search_students()  # This will apply current filters
+    
+    def refresh_books(self):
+        """Refresh books list"""
+        self.search_books()  # This will apply current filters
+    
+    def refresh_borrowed(self):
+        """Refresh borrowed books list"""
+        borrowed = self.db.get_borrowed_books()
+        self.populate_borrowed_tree(borrowed)
+    
+    def refresh_records(self):
+        """Refresh records list"""
+        self.search_records()  # This will apply current filters
+    
+    def populate_students_tree(self, students):
+        """Populate students treeview"""
+        if hasattr(self, 'students_tree'):
+            for item in self.students_tree.get_children():
+                self.students_tree.delete(item)
+            
+            for student in students:
+                # Map DB tuple to UI columns
+                # Enrollment No, Name, Email, Phone, Year
+                display_data = (student[1], student[2], student[3], student[4], student[6])
+                self.students_tree.insert('', 'end', values=display_data)
+    
+    def populate_books_tree(self, books):
+        """Populate books treeview"""
+        if hasattr(self, 'books_tree'):
+            for item in self.books_tree.get_children():
+                self.books_tree.delete(item)
+            
+            for book in books:
+                # Map DB tuple to UI columns: (Book ID, Title, Author, ISBN, Category, Total, Available)
+                display_data = (book[1], book[2], book[3], book[4], book[5], book[6], book[7])
+                self.books_tree.insert('', 'end', values=display_data)
+    
+    def populate_borrowed_tree(self, borrowed):
+        """Populate borrowed books treeview with enhanced data
+        Expected order from get_borrowed_books():
+        (enrollment_no, student_name, department, year, book_id, title, author, borrow_date, due_date)
+        """
+        if hasattr(self, 'borrowed_tree'):
+            for item in self.borrowed_tree.get_children():
+                self.borrowed_tree.delete(item)
+            
+            for record in borrowed:
+                # record indexes mapping
+                enrollment_no = record[0]
+                student_name = record[1]
+                book_id = record[4]
+                book_title = record[5]
+                borrow_date = record[7]
+                due_date_val = record[8]
+                # Calculate days left
+                try:
+                    from datetime import datetime as _dt
+                    due_date = _dt.strptime(due_date_val, '%Y-%m-%d').date()
+                    today = _dt.now().date()
+                    delta = (due_date - today).days
+                    if delta < 0:
+                        days_left_str = f"Overdue {abs(delta)}d"
+                        tag = 'overdue'
+                    elif delta == 0:
+                        days_left_str = 'Due Today'
+                        tag = ''
+                    else:
+                        days_left_str = f"{delta}d left"
+                        tag = ''
+                except Exception:
+                    days_left_str = 'N/A'
+                    tag = ''
+                display_data = (student_name, book_id, book_title, borrow_date, due_date_val, days_left_str)
+                self.borrowed_tree.insert('', 'end', values=display_data, tags=(tag,))
+            try:
+                self.borrowed_tree.tag_configure('overdue', background='#ffe6e6', foreground='#b30000')
+            except Exception:
+                pass
+    
+    def populate_activities_tree(self, activities):
+        """Populate recent activities treeview"""
+        if hasattr(self, 'activities_tree'):
+            for item in self.activities_tree.get_children():
+                self.activities_tree.delete(item)
+            
+            for activity in activities:
+                self.activities_tree.insert('', 'end', values=activity)
+    
+    def populate_records_tree(self, records):
+        """Populate records treeview"""
+        if hasattr(self, 'records_tree'):
+            for item in self.records_tree.get_children():
+                self.records_tree.delete(item)
+            
+            for record in records:
+                # record: (..., status, fine)
+                *base, status, fine = record
+                fine_is_num = False
+                if isinstance(fine, str):
+                    try:
+                        fine_val_num = int(fine)
+                        fine_is_num = True
+                    except ValueError:
+                        fine_val_num = fine
+                else:
+                    fine_val_num = fine
+                    fine_is_num = True
+                fine_display = f"{fine_val_num} (Late)" if fine_is_num and isinstance(fine_val_num, int) and fine_val_num > 0 else str(fine_val_num)
+                tag = 'late' if (fine_is_num and isinstance(fine_val_num, int) and fine_val_num > 0) else ''
+                self.records_tree.insert('', 'end', values=(*base, status, fine_display), tags=(tag,))
+            try:
+                self.records_tree.tag_configure('late', background='#fff3cd')
+            except Exception:
+                pass
+    
+    def get_student_name(self, enrollment_no):
+        """Get student name by enrollment number"""
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM students WHERE enrollment_no = ?", (enrollment_no,))
+            result = cursor.fetchone()
+            conn.close()
+            return result[0] if result else enrollment_no
+        except:
+            return enrollment_no
+    
+    def get_book_title(self, book_id):
+        """Get book title by book ID"""
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT title FROM books WHERE book_id = ?", (book_id,))
+            result = cursor.fetchone()
+            conn.close()
+            return result[0] if result else book_id
+        except:
+            return book_id
+    
+    def get_recent_activities(self):
+        """Get recent activities for dashboard"""
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            # Get recent borrow/return activities
+            cursor.execute("""
+                SELECT 
+                    CASE WHEN return_date IS NULL THEN 'Borrow' ELSE 'Return' END as type,
+                    s.name as student_name,
+                    b.title as book_title,
+                    CASE WHEN return_date IS NULL THEN borrow_date ELSE return_date END as activity_date,
+                    status
+                FROM borrow_records br
+                JOIN students s ON br.enrollment_no = s.enrollment_no
+                JOIN books b ON br.book_id = b.book_id
+                ORDER BY br.id DESC
+                LIMIT 20
+            """)
+            
+            activities = cursor.fetchall()
+            conn.close()
+            return activities
+        except Exception as e:
+            print(f"Error getting recent activities: {e}")
+            return []
+    
+    def get_all_records(self):
+        """Get all transaction records"""
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            # Return enrollment_no and book_id explicitly for correct display
+            cursor.execute("""
+                SELECT 
+                    br.enrollment_no,
+                    s.name as student_name,
+                    br.book_id,
+                    b.title as book_title,
+                    br.borrow_date,
+                    br.due_date,
+                    COALESCE(br.return_date, 'Not returned') as return_date,
+                    br.status,
+                    CASE 
+                        WHEN br.status = 'borrowed' AND date('now') > br.due_date 
+                        THEN CAST(julianday('now') - julianday(br.due_date) AS INT)
+                        ELSE 0 
+                    END as days_overdue
+                FROM borrow_records br
+                JOIN students s ON br.enrollment_no = s.enrollment_no
+                JOIN books b ON br.book_id = b.book_id
+                ORDER BY br.id DESC
+            """)
+            
+            records = cursor.fetchall()
+            conn.close()
+            
+            # Format records for display
+            formatted_records = []
+            from datetime import datetime as _dt
+            today = _dt.now().date()
+            for rec in records:
+                (enroll, student_name, book_id, title, borrow_date, due_date, return_date, status, days_overdue) = rec
+                # Determine effective overdue days & fine
+                try:
+                    due_d = _dt.strptime(due_date, '%Y-%m-%d').date()
+                except Exception:
+                    due_d = None
+                fine = 0
+                if status == 'borrowed':
+                    # still out; overdue based on today
+                    if due_d and today > due_d:
+                        overdue_days = (today - due_d).days
+                        fine = overdue_days * FINE_PER_DAY
+                else:
+                    # returned; compute late based on return_date
+                    try:
+                        ret_d = _dt.strptime(return_date, '%Y-%m-%d').date()
+                        if due_d and ret_d > due_d:
+                            overdue_days = (ret_d - due_d).days
+                            fine = overdue_days * FINE_PER_DAY
+                    except Exception:
+                        pass
+                # Keep fine as numeric for downstream display logic
+                formatted_records.append((enroll, student_name, book_id, title, borrow_date, due_date, return_date, status, fine))
+            return formatted_records
+        except Exception as e:
+            print(f"Error getting records: {e}")
+            return []
+
+    # ------------------------------------------------------------------
+    # Date auto update helpers
+    # ------------------------------------------------------------------
+    def on_borrow_date_changed(self, event=None):
+        """When issue date changes, suggest due date = issue + LOAN_PERIOD_DAYS (max),
+        but allow user to choose 1..LOAN_PERIOD_DAYS days range."""
+        try:
+            from datetime import datetime as _dt, timedelta
+            borrow_str = self.borrow_borrow_date_entry.get()
+            bd = _dt.strptime(borrow_str, '%Y-%m-%d')
+            new_due = (bd + timedelta(days=LOAN_PERIOD_DAYS)).strftime('%Y-%m-%d')
+            if DateEntry:
+                try:
+                    self.borrow_due_date_entry.config(state='normal')
+                except Exception:
+                    pass
+                try:
+                    self.borrow_due_date_entry.set_date(_dt.strptime(new_due, '%Y-%m-%d'))
+                except Exception:
+                    self.borrow_due_date_entry.delete(0, tk.END)
+                    self.borrow_due_date_entry.insert(0, new_due)
+                try:
+                    self.borrow_due_date_entry.config(state='readonly')
+                except Exception:
+                    pass
+            else:
+                self.borrow_due_date_entry.delete(0, tk.END)
+                self.borrow_due_date_entry.insert(0, new_due)
+        except Exception as e:
+            print(f"Auto due date update failed: {e}")
+
+    def on_due_date_attempt_change(self):
+        """Validate due-date change: must be within 1..LOAN_PERIOD_DAYS days of issue date."""
+        try:
+            from datetime import datetime as _dt
+            bd = _dt.strptime(self.borrow_borrow_date_entry.get(), '%Y-%m-%d')
+            dd = _dt.strptime(self.borrow_due_date_entry.get(), '%Y-%m-%d')
+            diff = (dd - bd).days
+            if not (1 <= diff <= LOAN_PERIOD_DAYS):
+                messagebox.showerror(
+                    "Invalid Due Date",
+                    f"Due date must be between 1 and {LOAN_PERIOD_DAYS} days after the issue date."
+                )
+                # Re-suggest maximum allowed
+                from datetime import timedelta
+                suggested = (bd + timedelta(days=LOAN_PERIOD_DAYS)).strftime('%Y-%m-%d')
+                try:
+                    self.borrow_due_date_entry.config(state='normal')
+                    self.borrow_due_date_entry.delete(0, tk.END)
+                    self.borrow_due_date_entry.insert(0, suggested)
+                finally:
+                    try:
+                        self.borrow_due_date_entry.config(state='readonly')
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+    
+    def export_students_dialog(self):
+        """Show export students dialog with year selection"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Export Students to Excel")
+        dialog.geometry("400x300")
+        dialog.configure(bg='white')
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.geometry("+%d+%d" % (self.root.winfo_rootx() + 200, self.root.winfo_rooty() + 200))
+        
+        # Title
+        title_label = tk.Label(
+            dialog,
+            text="≡ƒôè Export Students",
+            font=('Segoe UI', 16, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        )
+        title_label.pack(pady=(20, 30))
+        
+        # Options frame
+        options_frame = tk.Frame(dialog, bg='white')
+        options_frame.pack(expand=True, padx=40)
+        
+        # Year selection
+        year_label = tk.Label(
+            options_frame,
+            text="Select Year to Export:",
+            font=('Segoe UI', 12, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        )
+        year_label.pack(pady=(0, 10))
+        
+        year_var = tk.StringVar(value="All")
+        year_frame = tk.Frame(options_frame, bg='white')
+        year_frame.pack(pady=(0, 20))
+        years = ["All", "1st", "2nd", "3rd", "Pass Out"]
+        for year in years:
+            rb = tk.Radiobutton(
+                year_frame,
+                text=year,
+                variable=year_var,
+                value=year,
+                font=('Segoe UI', 11),
+                bg='white',
+                fg=self.colors['accent']
+            )
+            rb.pack(anchor='w')
+        
+        # Auto-update years option
+        auto_update_var = tk.BooleanVar(value=True)
+        auto_cb = tk.Checkbutton(
+            options_frame,
+            text="Auto-update years to current academic year before export",
+            variable=auto_update_var,
+            bg='white', fg=self.colors['accent'], selectcolor='white', anchor='w', justify='left', wraplength=320
+        )
+        auto_cb.pack(fill=tk.X, pady=(0, 10))
+
+        # Buttons
+        btn_frame = tk.Frame(dialog, bg='white')
+        btn_frame.pack(pady=20)
+        
+        def export_data():
+            selected_year = year_var.get()
+            self.export_students_to_excel(selected_year, auto_update=auto_update_var.get())
+            dialog.destroy()
+        
+        export_btn = tk.Button(
+            btn_frame,
+            text="≡ƒôè Export to Excel",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=10,
+            command=export_data,
+            cursor='hand2'
+        )
+        export_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        cancel_btn = tk.Button(
+            btn_frame,
+            text="Γ¥î Cancel",
+            font=('Segoe UI', 12, 'bold'),
+            bg='#6c757d',
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=10,
+            command=dialog.destroy,
+            cursor='hand2'
+        )
+        cancel_btn.pack(side=tk.LEFT)
+    
+    def export_students_to_excel(self, year_filter="All", auto_update=True):
+        """Export students to Excel with year filter.
+        If auto_update is True, compute current year (1st..3rd) based on date_registered and an academic rollover on July 1.
+        """
+        try:
+            students = self.db.get_students()
+            
+            # Filter by Computer department and year
+            filtered_students = []
+            for student in students:
+                if student[5] == "Computer":  # Department filter
+                    # Compute effective year label if requested
+                    eff_year = student[6]
+                    if auto_update:
+                        try:
+                            eff_year = self._compute_current_year_label(student[7], student[6])
+                        except Exception:
+                            eff_year = student[6]
+                    if year_filter == "All" or eff_year == year_filter:
+                        filtered_students.append({
+                            'Enrollment No': student[1],
+                            'Name': student[2],
+                            'Email': student[3],
+                            'Phone': student[4],
+                            'Department': student[5],
+                            'Year': eff_year,
+                            'Registered': student[7]
+                        })
+            
+            if not filtered_students:
+                messagebox.showwarning("Warning", f"No students found for year: {year_filter}")
+                return
+            
+            # Create DataFrame
+            df = pd.DataFrame(filtered_students)
+            
+            # Save to file
+            filename = f"students_{year_filter}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel files", "*.xlsx")],
+                # Tkinter option is 'initialfile' (not 'initialname')
+                initialfile=filename
+            )
+            
+            if file_path:
+                # Add three-line header then table using openpyxl for styling flexibility
+                with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                    sheet = 'Students'
+                    # Write data after header block
+                    start_row = 3  # we will write header manually (3 lines)
+                    df.to_excel(writer, sheet_name=sheet, index=False, startrow=start_row)
+                    ws = writer.book[sheet]
+                    # Write required header above
+                    self._write_excel_header_openpyxl(ws, start_row=1)
+                messagebox.showinfo("Success", f"Students data exported to {file_path}")
+                
+                # Ask if user wants to open the file
+                if messagebox.askyesno("Open File", "Do you want to open the exported file?"):
+                    self.open_file(file_path)
+                    
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export students: {str(e)}")
+
+    # ---------------------- Academic Year Helpers ----------------------
+    def _compute_current_year_label(self, date_registered, stored_year_label):
+        """Return current year label ('1st','2nd','3rd') based on date_registered and today's date.
+        Assumptions: 3-year course; academic year rolls over on July 1. Falls back to stored label if missing date.
+        """
+        try:
+            from datetime import datetime as _dt
+            if not date_registered:
+                return stored_year_label or '1st'
+            d = _dt.strptime(str(date_registered), '%Y-%m-%d').date()
+            today = _dt.now().date()
+            def acad_index(x):
+                return x.year if (x.month, x.day) >= (7, 1) else x.year - 1
+            promotions = max(0, acad_index(today) - acad_index(d))
+            base = 1
+            map_to_num = {'1st': 1, '2nd': 2, '3rd': 3, 'First':1, 'Second':2, 'Third':3}
+            if stored_year_label in map_to_num:
+                base = map_to_num[stored_year_label]
+            progressed = base + promotions
+            if progressed >= 4:
+                return 'Pass Out'
+            new_num = min(max(progressed, 1), 3)
+            return {1:'1st',2:'2nd',3:'3rd'}[new_num]
+        except Exception:
+            return stored_year_label or '1st'
+
+    def promote_student_years(self):
+        """One-step promotion for all students: 1stΓåÆ2nd, 2ndΓåÆ3rd, 3rdΓåÆPass Out. 'Pass Out' remains unchanged.
+        Shows a detailed summary of transitions.
+        """
+        if not messagebox.askyesno(
+            "Promote Student Years",
+            "This will promote every student by ONE academic step (1stΓåÆ2nd, 2ndΓåÆ3rd, 3rdΓåÆPass Out).\n\nProceed?"
+        ):
+            return
+
+        def _norm(label: str) -> str:
+            if not label:
+                return '1st'
+            s = str(label).strip().lower()
+            if s in (
+                '1st', 'first', 'first year', '1', 'i', 'fy', 'f.y', 'f.y.', 'fe', 'fe year'
+            ):
+                return '1st'
+            if s in (
+                '2nd', 'second', 'second year', '2', 'ii', 'sy', 's.y', 's.y.'
+            ):
+                return '2nd'
+            if s in (
+                '3rd', 'third', 'third year', '3', 'iii', 'ty', 't.y', 't.y.'
+            ):
+                return '3rd'
+            if 'pass' in s:
+                return 'Pass Out'
+            return label
+
+        def _promote_once(label: str) -> str:
+            l = _norm(label)
+            return {'1st': '2nd', '2nd': '3rd', '3rd': 'Pass Out'}.get(l, l)
+
+        try:
+            conn = self.db.get_connection()
+            cur = conn.cursor()
+            cur.execute('SELECT enrollment_no, year FROM students')
+            rows = cur.fetchall()
+            c_12 = c_23 = c_3p = c_skip = 0
+            for en, yr in rows:
+                new = _promote_once(yr)
+                if new != yr:
+                    cur.execute('UPDATE students SET year=? WHERE enrollment_no=?', (new, en))
+                    if _norm(yr) == '1st' and new == '2nd':
+                        c_12 += 1
+                    elif _norm(yr) == '2nd' and new == '3rd':
+                        c_23 += 1
+                    elif _norm(yr) == '3rd' and new == 'Pass Out':
+                        c_3p += 1
+                else:
+                    c_skip += 1
+            conn.commit()
+            conn.close()
+            total = c_12 + c_23 + c_3p
+            msg = (
+                f"Updated Year for {total} student(s).\n\n"
+                f"1st ΓåÆ 2nd: {c_12}\n2nd ΓåÆ 3rd: {c_23}\n3rd ΓåÆ Pass Out: {c_3p}\n"
+                f"Unchanged: {c_skip} (already 'Pass Out' or non-standard label)"
+            )
+            messagebox.showinfo("Promotion Complete", msg)
+            try:
+                self.refresh_students()
+            except Exception:
+                pass
+        except Exception as e:
+            messagebox.showerror("Promotion Failed", f"Could not promote student years: {e}")
+    
+    def export_books_to_excel(self):
+        """Export books to Excel"""
+        try:
+            books = self.db.get_books()
+            
+            # Filter Computer department books
+            filtered_books = []
+            for book in books:
+                # Defensive validation: check for missing Book ID or Title (should not happen due to enforced validation)
+                invalid_rows = []
+                for b in books:
+                    # Assuming schema: (id, book_id, title, author, isbn, category, total_copies, available_copies)
+                    try:
+                        book_id_val = str(b[1]).strip()
+                        title_val = str(b[2]).strip()
+                        if not book_id_val or not title_val:
+                            invalid_rows.append(b)
+                    except Exception:
+                        invalid_rows.append(b)
+                if invalid_rows:
+                    if not messagebox.askyesno(
+                        "Validation Warning",
+                        f"Detected {len(invalid_rows)} book record(s) with missing Book ID or Title. Continue export?"
+                    ):
+                        return
+                if book[5] in ["Technology", "Textbook", "Research"]:
+                    filtered_books.append({
+                        'Book ID': book[1],
+                        'Title': book[2],
+                        'Author': book[3],
+                        'ISBN': book[4],
+                        'Category': book[5],
+                        'Total Copies': book[6],
+                        'Available Copies': book[7],
+                        'Date Added': book[8]
+                    })
+            
+            if not filtered_books:
+                messagebox.showwarning("Warning", "No books found to export!")
+                return
+            
+            # Create DataFrame
+            df = pd.DataFrame(filtered_books)
+            
+            # Save to file
+            filename = f"books_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel files", "*.xlsx")],
+                # Correct parameter name
+                initialfile=filename
+            )
+            
+            if file_path:
+                with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                    sheet = 'Books'
+                    df.to_excel(writer, sheet_name=sheet, index=False, startrow=3)
+                    ws = writer.book[sheet]
+                    self._write_excel_header_openpyxl(ws, start_row=1)
+                messagebox.showinfo("Success", f"Books data exported to {file_path}")
+                
+                # Ask if user wants to open the file
+                if messagebox.askyesno("Open File", "Do you want to open the exported file?"):
+                    self.open_file(file_path)
+                    
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export books: {str(e)}")
+    
+    def export_records_to_excel(self):
+        """Export records to Excel"""
+        try:
+            # Instead of exporting ALL records from DB, export only what user currently sees
+            # in the Records tab (i.e., after filters/search applied). This gives a true
+            # "filtered export" matching onΓÇæscreen data.
+            if not hasattr(self, 'records_tree'):
+                messagebox.showerror("Error", "Records view not initialized yet.")
+                return
+
+            visible_records = []
+            for item_id in self.records_tree.get_children():
+                vals = self.records_tree.item(item_id, 'values')
+                # Expecting 9-tuple: (Enrollment No, Student Name, Book ID, Book Title, Borrow Date, Due Date, Return Date, Status, Fine)
+                visible_records.append(vals)
+
+            if not visible_records:
+                messagebox.showwarning("Warning", "No filtered records to export (the list is empty)!")
+                return
+
+            # Build DataFrame with the same column ordering used in the tree
+            df = pd.DataFrame(visible_records, columns=[
+                'Enrollment No', 'Student Name', 'Book ID', 'Book Title', 'Issue Date',
+                'Due Date', 'Return Date', 'Status', 'Fine'
+            ])
+
+            # (Optional future enhancement) Could add metadata sheet with applied filters.
+            # For now keep it simple per request: export exactly what is visible.
+            
+            # Save to file
+            filename = f"records_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel files", "*.xlsx")],
+                # Correct parameter name
+                initialfile=filename
+            )
+            
+            if file_path:
+                with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                    sheet = 'Records'
+                    df.to_excel(writer, sheet_name=sheet, index=False, startrow=3)
+                    ws = writer.book[sheet]
+                    self._write_excel_header_openpyxl(ws, start_row=1)
+                messagebox.showinfo("Success", f"Records data exported to {file_path}")
+                
+                # Ask if user wants to open the file
+                if messagebox.askyesno("Open File", "Do you want to open the exported file?"):
+                    self.open_file(file_path)
+                    
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export records: {str(e)}")
+
+    # ------------------------------------------------------------------
+    # Overdue Notice Letter Export
+    # ------------------------------------------------------------------
+    def get_current_overdue_records(self):
+        """Return list of overdue (currently issued and past due date) records.
+        Each record tuple: (Enrollment No, Student Name, Book ID, Book Title, Issue Date, Due Date, Return Date, Status, Fine)
+        """
+        overdue = []
+        try:
+            all_records = self.get_all_records()
+            today = datetime.now().date()
+            from datetime import datetime as _dt
+            for rec in all_records:
+                enroll, name, book_id, title, borrow_date, due_date, return_date, status, fine = rec
+                if status == 'borrowed':
+                    try:
+                        due_d = _dt.strptime(due_date, '%Y-%m-%d').date()
+                        if due_d < today:
+                            days_overdue = (today - due_d).days
+                            overdue.append({
+                                'Enrollment No': enroll,
+                                'Student Name': name,
+                                'Book ID': book_id,
+                                'Book Title': title,
+                                'Issue Date': borrow_date,
+                                'Due Date': due_date,
+                                'Days Overdue': days_overdue,
+                                'Accrued Fine': int(days_overdue) * FINE_PER_DAY
+                            })
+                    except Exception:
+                        continue
+            return overdue
+        except Exception as e:
+            print(f"Overdue fetch error: {e}")
+            return []
+
+    def export_overdue_notice_letter(self):
+        """Generate overdue notice as Excel (.xlsx) + plain text (.txt) letter.
+        Excel sheet contains letter heading, body, table of overdue books, and closing with signature.
+        """
+        try:
+            overdue = self.get_current_overdue_records()
+            if not overdue:
+                messagebox.showinfo("Overdue Notice", "There are currently no overdue issued books.")
+                return
+
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            ref_code = f"Library/Overdue/{datetime.now().strftime('%Y%m%d')}"
+
+            body_lines = [
+                "Government Polytechnic Awasari (Kh)",
+                "Computer Department",
+                "Department of Library",
+                "", f"Date: {today_str}", f"Ref: {ref_code}", "",
+                "Subject: Submission of Overdue Library Books",
+                "", "Dear Students,", "",
+                "The following students are hereby notified to immediately submit the listed library books that are now overdue.",
+                f"A fine of Rs {FINE_PER_DAY} per day has accrued (or will continue to accrue) until the books are returned.",
+                "Failure to comply today will trigger disciplinary action per departmental policy.",
+                "", "Overdue Book List:", ""
+            ]
+
+            df = pd.DataFrame(overdue)
+            base_filename = f"overdue_notice_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel files", "*.xlsx")],
+                initialfile=base_filename + '.xlsx'
+            )
+            if not file_path:
+                return
+
+            try:
+                with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                    sheet_name = 'Overdue Notice'
+                    startrow = len(body_lines) + 1
+                    df.to_excel(writer, sheet_name=sheet_name, index=False, startrow=startrow)
+                    ws = writer.book[sheet_name]
+                    for idx, line in enumerate(body_lines, start=1):
+                        ws.cell(row=idx, column=1, value=line)
+                    for col_idx, col_name in enumerate(df.columns, start=1):
+                        max_len = max(len(str(col_name)), *(len(str(v)) for v in df[col_name].astype(str)))
+                        ws.column_dimensions[chr(64+col_idx)].width = min(max_len + 2, 50)
+                    closing_start = startrow + len(df) + 3
+                    closing_lines = [
+                        "", "You are directed to return the above books without further delay.",
+                        "Punishment Clause: Continued non-compliance after 3 days from this notice will result in suspension of borrowing privileges for one month and a formal report to the Academic Coordinator.",
+                        "", "Regards,", "", "__________________________", "Librarian", "Departmental Library",
+                        "Computer Department", "Government Polytechnic Awasari (Kh)"
+                    ]
+                    for offset, line in enumerate(closing_lines):
+                        ws.cell(row=closing_start + offset, column=1, value=line)
+            except Exception as e:
+                messagebox.showwarning("Excel Write Warning", f"Excel formatting fallback due to: {e}\nCreating plain text letter only.")
+
+            # Create companion text letter
+            try:
+                txt_path = os.path.splitext(file_path)[0] + '.txt'
+                cols = list(df.columns)
+                col_widths = [max(len(c), *(len(str(v)) for v in df[c].astype(str))) for c in cols]
+                def fmt_row(row_vals):
+                    return "  ".join(str(v).ljust(w) for v, w in zip(row_vals, col_widths))
+                table_lines = [fmt_row(cols), fmt_row(['-'*w for w in col_widths])] + [fmt_row(df.iloc[i]) for i in range(len(df))]
+                closing_text = [
+                    "", "You are directed to return the above books without further delay.",
+                    "Punishment Clause: Continued non-compliance after 3 days from this notice will result in suspension of borrowing privileges for one month and a formal report to the Academic Coordinator.",
+                    "", "Regards,", "", "__________________________", "Librarian", "Department of Library", "Computer Department", "Government Polytechnic Awasari (Kh)"
+                ]
+                with open(txt_path, 'w', encoding='utf-8') as f:
+                    f.write("\n".join(body_lines + table_lines + closing_text))
+            except Exception as e:
+                print(f"Text companion creation failed: {e}")
+
+            messagebox.showinfo("Overdue Notice", f"Overdue notice letter exported:\n{file_path}")
+            if messagebox.askyesno("Open File", "Open the Excel letter now?"):
+                self.open_file(file_path)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to generate overdue notice: {e}")
+
+    def export_overdue_notice_letter_word(self):
+        """Generate the overdue notice as a formatted Microsoft Word (.docx) document.
+        Provides proper headings, paragraphs, table, punishment clause, and signature block.
+        Offers to also create Excel/text version afterward.
+        """
+        try:
+            overdue = self.get_current_overdue_records()
+            if not overdue:
+                messagebox.showinfo("Overdue Notice", "There are currently no overdue issued books.")
+                return
+            if Document is None:
+                messagebox.showerror(
+                    "Dependency Missing",
+                    "python-docx is not installed. Please install it (pip install python-docx) and try again."
+                )
+                return
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            ref_code = f"Library/Overdue/{datetime.now().strftime('%Y%m%d')}"
+            base_filename = f"overdue_notice_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".docx",
+                filetypes=[("Word Document", "*.docx")],
+                initialfile=base_filename + '.docx'
+            )
+            if not file_path:
+                return
+
+            doc = Document()
+            def add_center(text, bold=True, size=16):
+                p = doc.add_paragraph()
+                run = p.add_run(text)
+                run.bold = bold
+                run.font.size = Pt(size)
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+            add_center("Government Polytechnic Awasari (Kh)", True, 18)
+            add_center("Computer Department", True, 16)
+            add_center("Departmental Library", True, 14)
+            # Date and Ref aligned to the right
+            meta_p = doc.add_paragraph()
+            meta_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            meta_p.add_run(f"Date: {today_str}\nRef: {ref_code}")
+            subj = doc.add_paragraph()
+            run_subj = subj.add_run("Subject: Submission of Overdue Library Books")
+            run_subj.bold = True
+            body_paras = [
+                "Dear Students,",
+                "The following students are hereby notified to immediately submit the listed library books that are now overdue.",
+                f"A fine of Rs {FINE_PER_DAY} per day has accrued (or will continue to accrue) until the books are returned.",
+                "Failure to comply today will trigger disciplinary action per departmental policy.",
+                "Overdue Book List:"
+            ]
+            for line in body_paras:
+                doc.add_paragraph(line)
+
+            columns = ["Enrollment No", "Student Name", "Book ID", "Book Title", "Issue Date", "Due Date", "Days Overdue", "Accrued Fine"]
+            table = doc.add_table(rows=1, cols=len(columns))
+            hdr = table.rows[0].cells
+            for i, col in enumerate(columns):
+                hdr[i].text = col
+            for rec in overdue:
+                row = table.add_row().cells
+                row[0].text = str(rec['Enrollment No'])
+                row[1].text = str(rec['Student Name'])
+                row[2].text = str(rec['Book ID'])
+                row[3].text = str(rec['Book Title'])
+                row[4].text = str(rec['Issue Date'])
+                row[5].text = str(rec['Due Date'])
+                row[6].text = str(rec['Days Overdue'])
+                row[7].text = str(rec['Accrued Fine'])
+
+            doc.add_paragraph()
+            clause = doc.add_paragraph()
+            clause.add_run(
+                "You are directed to return the above books without further delay.\n"
+                "Punishment Clause: Continued non-compliance after 3 days from this notice will result in suspension "
+                "of borrowing privileges for one month and a formal report to the Academic Coordinator."
+            )
+            doc.add_paragraph()
+            doc.add_paragraph("Regards,")
+            doc.add_paragraph()
+            doc.add_paragraph("__________________________")
+            doc.add_paragraph("Librarian")
+            doc.add_paragraph("Departmental Library")
+            doc.add_paragraph("Computer Department")
+            doc.add_paragraph("Government Polytechnic Awasari (Kh)")
+
+            doc.save(file_path)
+            messagebox.showinfo("Overdue Notice", f"Word overdue notice exported:\n{file_path}")
+            if messagebox.askyesno("Open File", "Open the Word letter now?"):
+                self.open_file(file_path)
+            # Excel/text companion removed per user request
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to generate Word overdue notice: {e}")
+    
+    def import_books_from_excel(self):
+        """Import books from Excel file"""
+        file_path = filedialog.askopenfilename(
+            title="Select Excel file to import",
+            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            df = pd.read_excel(file_path)
+            
+            # Only strictly required columns now (per request): book_id and title
+            required_columns = ['book_id', 'title']
+            
+            # Check if required columns exist (case insensitive)
+            df.columns = df.columns.str.lower().str.replace(' ', '_')
+            
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                messagebox.showerror("Error", f"Excel file must contain columns: {', '.join(required_columns)}")
+                return
+            
+            # Import books with mandatory validation for book_id and title
+            success_count = 0
+            error_count = 0
+            skipped_count = 0
+            errors = []
+            
+            for index, row in df.iterrows():
+                row_no = index + 2  # Account for header row in Excel display
+                try:
+                    raw_book_id = str(row.get('book_id', '')).strip()
+                    raw_title = str(row.get('title', '')).strip()
+                    if not raw_book_id or not raw_title or raw_book_id.lower() == 'nan' or raw_title.lower() == 'nan':
+                        skipped_count += 1
+                        continue  # Mandatory fields missing
+                    # Copies parsing
+                    try:
+                        copies_val = int(row.get('total_copies', 1))
+                        if copies_val <= 0:
+                            copies_val = 1
+                    except Exception:
+                        copies_val = 1
+                    success, message = self.db.add_book(
+                        raw_book_id,
+                        raw_title,
+                        str(row.get('author', '')).strip(),
+                        str(row.get('isbn', '')).strip(),
+                        str(row.get('category', 'Technology')).strip() or 'Technology',
+                        copies_val
+                    )
+                    if success:
+                        success_count += 1
+                    else:
+                        error_count += 1
+                        errors.append(f"Row {row_no}: {message}")
+                except Exception as e:
+                    error_count += 1
+                    errors.append(f"Row {row_no}: {str(e)}")
+            
+            # Show results (include skipped)
+            result_message = (
+                "Import completed!\n\n"
+                f"Added: {success_count}\n"
+                f"Errors: {error_count}\n"
+                f"Skipped (missing Book ID/Title): {skipped_count}"
+            )
+            if errors:
+                result_message += f"\n\nFirst few errors:\n" + "\n".join(errors[:5])
+                if len(errors) > 5:
+                    result_message += f"\n... and {len(errors) - 5} more errors."
+            messagebox.showinfo("Import Results", result_message)
+            
+            if success_count > 0:
+                self.refresh_books()
+                self.refresh_dashboard()
+                
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to import Excel file: {str(e)}")
+    
+    def share_data_dialog(self):
+        """Show data sharing dialog"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Share Library Data")
+        dialog.geometry("500x400")
+        dialog.configure(bg='white')
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.geometry("+%d+%d" % (self.root.winfo_rootx() + 200, self.root.winfo_rooty() + 200))
+        
+        # Title
+        title_label = tk.Label(
+            dialog,
+            text="≡ƒôñ Share Library Data",
+            font=('Segoe UI', 16, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        )
+        title_label.pack(pady=(20, 30))
+        
+        # Instructions
+        info_label = tk.Label(
+            dialog,
+            text="Export data to Excel and share via email, WhatsApp, or other platforms:",
+            font=('Segoe UI', 11),
+            bg='white',
+            fg=self.colors['accent'],
+            wraplength=400
+        )
+        info_label.pack(pady=(0, 20))
+        
+        # Buttons frame
+        buttons_frame = tk.Frame(dialog, bg='white')
+        buttons_frame.pack(expand=True)
+        
+        # Data type buttons
+        data_types = [
+            ("≡ƒôè Dashboard Summary", self.export_dashboard_summary),
+            ("≡ƒæÑ Students Data", self.export_students_dialog),
+            ("≡ƒôÜ Books Data", self.export_books_to_excel),
+            ("≡ƒôï Transaction Records", self.export_records_to_excel)
+        ]
+        
+        for text, command in data_types:
+            btn = tk.Button(
+                buttons_frame,
+                text=text,
+                font=('Segoe UI', 12, 'bold'),
+                bg=self.colors['secondary'],
+                fg='white',
+                relief='flat',
+                padx=20,
+                pady=15,
+                command=lambda cmd=command: [cmd(), dialog.destroy()],
+                cursor='hand2',
+                width=25
+            )
+            btn.pack(pady=10)
+        
+        # Close button
+        close_btn = tk.Button(
+            dialog,
+            text="Γ¥î Close",
+            font=('Segoe UI', 12, 'bold'),
+            bg='#6c757d',
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=10,
+            command=dialog.destroy,
+            cursor='hand2'
+        )
+        close_btn.pack(pady=20)
+    
+    def export_dashboard_summary(self):
+        """Export dashboard summary to Excel"""
+        try:
+            # Get statistics
+            stats = self.get_library_statistics()
+            
+            # Get recent activities
+            activities = self.get_recent_activities()
+            
+            # Create summary data
+            summary_data = {
+                'Library Statistics': [
+                    ['Metric', 'Value'],
+                    ['Total Books', stats['total_books']],
+                    ['Available Books', stats['available_books']],
+                    ['Borrowed Books', stats['borrowed_books']],
+                    ['Total Students', stats['total_students']],
+                    ['Generated On', datetime.now().strftime('%Y-%m-%d %H:%M:%S')]
+                ]
+            }
+            
+            # Save to file
+            filename = f"dashboard_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel files", "*.xlsx")],
+                # Correct parameter name
+                initialfile=filename
+            )
+            
+            if file_path:
+                with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                    # Write statistics
+                    stats_df = pd.DataFrame(summary_data['Library Statistics'][1:], columns=summary_data['Library Statistics'][0])
+                    stats_df.to_excel(writer, sheet_name='Statistics', index=False, startrow=3)
+                    ws_stats = writer.book['Statistics']
+                    self._write_excel_header_openpyxl(ws_stats, start_row=1)
+                    
+                    # Write recent activities
+                    if activities:
+                        activities_df = pd.DataFrame(activities, columns=[
+                            'Type', 'Student', 'Book', 'Date', 'Status'
+                        ])
+                        activities_df.to_excel(writer, sheet_name='Recent Activities', index=False, startrow=3)
+                        ws_act = writer.book['Recent Activities']
+                        self._write_excel_header_openpyxl(ws_act, start_row=1)
+                
+                messagebox.showinfo("Success", f"Dashboard summary exported to {file_path}")
+                
+                # Ask if user wants to open the file
+                if messagebox.askyesno("Open File", "Do you want to open the exported file?"):
+                    self.open_file(file_path)
+                    
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export dashboard summary: {str(e)}")
+    
+    def open_file(self, file_path):
+        """Open file with default application"""
+        try:
+            if platform.system() == 'Windows':
+                os.startfile(file_path)
+            elif platform.system() == 'Darwin':  # macOS
+                subprocess.run(['open', file_path])
+            else:  # Linux
+                subprocess.run(['xdg-open', file_path])
+        except Exception as e:
+            print(f"Failed to open file: {e}")
+
+    # ---------------------- Excel Helpers ----------------------
+    def _write_excel_header_openpyxl(self, worksheet, start_row=1):
+        """Write the required three-line header into an openpyxl worksheet.
+        Lines:
+        - Government Polytechnic Awasari (Kh)
+        - Computer Department
+        - Department of Library
+        Returns the next row after the header.
+        """
+        lines = [
+            "Government Polytechnic Awasari (Kh)",
+            "Computer Department",
+            "Department of Library"
+        ]
+        for i, text in enumerate(lines, start=start_row):
+            try:
+                worksheet.cell(row=i, column=1, value=text)
+            except Exception:
+                pass
+        return start_row + len(lines)
+
+    def _xlsxwriter_write_header(self, worksheet, workbook, start_row=0):
+        """Write the required three-line header into an xlsxwriter worksheet with mild emphasis."""
+        fmt_title = workbook.add_format({'bold': True, 'font_size': 14})
+        fmt_sub = workbook.add_format({'bold': True, 'font_size': 12})
+        worksheet.write(start_row + 0, 0, "Government Polytechnic Awasari (Kh)", fmt_title)
+        worksheet.write(start_row + 1, 0, "Computer Department", fmt_sub)
+        worksheet.write(start_row + 2, 0, "Department of Library", fmt_sub)
+        return start_row + 3
+
+    # =====================================================================
+    # ANALYSIS TAB - Charts, Graphs, and Data Visualization
+    # =====================================================================
+    
+    def create_analysis_tab(self):
+        """Create comprehensive analysis tab using pie/donut charts only, with smooth scrolling"""
+        analysis_frame = tk.Frame(self.notebook, bg=self.colors['primary'])
+        self.notebook.add(analysis_frame, text="≡ƒôè Analysis")
+        
+        if not MATPLOTLIB_AVAILABLE:
+            self.create_analysis_unavailable_message(analysis_frame)
+            return
+        
+        # Main container with scrollable area (both directions)
+        main_canvas = tk.Canvas(analysis_frame, bg=self.colors['primary'], highlightthickness=0)
+        vscroll = ttk.Scrollbar(analysis_frame, orient="vertical", command=main_canvas.yview)
+        hscroll = ttk.Scrollbar(analysis_frame, orient="horizontal", command=main_canvas.xview)
+        scrollable_frame = tk.Frame(main_canvas, bg=self.colors['primary'])
+
+        # Create a window inside the canvas and keep its ID to sync width
+        window_id = main_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+
+        def _on_frame_configure(event=None):
+            # Update scroll region to include the whole inner frame
+            main_canvas.configure(scrollregion=main_canvas.bbox("all"))
+        scrollable_frame.bind("<Configure>", _on_frame_configure)
+
+        def _on_canvas_configure(event=None):
+            # Make inner frame match canvas width for pleasant layout
+            try:
+                main_canvas.itemconfig(window_id, width=event.width)
+            except Exception:
+                pass
+        main_canvas.bind("<Configure>", _on_canvas_configure)
+
+        main_canvas.configure(yscrollcommand=vscroll.set, xscrollcommand=hscroll.set)
+
+        # Mousewheel scrolling (Windows/Linux)
+        def _wheel_units(delta):
+            # Robust units across devices: at least 1 step
+            if delta > 0:
+                return -1
+            elif delta < 0:
+                return 1
+            return 0
+        def _on_vwheel(event):
+            units = _wheel_units(event.delta)
+            if units:
+                main_canvas.yview_scroll(units, 'units')
+            return 'break'
+        def _on_hwheel(event):
+            units = _wheel_units(event.delta)
+            if units:
+                main_canvas.xview_scroll(units, 'units')
+            return 'break'
+        # Bind locally to inner frame and canvas; avoid global bind/unbind to not break other tabs
+        scrollable_frame.bind('<MouseWheel>', _on_vwheel)
+        scrollable_frame.bind('<Shift-MouseWheel>', _on_hwheel)
+        main_canvas.bind('<MouseWheel>', _on_vwheel)
+        main_canvas.bind('<Shift-MouseWheel>', _on_hwheel)
+        # Focus canvas when pointer enters so it receives wheel events
+        main_canvas.bind('<Enter>', lambda e: main_canvas.focus_set())
+        scrollable_frame.bind('<Enter>', lambda e: main_canvas.focus_set())
+        # Linux fallbacks
+        def _an_btn4(_e=None):
+            main_canvas.yview_scroll(-1, 'units'); return 'break'
+        def _an_btn5(_e=None):
+            main_canvas.yview_scroll(1, 'units'); return 'break'
+        main_canvas.bind('<Button-4>', _an_btn4)
+        main_canvas.bind('<Button-5>', _an_btn5)
+        # Additionally, pointer-scoped global binds when mouse enters/leaves this analysis tab
+        def _enter_analysis(_e=None):
+            try:
+                analysis_frame.bind_all('<MouseWheel>', _on_vwheel, add='+')
+                analysis_frame.bind_all('<Shift-MouseWheel>', _on_hwheel, add='+')
+            except Exception:
+                pass
+        def _leave_analysis(_e=None):
+            try:
+                analysis_frame.unbind_all('<MouseWheel>')
+                analysis_frame.unbind_all('<Shift-MouseWheel>')
+            except Exception:
+                pass
+        analysis_frame.bind('<Enter>', _enter_analysis)
+        analysis_frame.bind('<Leave>', _leave_analysis)
+        # Helper so figures can hook wheel events too
+        def _bind_analysis_wheel(widget):
+            try:
+                widget.bind('<MouseWheel>', _on_vwheel)
+                widget.bind('<Shift-MouseWheel>', _on_hwheel)
+            except Exception:
+                pass
+        self._analysis_bind_wheel = _bind_analysis_wheel
+
+        # Pack scrollable components
+        main_canvas.pack(side="top", fill="both", expand=True)
+        vscroll.pack(side="right", fill="y")
+        hscroll.pack(side="bottom", fill="x")
+        
+        # Header
+        header_frame = tk.Frame(scrollable_frame, bg=self.colors['primary'])
+        header_frame.pack(fill=tk.X, padx=20, pady=20)
+        
+        tk.Label(
+            header_frame,
+            text="≡ƒôè Library Analytics Dashboard",
+            font=('Segoe UI', 18, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        ).pack(side=tk.LEFT)
+        
+        # Time period filter
+        period_frame = tk.LabelFrame(
+            scrollable_frame,
+            text="≡ƒôà Analysis Period",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        )
+        period_frame.pack(fill=tk.X, padx=20, pady=(0, 20))
+        
+        period_controls = tk.Frame(period_frame, bg=self.colors['primary'])
+        period_controls.pack(padx=15, pady=15)
+        
+        self.analysis_period = tk.StringVar(value="7")
+        
+        periods = [
+            ("Last 7 Days", "7"),
+            ("Last 15 Days", "15"), 
+            ("Last 30 Days", "30")
+        ]
+        
+        for text, value in periods:
+            rb = tk.Radiobutton(
+                period_controls,
+                text=text,
+                variable=self.analysis_period,
+                value=value,
+                font=('Segoe UI', 11),
+                bg=self.colors['primary'],
+                fg=self.colors['accent'],
+                selectcolor='white',
+                command=self.refresh_analysis
+            )
+            rb.pack(side=tk.LEFT, padx=(0, 30))
+        
+        # Export controls
+        export_frame = tk.Frame(period_frame, bg=self.colors['primary'])
+        export_frame.pack(side=tk.RIGHT, padx=15, pady=15)
+        
+        export_excel_btn = tk.Button(
+            export_frame,
+            text="≡ƒôè Export to Excel",
+            font=('Segoe UI', 10, 'bold'),
+            bg='#28a745',
+            fg='white',
+            relief='flat',
+            padx=15,
+            pady=8,
+            command=self.export_analysis_excel,
+            cursor='hand2'
+        )
+        export_excel_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        export_word_btn = tk.Button(
+            export_frame,
+            text="≡ƒôä Export to Word",
+            font=('Segoe UI', 10, 'bold'),
+            bg='#6f42c1',
+            fg='white',
+            relief='flat',
+            padx=15,
+            pady=8,
+            command=self.export_analysis_word,
+            cursor='hand2'
+        )
+        export_word_btn.pack(side=tk.LEFT)
+        
+        # Filter controls for student and book analytics
+        filter_frame = tk.LabelFrame(
+            scrollable_frame,
+            text="≡ƒÄ» Focused Analysis (Student / Book)",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        )
+        filter_frame.pack(fill=tk.X, padx=20, pady=(0, 20))
+
+        self.analysis_student_var = tk.StringVar()
+        self.analysis_book_var = tk.StringVar()
+
+        ff_row = tk.Frame(filter_frame, bg=self.colors['primary'])
+        ff_row.pack(fill=tk.X, padx=15, pady=12)
+
+        tk.Label(ff_row, text="Enrollment No:", font=('Segoe UI', 10, 'bold'), bg=self.colors['primary'], fg=self.colors['accent']).pack(side=tk.LEFT)
+        student_entry = tk.Entry(ff_row, textvariable=self.analysis_student_var, width=20)
+        student_entry.pack(side=tk.LEFT, padx=(6, 18))
+
+        tk.Label(ff_row, text="Book ID:", font=('Segoe UI', 10, 'bold'), bg=self.colors['primary'], fg=self.colors['accent']).pack(side=tk.LEFT)
+        book_entry = tk.Entry(ff_row, textvariable=self.analysis_book_var, width=20)
+        book_entry.pack(side=tk.LEFT, padx=(6, 18))
+
+        tk.Button(
+            ff_row,
+            text="Apply Filter",
+            font=('Segoe UI', 10, 'bold'),
+            bg='#0FA958', fg='white', relief='flat', cursor='hand2',
+            command=self.apply_analysis_filter
+        ).pack(side=tk.LEFT, padx=(0, 10))
+
+        tk.Button(
+            ff_row,
+            text="Clear",
+            font=('Segoe UI', 10, 'bold'),
+            bg='#9e9e9e', fg='white', relief='flat', cursor='hand2',
+            command=self.clear_analysis_filter
+        ).pack(side=tk.LEFT)
+
+        # Display current filter summary
+        self.analysis_filter_summary = tk.Label(
+            filter_frame,
+            text="No focused filter applied",
+            font=('Segoe UI', 10),
+            bg=self.colors['primary'],
+            fg='#555'
+        )
+        self.analysis_filter_summary.pack(anchor='w', padx=15, pady=(0, 10))
+
+        # Focused (conditional) sections - place near the filter inputs
+        self.focused_container = tk.Frame(scrollable_frame, bg=self.colors['primary'])
+        self.focused_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 10))
+        # Student-specific (left) and Book-specific (right)
+        self.student_specific_frame = tk.LabelFrame(
+            self.focused_container,
+            text="≡ƒæñ Student-specific Insights",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        )
+        self.book_specific_frame = tk.LabelFrame(
+            self.focused_container,
+            text="≡ƒôû Book-specific Insights",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        )
+
+    # Charts container
+        charts_container = tk.Frame(scrollable_frame, bg=self.colors['primary'])
+        charts_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+        
+        # Row 1: Pie charts
+        pie_row = tk.Frame(charts_container, bg=self.colors['primary'])
+        pie_row.pack(fill=tk.X, pady=(0, 20))
+        
+        # Borrowing Status Pie Chart
+        self.borrow_status_frame = tk.LabelFrame(
+            pie_row,
+            text="≡ƒôÜ Book Status Distribution",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        )
+        self.borrow_status_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        
+        # Student Activity Pie Chart
+        self.student_activity_frame = tk.LabelFrame(
+            pie_row,
+            text="≡ƒæÑ Student Activity Distribution",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        )
+        self.student_activity_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(10, 0))
+        
+        # Row 2: Advanced donut pie (Inventory & Overdue breakdown)
+        advanced_row = tk.Frame(charts_container, bg=self.colors['primary'])
+        advanced_row.pack(fill=tk.X, pady=(0, 20))
+
+        self.inventory_overdue_frame = tk.LabelFrame(
+            advanced_row,
+            text="≡ƒì⌐ Inventory & Overdue Breakdown",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        )
+        self.inventory_overdue_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        
+        # Row 3: Summary stats
+        self.stats_summary_frame = tk.LabelFrame(
+            charts_container,
+            text="≡ƒôï Summary Statistics",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        )
+        self.stats_summary_frame.pack(fill=tk.X)
+
+        # (Focused sections are now placed near the filter controls above)
+        
+        # Footer: compact mode and maintenance actions
+        footer_frame = tk.Frame(scrollable_frame, bg=self.colors['primary'])
+        footer_frame.pack(fill=tk.X, padx=20, pady=(10, 20))
+
+        self.analysis_compact_mode = tk.BooleanVar(value=True)
+        compact_cb = tk.Checkbutton(
+            footer_frame,
+            text="Compact Mode (show fewer charts)",
+            variable=self.analysis_compact_mode,
+            onvalue=True,
+            offvalue=False,
+            command=self.refresh_analysis,
+            bg=self.colors['primary'],
+            fg=self.colors['accent'],
+            selectcolor='white'
+        )
+        compact_cb.pack(side=tk.LEFT)
+
+        # Removed duplicate Promote Student button from footer; action available in header
+
+        # Store chart references for click handling
+        self.current_charts = {}
+        # Filter state (None or string values)
+        self.analysis_filter = {'enrollment_no': None, 'book_id': None}
+        
+        # Initial load
+        self.refresh_analysis()
+    
+    def create_analysis_unavailable_message(self, parent):
+        """Show message when matplotlib is not available"""
+        container = tk.Frame(parent, bg=self.colors['primary'])
+        container.pack(expand=True, fill=tk.BOTH)
+        
+        message_frame = tk.Frame(container, bg='white', relief='solid', bd=1)
+        message_frame.place(relx=0.5, rely=0.5, anchor='center', width=600, height=400)
+        
+        tk.Label(
+            message_frame,
+            text="≡ƒôè Analysis Features Unavailable",
+            font=('Segoe UI', 18, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        ).pack(pady=(40, 20))
+        
+        tk.Label(
+            message_frame,
+            text="The Analysis tab requires additional packages.\nPlease install the missing dependencies:",
+            font=('Segoe UI', 12),
+            bg='white',
+            fg='#666666',
+            justify='center'
+        ).pack(pady=(0, 20))
+        
+        code_frame = tk.Frame(message_frame, bg='#f8f9fa', relief='solid', bd=1)
+        code_frame.pack(padx=40, pady=20, fill=tk.X)
+        
+        tk.Label(
+            code_frame,
+            text="pip install matplotlib xlsxwriter",
+            font=('Consolas', 11, 'bold'),
+            bg='#f8f9fa',
+            fg='#d73502'
+        ).pack(pady=15)
+        
+        tk.Label(
+            message_frame,
+            text="After installation, restart the application to access charts and graphs.",
+            font=('Segoe UI', 10),
+            bg='white',
+            fg='#666666'
+        ).pack(pady=20)
+    
+    def refresh_analysis(self):
+        """Refresh all analysis charts based on selected time period"""
+        if not MATPLOTLIB_AVAILABLE:
+            return
+        
+        # Clear existing widgets to avoid duplicates (charts, labels, legends)
+        def _clear(frame):
+            try:
+                for w in frame.winfo_children():
+                    w.destroy()
+            except Exception:
+                pass
+        _clear(self.borrow_status_frame)
+        _clear(self.student_activity_frame)
+        if hasattr(self, 'daily_trend_frame'):
+            _clear(self.daily_trend_frame)
+        if hasattr(self, 'popular_books_frame'):
+            _clear(self.popular_books_frame)
+        if hasattr(self, 'inventory_overdue_frame'):
+            _clear(self.inventory_overdue_frame)
+        _clear(self.stats_summary_frame)
+        # Clear focused frames
+        for w in self.student_specific_frame.winfo_children():
+            if isinstance(w, FigureCanvasTkAgg):
+                w.get_tk_widget().destroy()
+            else:
+                w.destroy()
+        for w in self.book_specific_frame.winfo_children():
+            if isinstance(w, FigureCanvasTkAgg):
+                w.get_tk_widget().destroy()
+            else:
+                w.destroy()
+        # Keep frames in place (they live near the filters); just clear content
+        
+        # Get time period
+        days = int(self.analysis_period.get())
+        start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+        
+        # Update filter summary label
+        en = self.analysis_filter.get('enrollment_no')
+        bk = self.analysis_filter.get('book_id')
+        parts = []
+        if en:
+            s_name = self.get_student_name(en)
+            parts.append(f"Student: {en} ({s_name or 'Unknown'})")
+        if bk:
+            b_title = self.get_book_title(bk)
+            parts.append(f"Book: {bk} ({b_title or 'Unknown'})")
+        self.analysis_filter_summary.config(text=' | '.join(parts) if parts else 'No focused filter applied')
+
+        # Generate concise set of charts
+        # Always show: Book Status (pie), Student Activity (pie), and Inventory/Overdue (donut)
+        self.create_borrow_status_pie()
+        self.create_student_activity_pie(days)
+        self.create_inventory_overdue_donut()
+        # Optional charts when Compact Mode is OFF
+        if hasattr(self, 'analysis_compact_mode') and not self.analysis_compact_mode.get():
+            self.create_daily_trend_chart(days)
+            self.create_popular_books_chart(days)
+        # Summary always
+        self.create_summary_stats(days)
+
+        # Focused insights
+        # Pack side-by-side if any filter is present
+        if en or bk:
+            if en:
+                if not self.student_specific_frame.winfo_manager():
+                    self.student_specific_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+                self.create_student_specific_pie(days, en)
+            if bk:
+                if not self.book_specific_frame.winfo_manager():
+                    self.book_specific_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0))
+                self.create_book_specific_pie(days, bk)
+    
+    def create_borrow_status_pie(self):
+        """Create pie chart showing book status distribution"""
+        try:
+            # Get data
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            # Count books by status
+            cursor.execute("""
+                SELECT 
+                    CASE 
+                        WHEN br.status = 'borrowed' THEN 'Currently Issued'
+                        ELSE 'Available'
+                    END as status,
+                    COUNT(DISTINCT b.book_id) as count
+                FROM books b
+                LEFT JOIN borrow_records br ON b.book_id = br.book_id AND br.status = 'borrowed'
+                GROUP BY status
+            """)
+            
+            results = cursor.fetchall()
+            conn.close()
+            
+            if not results:
+                return
+            
+            raw_labels = [row[0] for row in results]
+            sizes = [row[1] for row in results]
+            labels = [f"{name} ({cnt})" for name, cnt in zip(raw_labels, sizes)]
+            colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24']
+            
+            # Create figure (white background for clarity)
+            fig = Figure(figsize=(5, 4), dpi=100)
+            ax = fig.add_subplot(111)
+            fig.patch.set_facecolor('white')
+            
+            def on_pie_click(event):
+                if event.inaxes == ax:
+                    # Find which wedge was clicked
+                    for i, (wedge, label, size) in enumerate(zip(ax.patches, labels, sizes)):
+                        contains, info = wedge.contains(event)
+                        if contains:
+                            # Show detailed list in dialog
+                            if label == 'Currently Issued':
+                                self.show_currently_borrowed_dialog()
+                            else:
+                                self.show_available_books_dialog()
+                            break
+            
+            def _autopct(pct, allvals=sizes):
+                total = sum(allvals)
+                val = int(round(pct*total/100.0))
+                return f"{pct:.1f}%\n({val})"
+
+            wedges, texts, autotexts = ax.pie(
+                sizes, 
+                labels=labels, 
+                colors=colors[:len(sizes)],
+                autopct=_autopct,
+                startangle=90,
+                wedgeprops=dict(width=0.35, edgecolor='white')  # donut style
+            )
+            # Center label with total
+            ax.text(0, 0, f"Total\n{sum(sizes)}", ha='center', va='center', fontsize=11, fontweight='bold')
+            ax.axis('equal')
+            ax.set_title('Book Status Distribution', fontsize=12, fontweight='bold')
+            
+            # Add to GUI
+            canvas = FigureCanvasTkAgg(fig, self.borrow_status_frame)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            canvas.mpl_connect('button_press_event', on_pie_click)
+            # Ensure wheel scrolling works when cursor is over the figure
+            try:
+                self._analysis_bind_wheel(canvas.get_tk_widget())
+            except Exception:
+                pass
+            
+            self.current_charts['borrow_status'] = (fig, labels, sizes)
+            
+        except Exception as e:
+            print(f"Error creating borrow status pie chart: {e}")
+    
+    def create_student_activity_pie(self, days):
+        """Create pie chart showing student activity levels"""
+        try:
+            # Get data
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+            
+            # Count students by activity level
+            cursor.execute("""
+                SELECT 
+                    s.year,
+                    COUNT(br.id) as borrow_count
+                FROM students s
+                LEFT JOIN borrow_records br ON s.enrollment_no = br.enrollment_no 
+                    AND br.borrow_date >= ?
+                GROUP BY s.year
+                HAVING borrow_count > 0
+                ORDER BY borrow_count DESC
+            """, (start_date,))
+            
+            results = cursor.fetchall()
+            conn.close()
+            
+            if not results:
+                # Show "No Data" message
+                no_data_label = tk.Label(
+                    self.student_activity_frame,
+                    text=f"No student activity\nin last {days} days",
+                    font=('Segoe UI', 12),
+                    bg=self.colors['primary'],
+                    fg='#666666'
+                )
+                no_data_label.pack(expand=True)
+                return
+            
+            raw_labels = [f"{row[0]} Year" for row in results]
+            sizes = [row[1] for row in results]
+            labels = [f"{name} ({cnt})" for name, cnt in zip(raw_labels, sizes)]
+            colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24', '#a55eea']
+            
+            # Create figure
+            fig = Figure(figsize=(5, 4), dpi=100)
+            ax = fig.add_subplot(111)
+            fig.patch.set_facecolor('white')
+            
+            def on_activity_click(event):
+                if event.inaxes == ax:
+                    for i, (wedge, label, size) in enumerate(zip(ax.patches, labels, sizes)):
+                        contains, info = wedge.contains(event)
+                        if contains:
+                            year = results[i][0]
+                            self.show_students_by_year_dialog(year, days)
+                            break
+            
+            # Explode the largest slice slightly for emphasis
+            if sizes:
+                max_idx = sizes.index(max(sizes))
+                explode = [0.08 if i == max_idx else 0 for i in range(len(sizes))]
+            else:
+                explode = None
+
+            def _autopct(pct, allvals=sizes):
+                total = sum(allvals)
+                val = int(round(pct*total/100.0))
+                return f"{pct:.1f}%\n({val})"
+
+            wedges, texts, autotexts = ax.pie(
+                sizes,
+                labels=labels,
+                colors=colors[:len(sizes)],
+                autopct=_autopct,
+                startangle=90,
+                explode=explode,
+                wedgeprops=dict(width=0.35, edgecolor='white')  # donut style
+            )
+            ax.text(0, 0, f"Total\n{sum(sizes)}", ha='center', va='center', fontsize=11, fontweight='bold')
+            ax.axis('equal')
+            ax.set_title(f'Student Activity (Last {days} Days)', fontsize=12, fontweight='bold')
+            
+            # Add to GUI
+            canvas = FigureCanvasTkAgg(fig, self.student_activity_frame)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            canvas.mpl_connect('button_press_event', on_activity_click)
+            try:
+                self._analysis_bind_wheel(canvas.get_tk_widget())
+            except Exception:
+                pass
+            
+            self.current_charts['student_activity'] = (fig, labels, sizes)
+            
+        except Exception as e:
+            print(f"Error creating student activity pie chart: {e}")
+
+    def create_inventory_overdue_donut(self):
+        """Create a nested donut pie showing Available vs Issued (outer), and inner ring splitting Issued into On-time vs Overdue."""
+        try:
+            conn = self.db.get_connection()
+            cur = conn.cursor()
+            # Sum copies
+            cur.execute("SELECT COALESCE(SUM(total_copies),0), COALESCE(SUM(available_copies),0) FROM books")
+            total_copies, total_available = cur.fetchone()
+            total_issued = max((total_copies or 0) - (total_available or 0), 0)
+            # Overdue issued count (by transactions)
+            today = datetime.now().strftime('%Y-%m-%d')
+            cur.execute("SELECT COUNT(*) FROM borrow_records WHERE status='borrowed' AND due_date < ?", (today,))
+            overdue = cur.fetchone()[0] or 0
+            conn.close()
+
+            on_time = max(total_issued - overdue, 0)
+
+            outer_labels = ["Available", "Issued"]
+            outer_sizes = [total_available, total_issued]
+            inner_labels = ["Available", "On-time", "Overdue"]
+            inner_sizes = [total_available, on_time, overdue]
+
+            # Colors
+            outer_colors = ['#2ed573', '#ff9f43']
+            inner_colors = ['#7bed9f', '#ffa502', '#ff4757']
+
+            # Build figure
+            fig = Figure(figsize=(6, 4), dpi=100)
+            ax = fig.add_subplot(111)
+            fig.patch.set_facecolor('white')
+
+            # Outer ring
+            wedges1, _ = ax.pie(outer_sizes, radius=1.0, labels=outer_labels, labeldistance=1.05,
+                                colors=outer_colors, startangle=90, wedgeprops=dict(width=0.3, edgecolor='white'))
+
+            # Inner ring
+            def _autopct(pct, allvals=inner_sizes):
+                total = sum(allvals)
+                val = int(round(pct*total/100.0))
+                return f"{pct:.1f}%\n({val})"
+            wedges2, _, _ = ax.pie(inner_sizes, radius=1.0-0.3, labels=None,
+                                   colors=inner_colors, startangle=90,
+                                   autopct=_autopct,
+                                   wedgeprops=dict(width=0.3, edgecolor='white'))
+
+            # Center text
+            ax.text(0, 0, f"Total\n{int(total_copies or 0)}", ha='center', va='center', fontsize=11, fontweight='bold')
+            ax.set_title('Inventory & Overdue Breakdown', fontsize=12, fontweight='bold')
+
+            # Legend shows inner ring details
+            ax.legend(wedges2, inner_labels, title="Details", loc='center left', bbox_to_anchor=(1.0, 0.5))
+
+            canvas = FigureCanvasTkAgg(fig, self.inventory_overdue_frame)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            try:
+                self._analysis_bind_wheel(canvas.get_tk_widget())
+            except Exception:
+                pass
+
+            self.current_charts['inventory_overdue_donut'] = (fig, inner_labels, inner_sizes)
+        except Exception as e:
+            print(f"Error creating inventory/overdue donut: {e}")
+    
+    def create_daily_trend_chart(self, days):
+        """Create bar chart showing daily borrowing trends"""
+        try:
+            # Get data
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+            
+            cursor.execute("""
+                SELECT 
+                    borrow_date,
+                    COUNT(*) as daily_count
+                FROM borrow_records 
+                WHERE borrow_date >= ?
+                GROUP BY borrow_date
+                ORDER BY borrow_date
+            """, (start_date,))
+            
+            results = cursor.fetchall()
+            conn.close()
+            
+            if not results:
+                no_data_label = tk.Label(
+                    self.daily_trend_frame,
+                    text=f"No borrowing activity\nin last {days} days",
+                    font=('Segoe UI', 12),
+                    bg=self.colors['primary'],
+                    fg='#666666'
+                )
+                no_data_label.pack(expand=True)
+                return
+            
+            dates = [row[0] for row in results]
+            counts = [row[1] for row in results]
+            
+            # Create figure
+            fig = Figure(figsize=(6, 4), dpi=100)
+            ax = fig.add_subplot(111)
+            
+            bars = ax.bar(dates, counts, color='#45b7d1', alpha=0.7)
+            ax.set_title(f'Daily Borrowing Trends (Last {days} Days)', fontsize=12, fontweight='bold')
+            ax.set_xlabel('Date')
+            ax.set_ylabel('Books Issued')
+            
+            # Rotate x-axis labels for better readability
+            plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
+            
+            # Add click interaction
+            def on_bar_click(event):
+                if event.inaxes == ax:
+                    for i, bar in enumerate(bars):
+                        contains, info = bar.contains(event)
+                        if contains:
+                            self.show_borrow_details_for_date(dates[i])
+                            break
+            
+            fig.tight_layout()
+            
+            # Add to GUI
+            canvas = FigureCanvasTkAgg(fig, self.daily_trend_frame)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            canvas.mpl_connect('button_press_event', on_bar_click)
+            
+            self.current_charts['daily_trend'] = (fig, dates, counts)
+            
+        except Exception as e:
+            print(f"Error creating daily trend chart: {e}")
+    
+    def create_popular_books_chart(self, days):
+        """Create bar chart showing most popular books"""
+        try:
+            # Get data
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+            
+            cursor.execute("""
+                SELECT 
+                    b.title,
+                    COUNT(br.id) as borrow_count
+                FROM books b
+                INNER JOIN borrow_records br ON b.book_id = br.book_id
+                WHERE br.borrow_date >= ?
+                GROUP BY b.book_id, b.title
+                ORDER BY borrow_count DESC
+                LIMIT 10
+            """, (start_date,))
+            
+            results = cursor.fetchall()
+            conn.close()
+            
+            if not results:
+                no_data_label = tk.Label(
+                    self.popular_books_frame,
+                    text=f"No borrowing activity\nin last {days} days",
+                    font=('Segoe UI', 12),
+                    bg=self.colors['primary'],
+                    fg='#666666'
+                )
+                no_data_label.pack(expand=True)
+                return
+            
+            titles = [row[0][:20] + ('...' if len(row[0]) > 20 else '') for row in results]
+            counts = [row[1] for row in results]
+            
+            # Create figure
+            fig = Figure(figsize=(6, 4), dpi=100)
+            ax = fig.add_subplot(111)
+            
+            bars = ax.barh(titles, counts, color='#f9ca24', alpha=0.7)
+            ax.set_title(f'Most Popular Books (Last {days} Days)', fontsize=12, fontweight='bold')
+            ax.set_xlabel('Times Issued')
+            
+            # Add click interaction
+            def on_popular_click(event):
+                if event.inaxes == ax:
+                    for i, bar in enumerate(bars):
+                        contains, info = bar.contains(event)
+                        if contains:
+                            # Show all students who borrowed that book in period
+                            full_title = results[i][0]
+                            self.show_book_borrowers_dialog(full_title, days)
+                            break
+            
+            fig.tight_layout()
+            
+            # Add to GUI
+            canvas = FigureCanvasTkAgg(fig, self.popular_books_frame)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            canvas.mpl_connect('button_press_event', on_popular_click)
+            
+            self.current_charts['popular_books'] = (fig, titles, counts)
+            
+        except Exception as e:
+            print(f"Error creating popular books chart: {e}")
+
+    # ---------------------- Focused Insights ----------------------
+    def create_student_specific_pie(self, days, enrollment_no):
+        """Pie: student's borrow status in period (borrowed vs returned)."""
+        try:
+            conn = self.db.get_connection()
+            cur = conn.cursor()
+            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+            cur.execute("SELECT COUNT(*) FROM borrow_records WHERE enrollment_no=? AND borrow_date>=?", (enrollment_no, start_date))
+            total = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM borrow_records WHERE enrollment_no=? AND borrow_date>=? AND status='borrowed'", (enrollment_no, start_date))
+            active = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM borrow_records WHERE enrollment_no=? AND return_date>=? AND return_date IS NOT NULL", (enrollment_no, start_date))
+            returned = cur.fetchone()[0]
+            conn.close()
+            sizes = [active, returned]
+            labels = ["Currently Issued", "Returned"]
+            if sum(sizes) == 0:
+                lbl = tk.Label(self.student_specific_frame, text=f"No activity for {enrollment_no} in last {days} days", bg=self.colors['primary'], fg='#666', font=('Segoe UI', 11))
+                lbl.pack(fill=tk.X, padx=10, pady=10)
+            else:
+                fig = Figure(figsize=(4.5, 3.5), dpi=100)
+                ax = fig.add_subplot(111)
+                ax.pie(sizes, labels=labels, colors=['#ff9f43', '#10ac84'], autopct='%1.1f%%', startangle=90)
+                ax.set_title(f"Student {enrollment_no} - Status (Last {days}d)", fontsize=11, fontweight='bold')
+                canvas = FigureCanvasTkAgg(fig, self.student_specific_frame)
+                canvas.draw()
+                canvas.get_tk_widget().pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
+                self.current_charts['student_specific_status'] = (fig, labels, sizes)
+
+            # packing handled in refresh_analysis
+        except Exception as e:
+            print(f"Student-specific pie error: {e}")
+
+    def create_book_specific_pie(self, days, book_id):
+        """Pie: book's copies status currently (available vs borrowed)."""
+        try:
+            conn = self.db.get_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT title, total_copies, available_copies FROM books WHERE book_id=?", (book_id,))
+            row = cur.fetchone()
+            conn.close()
+            if not row:
+                lbl = tk.Label(self.book_specific_frame, text=f"Book {book_id} not found", bg=self.colors['primary'], fg='#c00', font=('Segoe UI', 11, 'bold'))
+                lbl.pack(fill=tk.X, padx=10, pady=10)
+            else:
+                title, total, avail = row
+                borrowed = max(total - (avail or 0), 0)
+                sizes = [avail or 0, borrowed]
+                labels = ["Available", "Borrowed"]
+                fig = Figure(figsize=(4.5, 3.5), dpi=100)
+                ax = fig.add_subplot(111)
+                ax.pie(sizes, labels=labels, colors=['#2ed573', '#ff4757'], autopct='%1.1f%%', startangle=90)
+                ax.set_title(f"Book {book_id} - Copies Status", fontsize=11, fontweight='bold')
+                canvas = FigureCanvasTkAgg(fig, self.book_specific_frame)
+                canvas.draw()
+                canvas.get_tk_widget().pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
+                self.current_charts['book_specific_status'] = (fig, labels, sizes)
+
+            # packing handled in refresh_analysis
+        except Exception as e:
+            print(f"Book-specific pie error: {e}")
+
+    # ---------------------- Drill-down Dialogs ----------------------
+    def show_currently_borrowed_dialog(self):
+        """Show all currently borrowed items with student and book details, respecting filters if set."""
+        en = self.analysis_filter.get('enrollment_no')
+        bk = self.analysis_filter.get('book_id')
+        conn = self.db.get_connection()
+        cur = conn.cursor()
+        base = (
+            "SELECT br.enrollment_no, s.name, br.book_id, b.title, br.borrow_date, br.due_date "
+            "FROM borrow_records br JOIN students s ON br.enrollment_no=s.enrollment_no "
+            "JOIN books b ON br.book_id=b.book_id WHERE br.status='borrowed'"
+        )
+        params = []
+        if en:
+            base += " AND br.enrollment_no=?"
+            params.append(en)
+        if bk:
+            base += " AND br.book_id=?"
+            params.append(bk)
+        base += " ORDER BY br.due_date"
+        cur.execute(base, tuple(params))
+        rows = cur.fetchall()
+        conn.close()
+        cols = ("Enrollment No", "Student Name", "Book ID", "Book Title", "Issue Date", "Due Date")
+        self._show_table_dialog("Currently Issued", cols, rows, export_name="currently_issued")
+
+    def show_available_books_dialog(self):
+        """Show all books with available copies > 0 (optionally filtered by book_id)."""
+        bk = self.analysis_filter.get('book_id')
+        conn = self.db.get_connection()
+        cur = conn.cursor()
+        if bk:
+            cur.execute("SELECT book_id, title, author, available_copies FROM books WHERE book_id=?", (bk,))
+        else:
+            cur.execute("SELECT book_id, title, author, available_copies FROM books WHERE available_copies>0 ORDER BY title")
+        rows = cur.fetchall()
+        conn.close()
+        cols = ("Book ID", "Title", "Author", "Available Copies")
+        self._show_table_dialog("Available Books", cols, rows, export_name="available_books")
+
+    def show_students_by_year_dialog(self, year, days):
+        start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+        conn = self.db.get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT s.enrollment_no, s.name, COUNT(br.id) as borrows FROM students s "
+            "LEFT JOIN borrow_records br ON s.enrollment_no=br.enrollment_no AND br.borrow_date>=? "
+            "WHERE s.year=? GROUP BY s.enrollment_no, s.name HAVING borrows>0 ORDER BY borrows DESC",
+            (start_date, year)
+        )
+        rows = cur.fetchall()
+        conn.close()
+        cols = ("Enrollment No", "Name", "Issue Count")
+        self._show_table_dialog(f"Students in {year} Year", cols, rows, export_name=f"students_year_{year}")
+
+    def show_borrow_details_for_date(self, date_str):
+        en = self.analysis_filter.get('enrollment_no')
+        bk = self.analysis_filter.get('book_id')
+        conn = self.db.get_connection()
+        cur = conn.cursor()
+        q = (
+            "SELECT br.borrow_date, br.enrollment_no, s.name, br.book_id, b.title FROM borrow_records br "
+            "JOIN students s ON br.enrollment_no=s.enrollment_no JOIN books b ON br.book_id=b.book_id "
+            "WHERE br.borrow_date=?"
+        )
+        params = [date_str]
+        if en:
+            q += " AND br.enrollment_no=?"; params.append(en)
+        if bk:
+            q += " AND br.book_id=?"; params.append(bk)
+        q += " ORDER BY s.name"
+        cur.execute(q, tuple(params))
+        rows = cur.fetchall()
+        conn.close()
+        cols = ("Issue Date", "Enrollment No", "Student Name", "Book ID", "Book Title")
+        self._show_table_dialog(f"Issues on {date_str}", cols, rows, export_name=f"issues_{date_str}")
+
+    def show_book_borrowers_dialog(self, title, days):
+        start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+        conn = self.db.get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT br.enrollment_no, s.name, COUNT(br.id) as n FROM borrow_records br "
+            "JOIN students s ON br.enrollment_no=s.enrollment_no JOIN books b ON br.book_id=b.book_id "
+            "WHERE b.title=? AND br.borrow_date>=? GROUP BY br.enrollment_no, s.name ORDER BY n DESC",
+            (title, start_date)
+        )
+        rows = cur.fetchall()
+        conn.close()
+        cols = ("Enrollment No", "Student Name", "Times Issued")
+        self._show_table_dialog(f"Issuers of '{title}' (Last {days}d)", cols, rows, export_name="book_issuers")
+
+    # Generic dialog with export
+    def _show_table_dialog(self, title, columns, rows, export_name="data_export"):
+        dlg = tk.Toplevel(self.root)
+        dlg.title(title)
+        dlg.geometry("800x500")
+        frm = tk.Frame(dlg, bg=self.colors['primary'])
+        frm.pack(fill=tk.BOTH, expand=True)
+        tv = ttk.Treeview(frm, columns=[f"c{i}" for i in range(len(columns))], show='headings')
+        for i, c in enumerate(columns):
+            tv.heading(f"c{i}", text=c)
+            tv.column(f"c{i}", width=max(100, int(750/len(columns))))
+        vsb = ttk.Scrollbar(frm, orient='vertical', command=tv.yview)
+        tv.configure(yscroll=vsb.set)
+        tv.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        vsb.pack(side=tk.RIGHT, fill=tk.Y)
+        for r in rows:
+            tv.insert('', tk.END, values=r)
+        btns = tk.Frame(dlg, bg=self.colors['primary'])
+        btns.pack(fill=tk.X)
+        def do_export():
+            if not rows:
+                messagebox.showinfo("Export", "No data to export.")
+                return
+            filename = filedialog.asksaveasfilename(defaultextension='.xlsx', filetypes=[["Excel", "*.xlsx"]], initialfile=f"{export_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+            if not filename:
+                return
+            try:
+                import xlsxwriter
+                wb = xlsxwriter.Workbook(filename)
+                ws = wb.add_worksheet('Data')
+                start = self._xlsxwriter_write_header(ws, wb, start_row=0)
+                for j, c in enumerate(columns):
+                    ws.write(start, j, c)
+                for i, row in enumerate(rows, start=start+1):
+                    for j, v in enumerate(row):
+                        ws.write(i, j, v)
+                wb.close()
+                messagebox.showinfo("Export", f"Saved to {filename}")
+                if messagebox.askyesno("Open File", "Open the exported file?"):
+                    self.open_file(filename)
+            except Exception as e:
+                messagebox.showerror("Export", f"Failed to export: {e}")
+        tk.Button(btns, text="Export to Excel", command=do_export, bg='#28a745', fg='white', relief='flat', padx=10, pady=6).pack(side=tk.RIGHT, padx=10, pady=8)
+
+    # ---------------------- Filter handlers ----------------------
+    def apply_analysis_filter(self):
+        en = self.analysis_student_var.get().strip() or None
+        bk = self.analysis_book_var.get().strip() or None
+        # Validate existence lightly (non-blocking)
+        if en and not self.get_student_name(en):
+            if not messagebox.askyesno("Unknown Student", f"Enrollment {en} not found. Apply filter anyway?"):
+                return
+        if bk and not self.get_book_title(bk):
+            if not messagebox.askyesno("Unknown Book", f"Book ID {bk} not found. Apply filter anyway?"):
+                return
+        self.analysis_filter = {'enrollment_no': en, 'book_id': bk}
+        self.refresh_analysis()
+
+    def clear_analysis_filter(self):
+        self.analysis_student_var.set('')
+        self.analysis_book_var.set('')
+        self.analysis_filter = {'enrollment_no': None, 'book_id': None}
+        self.refresh_analysis()
+
+    # ---------------------- Helpers ----------------------
+    def get_student_name(self, enrollment_no):
+        try:
+            conn = self.db.get_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM students WHERE enrollment_no=?", (enrollment_no,))
+            row = cur.fetchone()
+            conn.close()
+            return row[0] if row else None
+        except Exception:
+            return None
+
+    def get_book_title(self, book_id):
+        try:
+            conn = self.db.get_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT title FROM books WHERE book_id=?", (book_id,))
+            row = cur.fetchone()
+            conn.close()
+            return row[0] if row else None
+        except Exception:
+            return None
+    
+    def create_summary_stats(self, days):
+        """Create summary statistics display"""
+        try:
+            # Get comprehensive stats
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+            
+            # Total borrowings in period
+            cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE borrow_date >= ?", (start_date,))
+            total_borrowings = cursor.fetchone()[0]
+            
+            # Total returns in period
+            cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE return_date >= ? AND return_date IS NOT NULL", (start_date,))
+            total_returns = cursor.fetchone()[0]
+            
+            # Currently overdue
+            today = datetime.now().strftime('%Y-%m-%d')
+            cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE status = 'borrowed' AND due_date < ?", (today,))
+            overdue_count = cursor.fetchone()[0]
+            
+            # Active students (who borrowed in period)
+            cursor.execute("SELECT COUNT(DISTINCT enrollment_no) FROM borrow_records WHERE borrow_date >= ?", (start_date,))
+            active_students = cursor.fetchone()[0]
+            
+            # Total fines collected (approximation)
+            cursor.execute("""
+                SELECT SUM(
+                    CASE 
+                        WHEN return_date > due_date 
+                        THEN (julianday(return_date) - julianday(due_date)) * ?
+                        ELSE 0 
+                    END
+                ) as total_fines
+                FROM borrow_records 
+                WHERE return_date >= ? AND return_date IS NOT NULL
+            """, (FINE_PER_DAY, start_date))
+            
+            total_fines = cursor.fetchone()[0] or 0
+            
+            conn.close()
+            
+            # Create stats display
+            stats_container = tk.Frame(self.stats_summary_frame, bg=self.colors['primary'])
+            stats_container.pack(fill=tk.X, padx=15, pady=15)
+            
+            stats = [
+                ("≡ƒôÜ Total Borrowings", total_borrowings, "#4ecdc4"),
+                ("≡ƒôÑ Total Returns", total_returns, "#45b7d1"),
+                ("ΓÜá∩╕Å Currently Overdue", overdue_count, "#ff6b6b"),
+                ("≡ƒæÑ Active Students", active_students, "#f9ca24"),
+                (f"≡ƒÆ░ Fines Collected (Γé╣{FINE_PER_DAY}/day)", f"Γé╣{total_fines:.0f}", "#a55eea")
+            ]
+            
+            for i, (label, value, color) in enumerate(stats):
+                stat_frame = tk.Frame(stats_container, bg=color, relief='flat', bd=0)
+                stat_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
+                
+                tk.Label(
+                    stat_frame,
+                    text=str(value),
+                    font=('Segoe UI', 18, 'bold'),
+                    bg=color,
+                    fg='white'
+                ).pack(pady=(15, 5))
+                
+                tk.Label(
+                    stat_frame,
+                    text=label,
+                    font=('Segoe UI', 10, 'bold'),
+                    bg=color,
+                    fg='white'
+                ).pack(pady=(0, 15))
+            
+        except Exception as e:
+            print(f"Error creating summary stats: {e}")
+    
+    def export_analysis_excel(self):
+        """Export analysis charts and data to Excel with embedded charts"""
+        try:
+            if not XLSXWRITER_AVAILABLE:
+                messagebox.showerror("Export Error", "xlsxwriter package is required for Excel export with charts.\n\nPlease install: pip install xlsxwriter")
+                return
+            
+            days = int(self.analysis_period.get())
+            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+            
+            # File dialog
+            filename = f"library_analysis_{days}days_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel files", "*.xlsx")],
+                initialfile=filename
+            )
+            
+            if not file_path:
+                return
+            
+            # Create workbook
+            workbook = xlsxwriter.Workbook(file_path)
+            
+            # Add formats
+            header_format = workbook.add_format({'bold': True, 'font_size': 14, 'bg_color': '#4ecdc4', 'font_color': 'white'})
+            subheader_format = workbook.add_format({'bold': True, 'font_size': 12, 'bg_color': '#f0f0f0'})
+            
+            # Summary worksheet
+            summary_ws = workbook.add_worksheet('Analysis Summary')
+            # Three-line header requested by user
+            row = self._xlsxwriter_write_header(summary_ws, workbook, start_row=0)
+            summary_ws.write(row, 0, f'Library Analysis Report - Last {days} Days', header_format)
+            summary_ws.write(row + 1, 0, f'Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M")}')
+            row += 3
+            
+            # Get and write summary data
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            # Book status data
+            summary_ws.write(row, 0, 'Book Status Distribution', subheader_format)
+            row += 1
+            
+            cursor.execute("""
+                SELECT 
+                    CASE 
+                        WHEN br.status = 'borrowed' THEN 'Currently Issued'
+                        ELSE 'Available'
+                    END as status,
+                    COUNT(DISTINCT b.book_id) as count
+                FROM books b
+                LEFT JOIN borrow_records br ON b.book_id = br.book_id AND br.status = 'borrowed'
+                GROUP BY status
+            """)
+            
+            book_status_data = cursor.fetchall()
+            for i, (status, count) in enumerate(book_status_data):
+                summary_ws.write(row + i, 0, status)
+                summary_ws.write(row + i, 1, count)
+            
+            row += len(book_status_data) + 2
+            
+            # Student activity data
+            summary_ws.write(row, 0, f'Student Activity (Last {days} Days)', subheader_format)
+            row += 1
+            
+            cursor.execute("""
+                SELECT 
+                    s.year,
+                    COUNT(br.id) as borrow_count
+                FROM students s
+                LEFT JOIN borrow_records br ON s.enrollment_no = br.enrollment_no 
+                    AND br.borrow_date >= ?
+                GROUP BY s.year
+                HAVING borrow_count > 0
+                ORDER BY borrow_count DESC
+            """, (start_date,))
+            
+            student_activity_data = cursor.fetchall()
+            for i, (year, count) in enumerate(student_activity_data):
+                summary_ws.write(row + i, 0, f"{year} Year")
+                summary_ws.write(row + i, 1, count)
+            
+            conn.close()
+
+            # Insert chart images for the current on-screen charts
+            def fig_to_image_bytes(fig):
+                bio = BytesIO()
+                fig.savefig(bio, format='png', dpi=120, bbox_inches='tight')
+                bio.seek(0)
+                return bio
+
+            img_row = row + len(student_activity_data) + 3
+            summary_ws.write(img_row, 0, 'Charts Snapshot', subheader_format)
+            img_row += 1
+            col = 0
+            for key in ['borrow_status', 'student_activity', 'daily_trend', 'popular_books', 'student_specific_status', 'book_specific_status']:
+                if key in self.current_charts and isinstance(self.current_charts[key][0], Figure):
+                    fig = self.current_charts[key][0]
+                    try:
+                        bio = fig_to_image_bytes(fig)
+                        summary_ws.insert_image(img_row, col, f"{key}.png", {'image_data': bio, 'x_scale': 0.9, 'y_scale': 0.9})
+                        col += 8  # move to the right for next image
+                        if col > 8:
+                            img_row += 20
+                            col = 0
+                    except Exception as e:
+                        print(f"Failed to insert image for {key}: {e}")
+
+            workbook.close()
+            
+            messagebox.showinfo("Export Successful", f"Analysis exported to:\n{file_path}")
+            
+            # Ask if user wants to open the file
+            if messagebox.askyesno("Open File", "Do you want to open the exported file?"):
+                self.open_file(file_path)
+                
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export analysis: {str(e)}")
+    
+    def export_analysis_word(self):
+        """Export analysis summary to Word document"""
+        try:
+            if Document is None:
+                messagebox.showerror("Export Error", "python-docx package is required for Word export.\n\nPlease install: pip install python-docx")
+                return
+            
+            days = int(self.analysis_period.get())
+            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+            
+            # File dialog
+            filename = f"library_analysis_{days}days_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".docx",
+                filetypes=[("Word documents", "*.docx")],
+                initialfile=filename
+            )
+            
+            if not file_path:
+                return
+            
+            # Create document
+            doc = Document()
+            
+            # Header
+            header = doc.add_heading(f'Library Analysis Report', 0)
+            header.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            # Metadata
+            doc.add_paragraph(f'Analysis Period: Last {days} Days')
+            doc.add_paragraph(f'Date Range: {start_date} to {datetime.now().strftime("%Y-%m-%d")}')
+            doc.add_paragraph(f'Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
+            doc.add_paragraph('')
+            
+            # Get data
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            # Summary statistics
+            doc.add_heading('Summary Statistics', level=1)
+            
+            cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE borrow_date >= ?", (start_date,))
+            total_borrowings = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE return_date >= ? AND return_date IS NOT NULL", (start_date,))
+            total_returns = cursor.fetchone()[0]
+            
+            today = datetime.now().strftime('%Y-%m-%d')
+            cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE status = 'borrowed' AND due_date < ?", (today,))
+            overdue_count = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(DISTINCT enrollment_no) FROM borrow_records WHERE borrow_date >= ?", (start_date,))
+            active_students = cursor.fetchone()[0]
+            
+            stats_table = doc.add_table(rows=5, cols=2)
+            stats_table.style = 'Table Grid'
+            
+            stats_data = [
+                ('Total Borrowings', total_borrowings),
+                ('Total Returns', total_returns), 
+                ('Currently Overdue', overdue_count),
+                ('Active Students', active_students),
+                ('Analysis Period', f'{days} days')
+            ]
+            
+            for i, (metric, value) in enumerate(stats_data):
+                stats_table.cell(i, 0).text = metric
+                stats_table.cell(i, 1).text = str(value)
+            
+            # Student activity by year
+            doc.add_heading('Student Activity by Year', level=1)
+            
+            cursor.execute("""
+                SELECT 
+                    s.year,
+                    COUNT(br.id) as borrow_count
+                FROM students s
+                LEFT JOIN borrow_records br ON s.enrollment_no = br.enrollment_no 
+                    AND br.borrow_date >= ?
+                GROUP BY s.year
+                HAVING borrow_count > 0
+                ORDER BY borrow_count DESC
+            """, (start_date,))
+            
+            year_activity = cursor.fetchall()
+            
+            if year_activity:
+                year_table = doc.add_table(rows=len(year_activity) + 1, cols=2)
+                year_table.style = 'Table Grid'
+                year_table.cell(0, 0).text = 'Academic Year'
+                year_table.cell(0, 1).text = 'Books Borrowed'
+                
+                for i, (year, count) in enumerate(year_activity):
+                    year_table.cell(i + 1, 0).text = f"{year} Year"
+                    year_table.cell(i + 1, 1).text = str(count)
+            else:
+                doc.add_paragraph('No student activity recorded in the selected period.')
+            
+            conn.close()
+            
+            # Save document
+            doc.save(file_path)
+            
+            messagebox.showinfo("Export Successful", f"Analysis exported to:\n{file_path}")
+            
+            # Ask if user wants to open the file
+            if messagebox.askyesno("Open File", "Do you want to open the exported file?"):
+                self.open_file(file_path)
+                
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export analysis: {str(e)}")
+
+# Main application entry point
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = LibraryApp(root)
+    root.mainloop()

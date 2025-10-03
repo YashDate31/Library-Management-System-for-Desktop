@@ -5,3 +5,4 @@ python-docx
 tkcalendar
 matplotlib
 xlsxwriter
+pillow

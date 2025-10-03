@@ -1,36 +1,33 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-from PyInstaller.utils.hooks import collect_all
-
-# Ensure key optional packages get included fully if used
-hidden = [
-    'pandas', 'openpyxl', 'xlsxwriter', 'sqlite3', 'tkinter', 'tkinter.ttk',
-    'tkinter.messagebox', 'tkinter.filedialog', 'datetime', 'webbrowser',
-    'subprocess', 'platform'
-]
-
+block_cipher = None
 
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('library.db', '.'),],
-    hiddenimports=hidden,
+    datas=[('logo.png', '.')],
+    hiddenimports=['pandas', 'openpyxl', 'tkcalendar', 'matplotlib', 'xlsxwriter', 'PIL', 'docx'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
     noarchive=False,
 )
-pyz = PYZ(a.pure)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
+    a.zipfiles,
     a.datas,
     [],
-    name='LibraryOfComputerDepartment_v3.4.0_FINAL_CLEAN',
+    name='Library of Computer department',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -44,7 +41,4 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=None,
-    version=None,
-    uac_admin=False,
-    uac_uiaccess=False,
 )

@@ -64,8 +64,36 @@ class Database:
                 due_date DATE NOT NULL,
                 return_date DATE,
                 status TEXT DEFAULT 'borrowed',
+                academic_year TEXT,
                 FOREIGN KEY (enrollment_no) REFERENCES students (enrollment_no),
                 FOREIGN KEY (book_id) REFERENCES books (book_id)
+            )
+        ''')
+        
+        # Create promotion_history table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS promotion_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                enrollment_no TEXT NOT NULL,
+                student_name TEXT NOT NULL,
+                old_year TEXT NOT NULL,
+                new_year TEXT NOT NULL,
+                letter_number TEXT,
+                academic_year TEXT,
+                promotion_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (enrollment_no) REFERENCES students (enrollment_no)
+            )
+        ''')
+        
+        # Create academic_years table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS academic_years (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                year_name TEXT UNIQUE NOT NULL,
+                start_date DATE,
+                end_date DATE,
+                is_active INTEGER DEFAULT 0,
+                created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
@@ -145,23 +173,29 @@ class Database:
             conn.close()
     
     def borrow_book(self, enrollment_no, book_id, borrow_date, due_date):
-        """Record a book borrowing.
+        """Record a book borrowing with academic year tracking.
         borrow_date: string YYYY-MM-DD (user-selected or default today)
         due_date: string YYYY-MM-DD
         """
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
+            # Check student's eligibility: Pass Out students cannot borrow
+            cursor.execute('SELECT year FROM students WHERE enrollment_no = ?', (enrollment_no,))
+            srow = cursor.fetchone()
+            if not srow:
+                return False, "Student not found"
+            year_val = (srow[0] or '').strip().lower()
+            if year_val in ("pass out", "passout"):
+                return False, "Pass Out students cannot borrow books"
+
             # Check if book is available
             cursor.execute('SELECT available_copies FROM books WHERE book_id = ?', (book_id,))
             result = cursor.fetchone()
             if not result or result[0] <= 0:
                 return False, "Book not available"
             
-            # Check if student exists
-            cursor.execute('SELECT id FROM students WHERE enrollment_no = ?', (enrollment_no,))
-            if not cursor.fetchone():
-                return False, "Student not found"
+            # Student existence implicitly checked above
             
             # Validate provided dates and enforce exactly 7-day loan period
             try:
@@ -175,11 +209,14 @@ class Database:
             except ValueError:
                 return False, "Invalid date format (expected YYYY-MM-DD)"
 
-            # Add borrow record using provided borrow_date
+            # Get active academic year
+            academic_year = self.get_active_academic_year()
+
+            # Add borrow record using provided borrow_date and academic year
             cursor.execute('''
-                INSERT INTO borrow_records (enrollment_no, book_id, borrow_date, due_date)
-                VALUES (?, ?, ?, ?)
-            ''', (enrollment_no, book_id, borrow_date, due_date))
+                INSERT INTO borrow_records (enrollment_no, book_id, borrow_date, due_date, academic_year)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (enrollment_no, book_id, borrow_date, due_date, academic_year))
             
             # Update available copies
             cursor.execute('''
@@ -231,16 +268,17 @@ class Database:
             conn.close()
     
     def get_students(self, search_term=''):
-        """Get list of students with optional search"""
+        """Get list of students with optional search - newest first"""
         conn = self.get_connection()
         cursor = conn.cursor()
         if search_term:
             cursor.execute('''
                 SELECT * FROM students 
                 WHERE enrollment_no LIKE ? OR name LIKE ? OR email LIKE ? OR department LIKE ?
+                ORDER BY id DESC
             ''', (f'%{search_term}%', f'%{search_term}%', f'%{search_term}%', f'%{search_term}%'))
         else:
-            cursor.execute('SELECT * FROM students')
+            cursor.execute('SELECT * FROM students ORDER BY id DESC')
         result = cursor.fetchall()
         conn.close()
         return result
@@ -326,6 +364,156 @@ class Database:
             conn.close()
     
     # Removed add_sample_data_if_empty to keep production database empty on first run
+
+    def get_next_book_id(self):
+        """Generate next book ID automatically (e.g., BK001, BK002, etc.)"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('SELECT book_id FROM books ORDER BY id DESC LIMIT 1')
+            last_book = cursor.fetchone()
+            if last_book:
+                last_id = last_book[0]
+                # Extract number from last book ID (e.g., BK001 -> 001)
+                if last_id.startswith('BK') and len(last_id) > 2:
+                    try:
+                        num = int(last_id[2:])
+                        return f"BK{num + 1:03d}"
+                    except:
+                        pass
+            return "BK001"  # First book
+        except:
+            return "BK001"
+        finally:
+            conn.close()
+    
+    def add_promotion_history(self, enrollment_no, student_name, old_year, new_year, letter_number, academic_year):
+        """Add a record to promotion history"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                INSERT INTO promotion_history (enrollment_no, student_name, old_year, new_year, letter_number, academic_year)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (enrollment_no, student_name, old_year, new_year, letter_number, academic_year))
+            conn.commit()
+            return True, "Promotion recorded"
+        except Exception as e:
+            return False, f"Error: {str(e)}"
+        finally:
+            conn.close()
+    
+    def get_promotion_history(self):
+        """Get all promotion history records"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                SELECT enrollment_no, student_name, old_year, new_year, letter_number, 
+                       academic_year, promotion_date
+                FROM promotion_history
+                ORDER BY promotion_date DESC
+            ''')
+            return cursor.fetchall()
+        except:
+            return []
+        finally:
+            conn.close()
+    
+    def undo_last_promotion(self):
+        """Undo the last promotion (revert student year and delete promotion record)"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            # Get the last promotion record
+            cursor.execute('''
+                SELECT enrollment_no, old_year, new_year
+                FROM promotion_history
+                ORDER BY promotion_date DESC
+                LIMIT 1
+            ''')
+            last_promo = cursor.fetchone()
+            
+            if not last_promo:
+                return False, "No promotion to undo"
+            
+            enrollment_no, old_year, new_year = last_promo
+            
+            # Revert student year
+            cursor.execute('''
+                UPDATE students
+                SET year = ?
+                WHERE enrollment_no = ?
+            ''', (old_year, enrollment_no))
+            
+            # Delete the last promotion record
+            cursor.execute('''
+                DELETE FROM promotion_history
+                WHERE id = (SELECT id FROM promotion_history ORDER BY promotion_date DESC LIMIT 1)
+            ''')
+            
+            conn.commit()
+            return True, f"Promotion undone for {enrollment_no}"
+        except Exception as e:
+            return False, f"Error: {str(e)}"
+        finally:
+            conn.close()
+    
+    def create_academic_year(self, year_name):
+        """Create a new academic year"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            # Deactivate all other academic years
+            cursor.execute('UPDATE academic_years SET is_active = 0')
+            
+            # Insert new academic year as active
+            cursor.execute('''
+                INSERT INTO academic_years (year_name, is_active)
+                VALUES (?, 1)
+            ''', (year_name,))
+            conn.commit()
+            return True, f"Academic year {year_name} created"
+        except sqlite3.IntegrityError:
+            # Year already exists, just activate it
+            cursor.execute('''
+                UPDATE academic_years SET is_active = 1 WHERE year_name = ?
+            ''', (year_name,))
+            cursor.execute('''
+                UPDATE academic_years SET is_active = 0 WHERE year_name != ?
+            ''', (year_name,))
+            conn.commit()
+            return True, f"Academic year {year_name} activated"
+        except Exception as e:
+            return False, f"Error: {str(e)}"
+        finally:
+            conn.close()
+    
+    def get_active_academic_year(self):
+        """Get the current active academic year"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('SELECT year_name FROM academic_years WHERE is_active = 1 LIMIT 1')
+            result = cursor.fetchone()
+            return result[0] if result else None
+        except:
+            return None
+        finally:
+            conn.close()
+    
+    def get_all_academic_years(self):
+        """Get all academic years"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('SELECT year_name FROM academic_years ORDER BY created_date DESC')
+            return [row[0] for row in cursor.fetchall()]
+        except:
+            return []
+        finally:
+            conn.close()
+
 
     def clear_all_data(self):
         """Completely remove all students, books and borrow records.

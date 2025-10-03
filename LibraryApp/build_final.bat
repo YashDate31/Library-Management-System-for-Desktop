@@ -1,33 +1,47 @@
 @echo off
-setlocal ENABLEDELAYEDEXPANSION
+echo ========================================
+echo Building: Library of Computer department
+echo ========================================
+echo.
 
-echo ==================================================
-echo Building FINAL CLEAN Executable (v3.4.0_FINAL_CLEAN)
-echo ==================================================
-
-cd /d "%~dp0"
-
-if not exist "..\.venv\Scripts\python.exe" (
-  echo [ERROR] Virtual environment Python not found at ..\.venv\Scripts\python.exe
-  echo Please ensure your venv exists.
-  pause
-  exit /b 1
-)
-
-REM Clean previous dist/build for fresh build
-if exist build rd /s /q build
-if exist dist rd /s /q dist
-
-"..\.venv\Scripts\python.exe" -m PyInstaller build_final.spec
-if %errorlevel% neq 0 (
-  echo Build failed.
-  pause
-  exit /b 1
+REM Activate virtual environment if it exists
+if exist .venv\Scripts\activate.bat (
+    echo Activating virtual environment...
+    call .venv\Scripts\activate.bat
+) else if exist ..\\.venv\Scripts\activate.bat (
+    echo Activating parent virtual environment...
+    call ..\\.venv\Scripts\activate.bat
 )
 
 echo.
-echo Build complete.
-echo Output EXE: %cd%\dist\LibraryOfComputerDepartment_v3.4.0_FINAL_CLEAN.exe
+echo Cleaning previous build files...
+if exist "dist\Library of Computer department.exe" del "dist\Library of Computer department.exe"
+if exist build rmdir /s /q build
+if exist dist rmdir /s /q dist
+
 echo.
-echo You can now run the EXE. Version label inside app should show: v3.4.0_FINAL_CLEAN
+echo Building executable with PyInstaller...
+pyinstaller --clean build_final.spec
+
+echo.
+if exist "dist\Library of Computer department.exe" (
+    echo ========================================
+    echo BUILD SUCCESSFUL!
+    echo ========================================
+    echo.
+    echo Executable created at:
+    echo dist\Library of Computer department.exe
+    echo.
+    echo File size:
+    dir "dist\Library of Computer department.exe" | find "Library of Computer department.exe"
+    echo.
+    echo You can now run: dist\"Library of Computer department.exe"
+) else (
+    echo ========================================
+    echo BUILD FAILED!
+    echo ========================================
+    echo Please check the output above for errors.
+)
+
+echo.
 pause

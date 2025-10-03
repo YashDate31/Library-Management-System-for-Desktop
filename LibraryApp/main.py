@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Library of Computer Department Management System
 Version v3.7_DEVELOPER_LOGIN - Developer branding on login + visible version label
@@ -16,18 +16,20 @@ import webbrowser
 import subprocess
 import platform
 from io import BytesIO
+
+# Optional: Word export support
 try:
     from docx import Document
     from docx.shared import Pt
     from docx.enum.text import WD_ALIGN_PARAGRAPH
 except Exception:
-    Document = None  # Will handle gracefully if not installed
+    Document = None
 
 # Calendar date picker support
 try:
     from tkcalendar import DateEntry
 except Exception:
-    DateEntry = None  # Fallback to manual entry + dialog
+    DateEntry = None
 
 # Matplotlib for charts and analysis
 try:
@@ -68,8 +70,8 @@ ADMIN_PASSWORD = "gpa123"
 class LibraryApp:
     def __init__(self, root):
         self.root = root
-        # Set window title with current version so user can verify build
-        self.root.title(f"📚 Library of Computer Department {APP_VERSION}")
+        # Set window title (remove version as requested)
+        self.root.title("📚 Library of Computer Department")
         self.root.geometry("1400x900")
         self.root.state('zoomed')  # Maximize window
         
@@ -77,7 +79,8 @@ class LibraryApp:
         self.colors = {
             'primary': '#ffffff',      # Pure white (backgrounds)
             'secondary': '#2E86AB',    # Professional blue (buttons, accents)
-            'accent': '#0F3460'        # Dark blue (text, headers)
+            'accent': '#0F3460',       # Dark blue (text, headers)
+            'text': '#333333'          # Dark gray text
         }
         
         self.root.configure(bg=self.colors['primary'])
@@ -204,8 +207,15 @@ class LibraryApp:
         # Header
         self.create_header(main_container)
         
-        # Create notebook for tabs
+        # Create notebook for tabs with larger tab sizes
         self.notebook = ttk.Notebook(main_container)
+        
+        # Configure notebook style for larger tabs
+        style = ttk.Style()
+        style.configure('TNotebook.Tab', 
+                       padding=[20, 12],  # Increased padding for larger tabs
+                       font=('Segoe UI', 11, 'bold'))  # Larger font
+        
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=20, pady=(10, 20))
         
         # Create tabs
@@ -224,58 +234,90 @@ class LibraryApp:
     
     def create_header(self, parent):
         """Create application header"""
-        header_frame = tk.Frame(parent, bg=self.colors['secondary'], height=90)
-        header_frame.pack(fill=tk.X, padx=15, pady=(15, 0))
+        # Slightly taller header to avoid any text clipping
+        header_frame = tk.Frame(parent, bg=self.colors['secondary'], height=120)
+        header_frame.pack(fill=tk.X, padx=0, pady=(0, 0))
         header_frame.pack_propagate(False)
-        
+
         # Add subtle shadow effect
         shadow_frame = tk.Frame(parent, bg='#d1d1d1', height=2)
         shadow_frame.pack(fill=tk.X, padx=15)
-        
+
         # Logo and title container
         logo_title_frame = tk.Frame(header_frame, bg=self.colors['secondary'])
-        logo_title_frame.pack(expand=True, fill=tk.BOTH, padx=25, pady=15)
-        
-        # Logo
-        logo_frame = tk.Frame(logo_title_frame, bg='white', width=70, height=70)
-        logo_frame.pack(side=tk.LEFT, padx=(0, 25))
+        # Reduce vertical padding so content fits comfortably
+        logo_title_frame.pack(expand=True, fill=tk.BOTH, padx=25, pady=10)
+        # Use grid inside this frame for precise alignment (logo | title | actions)
+        logo_title_frame.grid_columnconfigure(0, weight=0)
+        logo_title_frame.grid_columnconfigure(1, weight=1)
+        logo_title_frame.grid_columnconfigure(2, weight=0)
+        logo_title_frame.grid_rowconfigure(0, weight=1)
+
+        # Logo - Proper size
+        logo_frame = tk.Frame(logo_title_frame, bg='white', width=80, height=80)
+        logo_frame.grid(row=0, column=0, sticky='w', padx=(0, 20))
         logo_frame.pack_propagate(False)
-        
-        logo_label = tk.Label(
-            logo_frame,
-            text="📚",
-            font=('Segoe UI', 28, 'bold'),
-            bg='white',
-            fg=self.colors['secondary'],
-            justify='center'
-        )
+
+        # Try to load college logo image, fallback to emoji
+        try:
+            from PIL import Image, ImageTk
+            import os
+            # First check for logo.png, then college_logo.png, then college_logo.jpg
+            logo_path = os.path.join(os.path.dirname(__file__), 'logo.png')
+            if not os.path.exists(logo_path):
+                logo_path = os.path.join(os.path.dirname(__file__), 'college_logo.png')
+            if not os.path.exists(logo_path):
+                logo_path = os.path.join(os.path.dirname(__file__), 'college_logo.jpg')
+
+            if os.path.exists(logo_path):
+                # Load original image and preserve its rectangular aspect ratio
+                img = Image.open(logo_path)
+                # Fit within 78x78 box while maintaining aspect ratio
+                max_size = (78, 78)
+                img.thumbnail(max_size, Image.Resampling.LANCZOS)
+                self.logo_photo = ImageTk.PhotoImage(img)
+
+                logo_label = tk.Label(
+                    logo_frame,
+                    image=self.logo_photo,
+                    bg='white'
+                )
+            else:
+                raise FileNotFoundError("Logo file not found")
+        except Exception:
+            # Fallback to emoji if image loading fails
+            logo_label = tk.Label(
+                logo_frame,
+                text="📚",
+                font=('Segoe UI', 32, 'bold'),
+                bg='white',
+                fg=self.colors['secondary'],
+                justify='center'
+            )
         logo_label.pack(expand=True)
-        
-        # Title and subtitle
+
+        # Title - Single line header with proper spacing
         title_frame = tk.Frame(logo_title_frame, bg=self.colors['secondary'])
-        title_frame.pack(side=tk.LEFT, expand=True, fill=tk.BOTH)
-        
-        title_label = tk.Label(
+        title_frame.grid(row=0, column=1, sticky='nsew')
+        # Center the title vertically in its cell
+        title_frame.grid_rowconfigure(0, weight=1)
+        title_frame.grid_columnconfigure(0, weight=1)
+
+        # Single line title - GPA'S Library OF Computer Department
+        main_title_label = tk.Label(
             title_frame,
-            text="Library of Computer Department",
-            font=('Segoe UI', 20, 'bold'),
+            text="GPA'S Library OF Computer Department",
+            font=('Segoe UI', 22, 'bold'),
             bg=self.colors['secondary'],
-            fg='white'
+            fg='white',
+            anchor='w'
         )
-        title_label.pack(anchor='w', pady=(15, 2))
-        
-        subtitle_label = tk.Label(
-            title_frame,
-            text="Comprehensive Book & Student Management System",
-            font=('Segoe UI', 12),
-            bg=self.colors['secondary'],
-            fg='#b8d4f0'
-        )
-        subtitle_label.pack(anchor='w')
-        
+        # Use grid so it vertically centers without extra padding
+        main_title_label.grid(row=0, column=0, sticky='w', padx=(0, 0), pady=0)
+
         # User info
         user_frame = tk.Frame(logo_title_frame, bg=self.colors['secondary'])
-        user_frame.pack(side=tk.RIGHT, padx=(25, 0))
+        user_frame.grid(row=0, column=2, sticky='e', padx=(25, 0))
         
         # Top-right row: Developer label + inline Promote link
         user_top_row = tk.Frame(user_frame, bg=self.colors['secondary'])
@@ -305,49 +347,9 @@ class LibraryApp:
             command=self._prompt_and_promote
         )
         promote_btn_hdr.pack(side=tk.LEFT, padx=(10, 0))
+        # Removed version label and duplicate Developer Info button as requested
 
-        # Version label (so you can visually confirm correct build)
-        version_label = tk.Label(
-            user_frame,
-            text=f"Version: {APP_VERSION}",
-            font=('Segoe UI', 9),
-            bg=self.colors['secondary'],
-            fg='#e0f2ff'
-        )
-        version_label.pack(pady=(0, 12))
-
-        # Developer Info button (kept, smaller and aligned right)
-        dev_btn = tk.Button(
-            user_frame,
-            text="👨‍💻 Developer Info",
-            font=('Segoe UI', 9, 'bold'),
-            bg='white',
-            fg=self.colors['secondary'],
-            relief='flat',
-            padx=14,
-            pady=4,
-            command=self.show_developer_info,
-            cursor='hand2',
-            activebackground='#f0f8ff',
-            activeforeground=self.colors['secondary']
-        )
-        dev_btn.pack(anchor='e')
-
-        clear_btn = tk.Button(
-            user_frame,
-            text="🗑️ Clear All Data",
-            font=('Segoe UI', 9, 'bold'),
-            bg='#dc3545',
-            fg='white',
-            relief='flat',
-            padx=14,
-            pady=4,
-            command=self.clear_all_data_ui,
-            cursor='hand2',
-            activebackground='#c82333',
-            activeforeground='white'
-        )
-        clear_btn.pack(pady=(6,0))
+    # Removed "Clear All Data" button from header as requested
     def show_developer_info(self):
         """Minimal developer info dialog (only 4 fields)"""
         dialog = tk.Toplevel(self.root)
@@ -370,6 +372,17 @@ class LibraryApp:
             tk.Label(body,text=v,font=vf,bg='white',fg='#222').grid(row=r,column=1,sticky='w',pady=3)
         body.grid_columnconfigure(0,weight=0); body.grid_columnconfigure(1,weight=1)
         tk.Button(dialog,text='Close',font=('Segoe UI',10,'bold'),bg=self.colors['secondary'],fg='white',relief='flat',padx=16,pady=6,cursor='hand2',command=dialog.destroy,activebackground=self.colors['accent'],activeforeground='white').pack(pady=(4,14))
+
+    def clear_all_data_ui(self):
+        """Clear all demo/user data with a confirmation prompt."""
+        if not messagebox.askyesno("Confirm", "Remove ALL students, books and records? This cannot be undone."):
+            return
+        ok, msg = self.db.clear_all_data()
+        if ok:
+            messagebox.showinfo("Done", msg)
+            self.refresh_all_data()
+        else:
+            messagebox.showerror("Error", msg)
 
     def _prompt_and_promote(self):
         """Prompt for password and, if correct, promote student years.
@@ -1469,7 +1482,7 @@ class LibraryApp:
         type_combo.pack(side=tk.LEFT, padx=5)
         type_combo.bind('<<ComboboxSelected>>', lambda e: self.search_records())
         
-        # Row 2: Date filters
+        # Row 2: Date filters and Academic Year
         row2 = tk.Frame(search_controls, bg=self.colors['primary'])
         row2.pack(fill=tk.X)
         
@@ -1488,6 +1501,17 @@ class LibraryApp:
         else:
             self.record_to_date = tk.Entry(row2, font=('Segoe UI', 10), width=12)
             self.record_to_date.pack(side=tk.LEFT, padx=(5, 15))
+        
+        # Academic Year filter
+        tk.Label(row2, text="Academic Year:", bg=self.colors['primary'], fg=self.colors['accent'], font=('Segoe UI', 10)).pack(side=tk.LEFT)
+        self.record_academic_year_var = tk.StringVar(value="All")
+        
+        # Get academic years from database
+        academic_years = ["All"] + self.db.get_all_academic_years()
+        academic_year_combo = ttk.Combobox(row2, textvariable=self.record_academic_year_var, 
+                                          values=academic_years, state="readonly", width=15)
+        academic_year_combo.pack(side=tk.LEFT, padx=(5, 15))
+        academic_year_combo.bind('<<ComboboxSelected>>', lambda e: self.search_records())
         
         filter_btn = tk.Button(
             row2,
@@ -1806,7 +1830,7 @@ class LibraryApp:
         """Show add book dialog"""
         dialog = tk.Toplevel(self.root)
         dialog.title("Add New Book")
-        dialog.geometry("500x450")
+        dialog.geometry("500x500")
         dialog.configure(bg='white')
         dialog.transient(self.root)
         dialog.grab_set()
@@ -1840,6 +1864,9 @@ class LibraryApp:
         
         entries = {}
         
+        # Auto-generate checkbox variable
+        auto_gen_var = tk.BooleanVar(value=False)
+        
         for i, (label_text, field_name) in enumerate(fields):
             # Label
             label = tk.Label(
@@ -1861,6 +1888,40 @@ class LibraryApp:
                     state="readonly"
                 )
                 entry.set("Technology")  # Default category
+            elif field_name == "book_id":
+                # Book ID entry with auto-generate option
+                id_frame = tk.Frame(form_frame, bg='white')
+                entry = tk.Entry(
+                    id_frame,
+                    font=('Segoe UI', 11),
+                    width=30,
+                    relief='solid',
+                    bd=2
+                )
+                entry.pack(side=tk.TOP, fill=tk.X)
+                
+                def toggle_auto_gen():
+                    if auto_gen_var.get():
+                        next_id = self.db.get_next_book_id()
+                        entry.delete(0, tk.END)
+                        entry.insert(0, next_id)
+                        entry.config(state='readonly')
+                    else:
+                        entry.config(state='normal')
+                        entry.delete(0, tk.END)
+                
+                auto_check = tk.Checkbutton(
+                    id_frame,
+                    text="Auto-generate Book ID",
+                    variable=auto_gen_var,
+                    command=toggle_auto_gen,
+                    font=('Segoe UI', 9),
+                    bg='white',
+                    fg=self.colors['text']
+                )
+                auto_check.pack(side=tk.TOP, anchor='w', pady=(3, 0))
+                
+                id_frame.grid(row=i, column=1, pady=(0, 15))
             else:
                 entry = tk.Entry(
                     form_frame,
@@ -1871,8 +1932,10 @@ class LibraryApp:
                 )
                 if field_name == "copies":
                     entry.insert(0, "1")  # Default to 1 copy
+                entry.grid(row=i, column=1, pady=(0, 15))
             
-            entry.grid(row=i, column=1, pady=(0, 15))
+            if field_name != "book_id":
+                entry.grid(row=i, column=1, pady=(0, 15))
             entries[field_name] = entry
         
         # Buttons
@@ -1961,6 +2024,24 @@ class LibraryApp:
         # Extract book ID (before " - " if formatted, otherwise use as is)
         book_id = book_text.split(' - ')[0] if ' - ' in book_text else book_text
         
+        # Enforce: Pass Out students cannot borrow (UI-side quick check)
+        try:
+            conn = self.db.get_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT year FROM students WHERE enrollment_no = ?", (enrollment_no,))
+            row = cur.fetchone()
+            conn.close()
+            if not row:
+                messagebox.showerror("Error", "Student not found!")
+                return
+            year_val = (row[0] or '').strip().lower()
+            if year_val in ("pass out", "passout"):
+                messagebox.showerror("Not Allowed", "Pass Out students cannot borrow books.")
+                return
+        except Exception:
+            # If the check fails unexpectedly, continue to DB enforcement which also validates
+            pass
+
         # Validate date format (borrow & due)
         try:
             from datetime import datetime, timedelta
@@ -2232,20 +2313,23 @@ class LibraryApp:
             print(f"Error searching books: {str(e)}")
     
     def search_records(self):
-        """Search and filter records"""
+        """Search and filter records including academic year"""
         search_term = self.record_search_var.get().lower()
         type_filter = self.record_type_filter.get()
         from_date = self.record_from_date.get()
         to_date = self.record_to_date.get()
+        academic_year_filter = self.record_academic_year_var.get() if hasattr(self, 'record_academic_year_var') else "All"
         
         records = self.get_all_records()
         
         # Filter records
         filtered_records = []
         for record in records:
-            # record: (enroll, name, book_id, title, borrow_date, due_date, return_date, status, fine)
+            # record: (enroll, name, book_id, title, borrow_date, due_date, return_date, status, fine, academic_year)
             status_val = record[7]
             fine_val = record[8]
+            academic_year_val = record[9] if len(record) > 9 else 'N/A'
+            
             if type_filter != "All":
                 if type_filter == "Overdue":
                     if fine_val == '0':
@@ -2253,6 +2337,11 @@ class LibraryApp:
                 else:
                     if status_val.lower() != type_filter.lower():
                         continue
+            
+            # Apply academic year filter
+            if academic_year_filter != "All":
+                if academic_year_val != academic_year_filter:
+                    continue
             
             # Apply search filter
             if search_term:
@@ -2288,6 +2377,8 @@ class LibraryApp:
         self.record_type_filter.set("All")
         self.record_from_date.delete(0, tk.END)
         self.record_to_date.delete(0, tk.END)
+        if hasattr(self, 'record_academic_year_var'):
+            self.record_academic_year_var.set("All")
         self.search_records()
     
     def refresh_all_data(self):
@@ -2311,6 +2402,13 @@ class LibraryApp:
                 widget.destroy()
             # Recreate stats cards
             self.create_stats_cards(self.stats_container)
+        
+        # Auto-refresh Analysis tab charts when data changes
+        if hasattr(self, 'notebook') and hasattr(self, 'refresh_analysis'):
+            try:
+                self.refresh_analysis()
+            except Exception:
+                pass
     
     def refresh_students(self):
         """Refresh students list"""
@@ -2483,11 +2581,11 @@ class LibraryApp:
             return []
     
     def get_all_records(self):
-        """Get all transaction records"""
+        """Get all transaction records including academic year"""
         try:
             conn = self.db.get_connection()
             cursor = conn.cursor()
-            # Return enrollment_no and book_id explicitly for correct display
+            # Return enrollment_no, book_id, and academic_year explicitly for correct display
             cursor.execute("""
                 SELECT 
                     br.enrollment_no,
@@ -2502,7 +2600,8 @@ class LibraryApp:
                         WHEN br.status = 'borrowed' AND date('now') > br.due_date 
                         THEN CAST(julianday('now') - julianday(br.due_date) AS INT)
                         ELSE 0 
-                    END as days_overdue
+                    END as days_overdue,
+                    COALESCE(br.academic_year, 'N/A') as academic_year
                 FROM borrow_records br
                 JOIN students s ON br.enrollment_no = s.enrollment_no
                 JOIN books b ON br.book_id = b.book_id
@@ -2517,7 +2616,7 @@ class LibraryApp:
             from datetime import datetime as _dt
             today = _dt.now().date()
             for rec in records:
-                (enroll, student_name, book_id, title, borrow_date, due_date, return_date, status, days_overdue) = rec
+                (enroll, student_name, book_id, title, borrow_date, due_date, return_date, status, days_overdue, academic_year) = rec
                 # Determine effective overdue days & fine
                 try:
                     due_d = _dt.strptime(due_date, '%Y-%m-%d').date()
@@ -2538,8 +2637,8 @@ class LibraryApp:
                             fine = overdue_days * FINE_PER_DAY
                     except Exception:
                         pass
-                # Keep fine as numeric for downstream display logic
-                formatted_records.append((enroll, student_name, book_id, title, borrow_date, due_date, return_date, status, fine))
+                # Keep fine as numeric for downstream display logic, add academic_year
+                formatted_records.append((enroll, student_name, book_id, title, borrow_date, due_date, return_date, status, fine, academic_year))
             return formatted_records
         except Exception as e:
             print(f"Error getting records: {e}")
@@ -2748,11 +2847,11 @@ class LibraryApp:
             )
             
             if file_path:
-                # Add three-line header then table using openpyxl for styling flexibility
+                # Add header then table using openpyxl for styling flexibility
                 with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
                     sheet = 'Students'
-                    # Write data after header block
-                    start_row = 3  # we will write header manually (3 lines)
+                    # Write data after header block (header takes 4 rows including blank)
+                    start_row = 4  # header returns row 5, so data starts at row 5 (0-indexed as 4)
                     df.to_excel(writer, sheet_name=sheet, index=False, startrow=start_row)
                     ws = writer.book[sheet]
                     # Write required header above
@@ -2793,72 +2892,403 @@ class LibraryApp:
             return stored_year_label or '1st'
 
     def promote_student_years(self):
-        """One-step promotion for all students: 1st→2nd, 2nd→3rd, 3rd→Pass Out. 'Pass Out' remains unchanged.
-        Shows a detailed summary of transitions.
-        """
-        if not messagebox.askyesno(
-            "Promote Student Years",
-            "This will promote every student by ONE academic step (1st→2nd, 2nd→3rd, 3rd→Pass Out).\n\nProceed?"
-        ):
-            return
-
-        def _norm(label: str) -> str:
-            if not label:
-                return '1st'
-            s = str(label).strip().lower()
-            if s in (
-                '1st', 'first', 'first year', '1', 'i', 'fy', 'f.y', 'f.y.', 'fe', 'fe year'
+        """Enhanced promotion with letter number, academic year creation, and history tracking"""
+        # Create promotion dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Promote Student Years")
+        dialog.geometry("600x500")
+        dialog.configure(bg='white')
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.geometry("+%d+%d" % (self.root.winfo_rootx() + 100, self.root.winfo_rooty() + 100))
+        
+        # Title
+        title_label = tk.Label(
+            dialog,
+            text="🎓 Promote Student Years",
+            font=('Segoe UI', 16, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        )
+        title_label.pack(pady=(20, 10))
+        
+        # Info text
+        info_label = tk.Label(
+            dialog,
+            text="This will promote: 1st→2nd, 2nd→3rd, 3rd→Pass Out",
+            font=('Segoe UI', 10),
+            bg='white',
+            fg=self.colors['text']
+        )
+        info_label.pack(pady=(0, 20))
+        
+        # Form frame
+        form_frame = tk.Frame(dialog, bg='white')
+        form_frame.pack(expand=True, padx=40)
+        
+        # Letter Number field
+        letter_label = tk.Label(
+            form_frame,
+            text="Letter Number:",
+            font=('Segoe UI', 11, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        )
+        letter_label.grid(row=0, column=0, sticky='w', pady=(0, 15), padx=(0, 20))
+        
+        letter_entry = tk.Entry(
+            form_frame,
+            font=('Segoe UI', 11),
+            width=30,
+            relief='solid',
+            bd=2
+        )
+        letter_entry.grid(row=0, column=1, pady=(0, 15))
+        
+        letter_hint = tk.Label(
+            form_frame,
+            text="(Can contain letters, numbers, and symbols)",
+            font=('Segoe UI', 8, 'italic'),
+            bg='white',
+            fg='#666'
+        )
+        letter_hint.grid(row=1, column=1, sticky='w', pady=(0, 15))
+        
+        # Academic Year field
+        year_label = tk.Label(
+            form_frame,
+            text="Academic Year:",
+            font=('Segoe UI', 11, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        )
+        year_label.grid(row=2, column=0, sticky='w', pady=(0, 15), padx=(0, 20))
+        
+        # Auto-suggest current academic year
+        current_year = datetime.now().year
+        suggested_year = f"{current_year}-{current_year + 1}"
+        
+        year_entry = tk.Entry(
+            form_frame,
+            font=('Segoe UI', 11),
+            width=30,
+            relief='solid',
+            bd=2
+        )
+        year_entry.insert(0, suggested_year)
+        year_entry.grid(row=2, column=1, pady=(0, 15))
+        
+        year_hint = tk.Label(
+            form_frame,
+            text=f"(Default: {suggested_year})",
+            font=('Segoe UI', 8, 'italic'),
+            bg='white',
+            fg='#666'
+        )
+        year_hint.grid(row=3, column=1, sticky='w', pady=(0, 20))
+        
+        # Buttons frame
+        btn_frame = tk.Frame(dialog, bg='white')
+        btn_frame.pack(pady=20)
+        
+        def perform_promotion():
+            letter_number = letter_entry.get().strip()
+            academic_year = year_entry.get().strip()
+            
+            if not letter_number:
+                messagebox.showerror("Error", "Letter Number is required!")
+                return
+            
+            if not academic_year:
+                messagebox.showerror("Error", "Academic Year is required!")
+                return
+            
+            # Confirm promotion
+            if not messagebox.askyesno(
+                "Confirm Promotion",
+                f"This will promote all students with:\n\nLetter Number: {letter_number}\nAcademic Year: {academic_year}\n\nProceed?"
             ):
-                return '1st'
-            if s in (
-                '2nd', 'second', 'second year', '2', 'ii', 'sy', 's.y', 's.y.'
-            ):
-                return '2nd'
-            if s in (
-                '3rd', 'third', 'third year', '3', 'iii', 'ty', 't.y', 't.y.'
-            ):
-                return '3rd'
-            if 'pass' in s:
-                return 'Pass Out'
-            return label
+                return
+            
+            def _norm(label: str) -> str:
+                if not label:
+                    return '1st'
+                s = str(label).strip().lower()
+                if s in ('1st', 'first', 'first year', '1', 'i', 'fy', 'f.y', 'f.y.', 'fe', 'fe year'):
+                    return '1st'
+                if s in ('2nd', 'second', 'second year', '2', 'ii', 'sy', 's.y', 's.y.'):
+                    return '2nd'
+                if s in ('3rd', 'third', 'third year', '3', 'iii', 'ty', 't.y', 't.y.'):
+                    return '3rd'
+                if 'pass' in s:
+                    return 'Pass Out'
+                return label
 
-        def _promote_once(label: str) -> str:
-            l = _norm(label)
-            return {'1st': '2nd', '2nd': '3rd', '3rd': 'Pass Out'}.get(l, l)
+            def _promote_once(label: str) -> str:
+                l = _norm(label)
+                return {'1st': '2nd', '2nd': '3rd', '3rd': 'Pass Out'}.get(l, l)
 
-        try:
-            conn = self.db.get_connection()
-            cur = conn.cursor()
-            cur.execute('SELECT enrollment_no, year FROM students')
-            rows = cur.fetchall()
-            c_12 = c_23 = c_3p = c_skip = 0
-            for en, yr in rows:
-                new = _promote_once(yr)
-                if new != yr:
-                    cur.execute('UPDATE students SET year=? WHERE enrollment_no=?', (new, en))
-                    if _norm(yr) == '1st' and new == '2nd':
-                        c_12 += 1
-                    elif _norm(yr) == '2nd' and new == '3rd':
-                        c_23 += 1
-                    elif _norm(yr) == '3rd' and new == 'Pass Out':
-                        c_3p += 1
-                else:
-                    c_skip += 1
-            conn.commit()
-            conn.close()
-            total = c_12 + c_23 + c_3p
-            msg = (
-                f"Updated Year for {total} student(s).\n\n"
-                f"1st → 2nd: {c_12}\n2nd → 3rd: {c_23}\n3rd → Pass Out: {c_3p}\n"
-                f"Unchanged: {c_skip} (already 'Pass Out' or non-standard label)"
-            )
-            messagebox.showinfo("Promotion Complete", msg)
             try:
-                self.refresh_students()
-            except Exception:
-                pass
-        except Exception as e:
-            messagebox.showerror("Promotion Failed", f"Could not promote student years: {e}")
+                # Create/activate academic year
+                self.db.create_academic_year(academic_year)
+                
+                conn = self.db.get_connection()
+                cur = conn.cursor()
+                cur.execute('SELECT enrollment_no, name, year FROM students')
+                rows = cur.fetchall()
+                c_12 = c_23 = c_3p = c_skip = 0
+                
+                for en, name, yr in rows:
+                    new = _promote_once(yr)
+                    if new != yr:
+                        cur.execute('UPDATE students SET year=? WHERE enrollment_no=?', (new, en))
+                        # Add to promotion history
+                        self.db.add_promotion_history(en, name, yr, new, letter_number, academic_year)
+                        
+                        if _norm(yr) == '1st' and new == '2nd':
+                            c_12 += 1
+                        elif _norm(yr) == '2nd' and new == '3rd':
+                            c_23 += 1
+                        elif _norm(yr) == '3rd' and new == 'Pass Out':
+                            c_3p += 1
+                    else:
+                        c_skip += 1
+                
+                conn.commit()
+                conn.close()
+                
+                total = c_12 + c_23 + c_3p
+                msg = (
+                    f"Promotion Complete!\n\n"
+                    f"Updated Year for {total} student(s).\n\n"
+                    f"1st → 2nd: {c_12}\n"
+                    f"2nd → 3rd: {c_23}\n"
+                    f"3rd → Pass Out: {c_3p}\n"
+                    f"Unchanged: {c_skip}\n\n"
+                    f"Letter Number: {letter_number}\n"
+                    f"Academic Year: {academic_year}"
+                )
+                messagebox.showinfo("Success", msg)
+                dialog.destroy()
+                
+                try:
+                    self.refresh_students()
+                    self.refresh_dashboard()
+                except Exception:
+                    pass
+                    
+            except Exception as e:
+                messagebox.showerror("Error", f"Promotion failed: {e}")
+        
+        def undo_last():
+            """Undo the last promotion"""
+            if messagebox.askyesno("Confirm Undo", "Undo the last promotion? This will revert the most recent promotion action."):
+                success, message = self.db.undo_last_promotion()
+                if success:
+                    messagebox.showinfo("Success", message)
+                    try:
+                        self.refresh_students()
+                        self.refresh_dashboard()
+                    except Exception:
+                        pass
+                else:
+                    messagebox.showerror("Error", message)
+        
+        def view_history():
+            """View promotion history"""
+            self.show_promotion_history_dialog()
+        
+        # Promote button
+        promote_btn = tk.Button(
+            btn_frame,
+            text="🎓 Promote Students",
+            font=('Segoe UI', 11, 'bold'),
+            bg=self.colors['accent'],
+            fg='white',
+            command=perform_promotion,
+            relief='flat',
+            padx=20,
+            pady=10,
+            cursor='hand2'
+        )
+        promote_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Undo button
+        undo_btn = tk.Button(
+            btn_frame,
+            text="↩️ Undo Last",
+            font=('Segoe UI', 11),
+            bg='#FF9800',
+            fg='white',
+            command=undo_last,
+            relief='flat',
+            padx=20,
+            pady=10,
+            cursor='hand2'
+        )
+        undo_btn.pack(side=tk.LEFT, padx=5)
+        
+        # History button
+        history_btn = tk.Button(
+            btn_frame,
+            text="📜 History",
+            font=('Segoe UI', 11),
+            bg=self.colors['secondary'],
+            fg='white',
+            command=view_history,
+            relief='flat',
+            padx=20,
+            pady=10,
+            cursor='hand2'
+        )
+        history_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Cancel button
+        cancel_btn = tk.Button(
+            btn_frame,
+            text="❌ Cancel",
+            font=('Segoe UI', 11),
+            bg='#666',
+            fg='white',
+            command=dialog.destroy,
+            relief='flat',
+            padx=20,
+            pady=10,
+            cursor='hand2'
+        )
+        cancel_btn.pack(side=tk.LEFT, padx=5)
+    
+    def show_promotion_history_dialog(self):
+        """Show promotion history in a dialog with download option"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Promotion History")
+        dialog.geometry("900x600")
+        dialog.configure(bg='white')
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.geometry("+%d+%d" % (self.root.winfo_rootx() + 50, self.root.winfo_rooty() + 50))
+        
+        # Title
+        title_label = tk.Label(
+            dialog,
+            text="📜 Promotion History",
+            font=('Segoe UI', 16, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        )
+        title_label.pack(pady=(20, 10))
+        
+        # Tree frame
+        tree_frame = tk.Frame(dialog, bg='white')
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        
+        # Scrollbars
+        v_scroll = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL)
+        h_scroll = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL)
+        
+        # Treeview
+        columns = ('Enrollment No', 'Student Name', 'Old Year', 'New Year', 'Letter Number', 'Academic Year', 'Promotion Date')
+        tree = ttk.Treeview(
+            tree_frame,
+            columns=columns,
+            show='headings',
+            yscrollcommand=v_scroll.set,
+            xscrollcommand=h_scroll.set,
+            height=15
+        )
+        
+        v_scroll.config(command=tree.yview)
+        h_scroll.config(command=tree.xview)
+        
+        # Configure columns
+        column_widths = [120, 150, 80, 80, 120, 120, 150]
+        for col, width in zip(columns, column_widths):
+            tree.heading(col, text=col)
+            tree.column(col, width=width, anchor='center')
+        
+        # Grid layout
+        tree.grid(row=0, column=0, sticky='nsew')
+        v_scroll.grid(row=0, column=1, sticky='ns')
+        h_scroll.grid(row=1, column=0, sticky='ew')
+        
+        tree_frame.grid_rowconfigure(0, weight=1)
+        tree_frame.grid_columnconfigure(0, weight=1)
+        
+        # Load data
+        history = self.db.get_promotion_history()
+        for record in history:
+            tree.insert('', 'end', values=record)
+        
+        # Button frame
+        btn_frame = tk.Frame(dialog, bg='white')
+        btn_frame.pack(pady=20)
+        
+        def download_history():
+            """Download promotion history as Excel file"""
+            if not history:
+                messagebox.showinfo("Info", "No promotion history to download")
+                return
+            
+            try:
+                # Create DataFrame
+                df = pd.DataFrame(history, columns=columns)
+                
+                # Save to file
+                filename = f"promotion_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                file_path = filedialog.asksaveasfilename(
+                    defaultextension=".xlsx",
+                    filetypes=[("Excel files", "*.xlsx")],
+                    initialfile=filename
+                )
+                
+                if file_path:
+                    with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                        sheet = 'Promotion History'
+                        df.to_excel(writer, sheet_name=sheet, index=False, startrow=4)
+                        ws = writer.book[sheet]
+                        self._write_excel_header_openpyxl(ws, start_row=1)
+                    
+                    messagebox.showinfo("Success", f"Promotion history exported to {file_path}")
+                    
+                    if messagebox.askyesno("Open File", "Do you want to open the exported file?"):
+                        self.open_file(file_path)
+                        
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to export: {str(e)}")
+        
+        # Download button
+        download_btn = tk.Button(
+            btn_frame,
+            text="📥 Download History",
+            font=('Segoe UI', 11, 'bold'),
+            bg=self.colors['accent'],
+            fg='white',
+            command=download_history,
+            relief='flat',
+            padx=20,
+            pady=10,
+            cursor='hand2'
+        )
+        download_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Close button
+        close_btn = tk.Button(
+            btn_frame,
+            text="❌ Close",
+            font=('Segoe UI', 11),
+            bg='#666',
+            fg='white',
+            command=dialog.destroy,
+            relief='flat',
+            padx=20,
+            pady=10,
+            cursor='hand2'
+        )
+        close_btn.pack(side=tk.LEFT, padx=5)
     
     def export_books_to_excel(self):
         """Export books to Excel"""
@@ -2916,7 +3346,7 @@ class LibraryApp:
             if file_path:
                 with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
                     sheet = 'Books'
-                    df.to_excel(writer, sheet_name=sheet, index=False, startrow=3)
+                    df.to_excel(writer, sheet_name=sheet, index=False, startrow=4)
                     ws = writer.book[sheet]
                     self._write_excel_header_openpyxl(ws, start_row=1)
                 messagebox.showinfo("Success", f"Books data exported to {file_path}")
@@ -2969,7 +3399,7 @@ class LibraryApp:
             if file_path:
                 with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
                     sheet = 'Records'
-                    df.to_excel(writer, sheet_name=sheet, index=False, startrow=3)
+                    df.to_excel(writer, sheet_name=sheet, index=False, startrow=4)
                     ws = writer.book[sheet]
                     self._write_excel_header_openpyxl(ws, start_row=1)
                 messagebox.showinfo("Success", f"Records data exported to {file_path}")
@@ -3423,33 +3853,67 @@ class LibraryApp:
 
     # ---------------------- Excel Helpers ----------------------
     def _write_excel_header_openpyxl(self, worksheet, start_row=1):
-        """Write the required three-line header into an openpyxl worksheet.
-        Lines:
-        - Government Polytechnic Awasari (Kh)
-        - Computer Department
-        - Department of Library
+        """Write the required header into an openpyxl worksheet with proper formatting.
+        Main heading: Government Polytechnic Awasari(Kh) - large and centered
+        Subheading: Departmental Library - smaller
+        Sub-subheading: Computer Engineering - even smaller
         Returns the next row after the header.
         """
-        lines = [
-            "Government Polytechnic Awasari (Kh)",
-            "Computer Department",
-            "Department of Library"
-        ]
-        for i, text in enumerate(lines, start=start_row):
-            try:
-                worksheet.cell(row=i, column=1, value=text)
-            except Exception:
-                pass
-        return start_row + len(lines)
+        from openpyxl.styles import Font, Alignment
+        
+        # Main heading - large, bold, centered
+        cell_main = worksheet.cell(row=start_row, column=1)
+        cell_main.value = "Government Polytechnic Awasari(Kh)"
+        cell_main.font = Font(size=16, bold=True, name='Arial')
+        cell_main.alignment = Alignment(horizontal='center', vertical='center')
+        
+        # Subheading - medium, bold, centered
+        cell_sub1 = worksheet.cell(row=start_row + 1, column=1)
+        cell_sub1.value = "Departmental Library"
+        cell_sub1.font = Font(size=13, bold=True, name='Arial')
+        cell_sub1.alignment = Alignment(horizontal='center', vertical='center')
+        
+        # Sub-subheading - smaller, centered
+        cell_sub2 = worksheet.cell(row=start_row + 2, column=1)
+        cell_sub2.value = "Computer Engineering"
+        cell_sub2.font = Font(size=11, bold=True, name='Arial')
+        cell_sub2.alignment = Alignment(horizontal='center', vertical='center')
+        
+        # Add a blank row for spacing
+        return start_row + 4
 
     def _xlsxwriter_write_header(self, worksheet, workbook, start_row=0):
-        """Write the required three-line header into an xlsxwriter worksheet with mild emphasis."""
-        fmt_title = workbook.add_format({'bold': True, 'font_size': 14})
-        fmt_sub = workbook.add_format({'bold': True, 'font_size': 12})
-        worksheet.write(start_row + 0, 0, "Government Polytechnic Awasari (Kh)", fmt_title)
-        worksheet.write(start_row + 1, 0, "Computer Department", fmt_sub)
-        worksheet.write(start_row + 2, 0, "Department of Library", fmt_sub)
-        return start_row + 3
+        """Write the required header into an xlsxwriter worksheet with proper formatting."""
+        # Main heading - large, bold, centered
+        fmt_main = workbook.add_format({
+            'bold': True, 
+            'font_size': 16, 
+            'align': 'center',
+            'valign': 'vcenter',
+            'font_name': 'Arial'
+        })
+        # Subheading - medium, bold, centered
+        fmt_sub1 = workbook.add_format({
+            'bold': True, 
+            'font_size': 13, 
+            'align': 'center',
+            'valign': 'vcenter',
+            'font_name': 'Arial'
+        })
+        # Sub-subheading - smaller, centered
+        fmt_sub2 = workbook.add_format({
+            'bold': True, 
+            'font_size': 11, 
+            'align': 'center',
+            'valign': 'vcenter',
+            'font_name': 'Arial'
+        })
+        
+        worksheet.write(start_row + 0, 0, "Government Polytechnic Awasari(Kh)", fmt_main)
+        worksheet.write(start_row + 1, 0, "Departmental Library", fmt_sub1)
+        worksheet.write(start_row + 2, 0, "Computer Engineering", fmt_sub2)
+        # Add blank row for spacing
+        return start_row + 4
 
     # =====================================================================
     # ANALYSIS TAB - Charts, Graphs, and Data Visualization
@@ -3668,6 +4132,16 @@ class LibraryApp:
             bg='#9e9e9e', fg='white', relief='flat', cursor='hand2',
             command=self.clear_analysis_filter
         ).pack(side=tk.LEFT)
+        
+        # Add Refresh Analysis button near the filters for easy access
+        tk.Button(
+            ff_row,
+            text="🔄 Refresh Charts",
+            font=('Segoe UI', 10, 'bold'),
+            bg=self.colors['secondary'], fg='white', relief='flat', cursor='hand2',
+            command=self.refresh_analysis,
+            activebackground=self.colors['accent']
+        ).pack(side=tk.LEFT, padx=(20, 0))
 
         # Display current filter summary
         self.analysis_filter_summary = tk.Label(
@@ -3751,7 +4225,7 @@ class LibraryApp:
 
         # (Focused sections are now placed near the filter controls above)
         
-        # Footer: compact mode and maintenance actions
+    # Footer: compact mode and maintenance actions
         footer_frame = tk.Frame(scrollable_frame, bg=self.colors['primary'])
         footer_frame.pack(fill=tk.X, padx=20, pady=(10, 20))
 
@@ -3768,6 +4242,30 @@ class LibraryApp:
             selectcolor='white'
         )
         compact_cb.pack(side=tk.LEFT)
+
+        # Toggle to hide charts entirely (for super clean UI)
+        self.analysis_show_charts = tk.BooleanVar(value=True)
+        hide_cb = tk.Checkbutton(
+            footer_frame,
+            text="Show Charts",
+            variable=self.analysis_show_charts,
+            onvalue=True,
+            offvalue=False,
+            command=self.refresh_analysis,
+            bg=self.colors['primary'],
+            fg=self.colors['accent'],
+            selectcolor='white'
+        )
+        hide_cb.pack(side=tk.LEFT, padx=(20, 0))
+
+        # Manual refresh
+        tk.Button(
+            footer_frame,
+            text="Refresh Analysis",
+            font=('Segoe UI', 10, 'bold'),
+            bg=self.colors['secondary'], fg='white', relief='flat', padx=12, pady=4,
+            cursor='hand2', command=self.refresh_analysis
+        ).pack(side=tk.LEFT, padx=(20, 0))
 
         # Removed duplicate Promote Student button from footer; action available in header
 
@@ -3828,6 +4326,22 @@ class LibraryApp:
         if not MATPLOTLIB_AVAILABLE:
             return
         
+        # If charts are hidden, clear frames and show a small placeholder
+        if hasattr(self, 'analysis_show_charts') and not self.analysis_show_charts.get():
+            def _clear_and_placeholder(frame, text):
+                for w in frame.winfo_children():
+                    w.destroy()
+                tk.Label(frame, text=text, font=('Segoe UI', 11), bg=self.colors['primary'], fg='#666').pack(expand=True, pady=20)
+            _clear_and_placeholder(self.borrow_status_frame, "Charts hidden")
+            _clear_and_placeholder(self.student_activity_frame, "Charts hidden")
+            if hasattr(self, 'inventory_overdue_frame'):
+                _clear_and_placeholder(self.inventory_overdue_frame, "Charts hidden")
+            # Also clear summary
+            for w in self.stats_summary_frame.winfo_children():
+                w.destroy()
+            tk.Label(self.stats_summary_frame, text="Charts are hidden. Enable 'Show Charts' to view.", font=('Segoe UI', 11), bg=self.colors['primary'], fg='#666').pack(pady=10)
+            return
+
         # Clear existing widgets to avoid duplicates (charts, labels, legends)
         def _clear(frame):
             try:
@@ -3921,17 +4435,27 @@ class LibraryApp:
             conn.close()
             
             if not results:
+                # Clear frame then show no-data message
+                for w in self.borrow_status_frame.winfo_children():
+                    w.destroy()
+                tk.Label(
+                    self.borrow_status_frame,
+                    text="No books or borrow data to display",
+                    font=('Segoe UI', 12), bg=self.colors['primary'], fg='#666'
+                ).pack(expand=True, pady=20)
                 return
             
             raw_labels = [row[0] for row in results]
             sizes = [row[1] for row in results]
             labels = [f"{name} ({cnt})" for name, cnt in zip(raw_labels, sizes)]
-            colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24']
+            # Colorblind-friendly palette
+            colors = ['#0072B2', '#D55E00', '#F0E442', '#009E73', '#CC79A7', '#56B4E9']
             
-            # Create figure (white background for clarity)
-            fig = Figure(figsize=(5, 4), dpi=100)
+            # Larger, modern figure with tight layout for legends
+            fig = Figure(figsize=(6, 4), dpi=100)
             ax = fig.add_subplot(111)
             fig.patch.set_facecolor('white')
+            fig.subplots_adjust(left=0.1, right=0.78)  # Make room for legend
             
             def on_pie_click(event):
                 if event.inaxes == ax:
@@ -3939,8 +4463,9 @@ class LibraryApp:
                     for i, (wedge, label, size) in enumerate(zip(ax.patches, labels, sizes)):
                         contains, info = wedge.contains(event)
                         if contains:
-                            # Show detailed list in dialog
-                            if label == 'Currently Issued':
+                            # Check the raw status name (not the formatted label with count)
+                            status_name = raw_labels[i]
+                            if status_name == 'Currently Issued':
                                 self.show_currently_borrowed_dialog()
                             else:
                                 self.show_available_books_dialog()
@@ -3957,12 +4482,18 @@ class LibraryApp:
                 colors=colors[:len(sizes)],
                 autopct=_autopct,
                 startangle=90,
-                wedgeprops=dict(width=0.35, edgecolor='white')  # donut style
+                wedgeprops=dict(width=0.32, edgecolor='white')  # donut style, slightly thinner
             )
             # Center label with total
-            ax.text(0, 0, f"Total\n{sum(sizes)}", ha='center', va='center', fontsize=11, fontweight='bold')
+            ax.text(0, 0, f"Total\n{sum(sizes)}", ha='center', va='center', fontsize=14, fontweight='bold', color='#333')
             ax.axis('equal')
-            ax.set_title('Book Status Distribution', fontsize=12, fontweight='bold')
+            ax.set_title('Book Status Distribution', fontsize=16, fontweight='bold', color='#0072B2')
+            # Add legend for clarity
+            ax.legend(wedges, labels, title="Status", loc='center left', bbox_to_anchor=(1.0, 0.5), fontsize=10)
+            
+            # Clear any existing widgets in the frame
+            for widget in self.borrow_status_frame.winfo_children():
+                widget.destroy()
             
             # Add to GUI
             canvas = FigureCanvasTkAgg(fig, self.borrow_status_frame)
@@ -4006,26 +4537,65 @@ class LibraryApp:
             conn.close()
             
             if not results:
-                # Show "No Data" message
-                no_data_label = tk.Label(
-                    self.student_activity_frame,
-                    text=f"No student activity\nin last {days} days",
-                    font=('Segoe UI', 12),
-                    bg=self.colors['primary'],
-                    fg='#666666'
+                # Always render a placeholder donut so the chart area is not blank
+                fig = Figure(figsize=(6, 4), dpi=100)
+                ax = fig.add_subplot(111)
+                fig.patch.set_facecolor('white')
+                fig.subplots_adjust(left=0.1, right=0.78)
+
+                sizes = [1]
+                labels = ["No Activity"]
+                colors = ['#d0d7de']  # light gray
+                wedges, texts = ax.pie(
+                    sizes,
+                    labels=None,
+                    colors=colors,
+                    startangle=90,
+                    wedgeprops=dict(width=0.32, edgecolor='white')
                 )
-                no_data_label.pack(expand=True)
+                ax.text(0, 0, "No Data", ha='center', va='center', fontsize=14, fontweight='bold', color='#666')
+                ax.axis('equal')
+                ax.set_title(f'Student Activity (Last {days} Days)', fontsize=16, fontweight='bold', color='#D55E00')
+                ax.legend(wedges, labels, title="Year", loc='center left', bbox_to_anchor=(1.0, 0.5), fontsize=10)
+
+                for w in self.student_activity_frame.winfo_children():
+                    w.destroy()
+                canvas = FigureCanvasTkAgg(fig, self.student_activity_frame)
+                canvas.draw()
+                canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+                try:
+                    self._analysis_bind_wheel(canvas.get_tk_widget())
+                except Exception:
+                    pass
+                self.current_charts['student_activity'] = (fig, labels, sizes)
                 return
             
-            raw_labels = [f"{row[0]} Year" for row in results]
+            def _format_year_label(y):
+                if y is None:
+                    return "Unknown"
+                s = str(y).strip()
+                low = s.lower()
+                # Normalize any variant that mentions pass + out to 'Pass Out'
+                if ("pass" in low) and ("out" in low):
+                    return "Pass Out"
+                # If it already contains the word 'year', keep as-is with title casing
+                if "year" in low:
+                    return s.title()
+                # Otherwise append 'Year' to numeric/ordinal
+                return f"{s} Year"
+
+            raw_labels = [_format_year_label(row[0]) for row in results]
             sizes = [row[1] for row in results]
-            labels = [f"{name} ({cnt})" for name, cnt in zip(raw_labels, sizes)]
-            colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24', '#a55eea']
+            # Keep legend labels short to avoid truncation
+            labels = list(raw_labels)
+            # Colorblind-friendly palette
+            colors = ['#0072B2', '#D55E00', '#F0E442', '#009E73', '#CC79A7', '#56B4E9']
             
-            # Create figure
-            fig = Figure(figsize=(5, 4), dpi=100)
+            # Larger, modern figure with tight layout for legends
+            fig = Figure(figsize=(6, 4), dpi=100)
             ax = fig.add_subplot(111)
             fig.patch.set_facecolor('white')
+            fig.subplots_adjust(left=0.1, right=0.78)  # Make room for legend
             
             def on_activity_click(event):
                 if event.inaxes == ax:
@@ -4043,23 +4613,31 @@ class LibraryApp:
             else:
                 explode = None
 
-            def _autopct(pct, allvals=sizes):
-                total = sum(allvals)
-                val = int(round(pct*total/100.0))
-                return f"{pct:.1f}%\n({val})"
-
+            # Build pie with labels and percentages
+            def autopct_format(pct):
+                return f'{pct:.1f}%' if pct > 5 else ''
+            
             wedges, texts, autotexts = ax.pie(
                 sizes,
-                labels=labels,
+                labels=labels,  # Show labels on slices
                 colors=colors[:len(sizes)],
-                autopct=_autopct,
+                autopct=autopct_format,
                 startangle=90,
                 explode=explode,
-                wedgeprops=dict(width=0.35, edgecolor='white')  # donut style
+                wedgeprops=dict(width=0.32, edgecolor='white'),  # donut style, thinner
+                textprops={'fontsize': 10, 'weight': 'bold'}
             )
-            ax.text(0, 0, f"Total\n{sum(sizes)}", ha='center', va='center', fontsize=11, fontweight='bold')
+            # Make percentage text black for better visibility
+            for autotext in autotexts:
+                autotext.set_color('black')
+            
+            ax.text(0, 0, f"Total\n{sum(sizes)}", ha='center', va='center', fontsize=14, fontweight='bold', color='#333')
             ax.axis('equal')
-            ax.set_title(f'Student Activity (Last {days} Days)', fontsize=12, fontweight='bold')
+            ax.set_title(f'Student Activity (Last {days} Days)', fontsize=16, fontweight='bold', color='#D55E00')
+            
+            # Clear any existing widgets in the frame
+            for widget in self.student_activity_frame.winfo_children():
+                widget.destroy()
             
             # Add to GUI
             canvas = FigureCanvasTkAgg(fig, self.student_activity_frame)
@@ -4074,6 +4652,18 @@ class LibraryApp:
             self.current_charts['student_activity'] = (fig, labels, sizes)
             
         except Exception as e:
+            try:
+                for w in self.student_activity_frame.winfo_children():
+                    w.destroy()
+                tk.Label(
+                    self.student_activity_frame,
+                    text="Unable to render chart",
+                    font=('Segoe UI', 12),
+                    bg=self.colors['primary'],
+                    fg='#b00020'
+                ).pack(expand=True, pady=20)
+            except Exception:
+                pass
             print(f"Error creating student activity pie chart: {e}")
 
     def create_inventory_overdue_donut(self):
