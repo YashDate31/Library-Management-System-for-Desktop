@@ -1957,9 +1957,21 @@ class LibraryApp:
             except ValueError:
                 messagebox.showerror("Error", "Total copies must be a positive number!")
                 return
+            # Check Book ID uniqueness
+            book_id_val = entries['book_id'].get().strip()
+            if book_id_val:
+                # Query database for existing Book ID
+                conn = self.db.get_connection()
+                cur = conn.cursor()
+                cur.execute('SELECT COUNT(*) FROM books WHERE book_id = ?', (book_id_val,))
+                exists = cur.fetchone()[0]
+                conn.close()
+                if exists:
+                    messagebox.showerror("Error", f"Book ID '{book_id_val}' already exists! Please use a unique Book ID.")
+                    return
             # Add book
             success, message = self.db.add_book(
-                entries['book_id'].get().strip(),
+                book_id_val,
                 entries['title'].get().strip(),
                 entries['author'].get().strip(),
                 entries['isbn'].get().strip(),
@@ -3040,12 +3052,15 @@ class LibraryApp:
                 rows = cur.fetchall()
                 c_12 = c_23 = c_3p = c_skip = 0
                 
+                # Collect promotion records
+                promotion_records = []
+                
                 for en, name, yr in rows:
                     new = _promote_once(yr)
                     if new != yr:
                         cur.execute('UPDATE students SET year=? WHERE enrollment_no=?', (new, en))
-                        # Add to promotion history
-                        self.db.add_promotion_history(en, name, yr, new, letter_number, academic_year)
+                        # Store promotion data for later insertion
+                        promotion_records.append((en, name, yr, new, letter_number, academic_year))
                         
                         if _norm(yr) == '1st' and new == '2nd':
                             c_12 += 1
@@ -3058,6 +3073,10 @@ class LibraryApp:
                 
                 conn.commit()
                 conn.close()
+                
+                # Now add all promotion history records (after closing the main connection)
+                for record in promotion_records:
+                    self.db.add_promotion_history(*record)
                 
                 total = c_12 + c_23 + c_3p
                 msg = (
