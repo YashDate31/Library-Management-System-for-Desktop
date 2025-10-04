@@ -303,17 +303,46 @@ class LibraryApp:
         title_frame.grid_rowconfigure(0, weight=1)
         title_frame.grid_columnconfigure(0, weight=1)
 
-        # Single line title - GPA'S Library OF Computer Department
+        # Get current active academic year
+        active_year = self.db.get_active_academic_year()
+        if not active_year:
+            active_year = "2025-2026"  # Default fallback
+        
+        # Convert format from "2025-2026" to "25-26"
+        if "-" in active_year:
+            years = active_year.split("-")
+            if len(years) == 2:
+                # Extract last 2 digits of each year
+                year1 = years[0][-2:]  # "2025" -> "25"
+                year2 = years[1][-2:]  # "2026" -> "26"
+                display_year = f"{year1}-{year2}"
+            else:
+                display_year = active_year
+        else:
+            display_year = active_year
+        
+        # Title with academic year - GPA'S Library of Computer Department
         main_title_label = tk.Label(
             title_frame,
-            text="GPA'S Library OF Computer Department",
-            font=('Segoe UI', 22, 'bold'),
+            text=f"GPA'S Library of Computer Department",
+            font=('Segoe UI', 26, 'bold'),  # Increased from 22 to 26
             bg=self.colors['secondary'],
             fg='white',
             anchor='w'
         )
         # Use grid so it vertically centers without extra padding
         main_title_label.grid(row=0, column=0, sticky='w', padx=(0, 0), pady=0)
+        
+        # Academic year label (smaller size) - store as instance variable for updates
+        self.academic_year_label = tk.Label(
+            title_frame,
+            text=f"Academic Year: {display_year}",
+            font=('Segoe UI', 16, 'bold'),  # Decreased from 22 to 16
+            bg=self.colors['secondary'],
+            fg='#FFD700',  # Gold color for emphasis
+            anchor='w'
+        )
+        self.academic_year_label.grid(row=1, column=0, sticky='w', padx=(0, 0), pady=(5, 0))
 
         # User info
         user_frame = tk.Frame(logo_title_frame, bg=self.colors['secondary'])
@@ -1506,8 +1535,22 @@ class LibraryApp:
         tk.Label(row2, text="Academic Year:", bg=self.colors['primary'], fg=self.colors['accent'], font=('Segoe UI', 10)).pack(side=tk.LEFT)
         self.record_academic_year_var = tk.StringVar(value="All")
         
-        # Get academic years from database
-        academic_years = ["All"] + self.db.get_all_academic_years()
+        # Get academic years from database and convert format
+        academic_years_raw = self.db.get_all_academic_years()
+        academic_years = ["All"]
+        for year in academic_years_raw:
+            # Convert format from "2025-2026" to "25-26"
+            if "-" in year:
+                years = year.split("-")
+                if len(years) == 2:
+                    year1 = years[0][-2:]  # "2025" -> "25"
+                    year2 = years[1][-2:]  # "2026" -> "26"
+                    academic_years.append(f"{year1}-{year2}")
+                else:
+                    academic_years.append(year)
+            else:
+                academic_years.append(year)
+        
         academic_year_combo = ttk.Combobox(row2, textvariable=self.record_academic_year_var, 
                                           values=academic_years, state="readonly", width=15)
         academic_year_combo.pack(side=tk.LEFT, padx=(5, 15))
@@ -2431,7 +2474,16 @@ class LibraryApp:
             
             # Apply academic year filter
             if academic_year_filter != "All":
-                if academic_year_val != academic_year_filter:
+                # Convert database format to display format for comparison
+                display_academic_year = academic_year_val
+                if academic_year_val and "-" in academic_year_val:
+                    years = academic_year_val.split("-")
+                    if len(years) == 2:
+                        year1 = years[0][-2:]  # "2025" -> "25"
+                        year2 = years[1][-2:]  # "2026" -> "26"
+                        display_academic_year = f"{year1}-{year2}"
+                
+                if display_academic_year != academic_year_filter:
                     continue
             
             # Apply search filter
@@ -2494,12 +2546,42 @@ class LibraryApp:
             # Recreate stats cards
             self.create_stats_cards(self.stats_container)
         
+        # Refresh academic year display
+        self.refresh_academic_year_display()
+        
         # Auto-refresh Analysis tab charts when data changes
         if hasattr(self, 'notebook') and hasattr(self, 'refresh_analysis'):
             try:
                 self.refresh_analysis()
             except Exception:
                 pass
+    
+    def refresh_academic_year_display(self):
+        """Refresh the academic year display in the header"""
+        try:
+            if hasattr(self, 'academic_year_label'):
+                active_year = self.db.get_active_academic_year()
+                if not active_year:
+                    active_year = "2025-2026"  # Default fallback
+                
+                # Convert format from "2025-2026" to "25-26"
+                if "-" in active_year:
+                    years = active_year.split("-")
+                    if len(years) == 2:
+                        # Extract last 2 digits of each year
+                        year1 = years[0][-2:]  # "2025" -> "25"
+                        year2 = years[1][-2:]  # "2026" -> "26"
+                        display_year = f"{year1}-{year2}"
+                    else:
+                        display_year = active_year
+                else:
+                    display_year = active_year
+                
+                self.academic_year_label.config(text=f"Academic Year: {display_year}")
+                # Force the GUI to update
+                self.academic_year_label.update_idletasks()
+        except Exception as e:
+            pass  # Silently fail if label doesn't exist yet
     
     def refresh_students(self):
         """Refresh students list"""
@@ -3268,14 +3350,25 @@ class LibraryApp:
         current_year = datetime.now().year
         suggested_year = f"{current_year}-{current_year + 1}"
         
-        year_entry = tk.Entry(
+        # Get all academic years from database
+        all_academic_years = self.db.get_all_academic_years()
+        
+        # If no years exist, add the suggested year
+        if not all_academic_years:
+            all_academic_years = [suggested_year]
+        # If suggested year is not in list, add it at the beginning
+        elif suggested_year not in all_academic_years:
+            all_academic_years.insert(0, suggested_year)
+        
+        # Create combobox for academic year selection
+        year_entry = ttk.Combobox(
             form_frame,
             font=('Segoe UI', 11),
-            width=30,
-            relief='solid',
-            bd=2
+            width=28,
+            values=all_academic_years,
+            state='readonly'
         )
-        year_entry.insert(0, suggested_year)
+        year_entry.set(suggested_year)
         year_entry.grid(row=2, column=1, pady=(0, 15))
         
         year_hint = tk.Label(
@@ -3723,8 +3816,16 @@ class LibraryApp:
             visible_records = []
             for item_id in self.records_tree.get_children():
                 vals = self.records_tree.item(item_id, 'values')
-                # Expecting 9-tuple: (Enrollment No, Student Name, Book ID, Book Title, Borrow Date, Due Date, Return Date, Status, Fine)
-                visible_records.append(vals)
+                # Tree has 9 columns: (Enrollment No, Student Name, Book ID, Book Title, Issue Date, Due Date, Return Date, Status, Fine)
+                # Convert tuple to list to ensure we have exactly 9 columns
+                record_list = list(vals)
+                if len(record_list) > 9:
+                    # If more columns, trim to 9
+                    record_list = record_list[:9]
+                elif len(record_list) < 9:
+                    # If fewer columns, pad with empty strings
+                    record_list.extend([''] * (9 - len(record_list)))
+                visible_records.append(tuple(record_list))
 
             if not visible_records:
                 messagebox.showwarning("Warning", "No filtered records to export (the list is empty)!")
