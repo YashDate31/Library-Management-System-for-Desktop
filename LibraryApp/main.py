@@ -1541,6 +1541,74 @@ class LibraryApp:
         )
         clear_filter_btn.pack(side=tk.LEFT, padx=5)
         
+        # Row 3: Quick date filters
+        row3 = tk.Frame(search_controls, bg=self.colors['primary'])
+        row3.pack(fill=tk.X, pady=(10, 0))
+        
+        tk.Label(row3, text="Quick Filter:", bg=self.colors['primary'], fg=self.colors['accent'], font=('Segoe UI', 10, 'bold')).pack(side=tk.LEFT, padx=(0, 10))
+        
+        def filter_last_days(days):
+            """Filter records for last N days"""
+            from datetime import datetime, timedelta
+            today = datetime.now()
+            from_date = (today - timedelta(days=days)).strftime('%Y-%m-%d')
+            to_date = today.strftime('%Y-%m-%d')
+            
+            # Set date fields
+            if DateEntry:
+                self.record_from_date.set_date(today - timedelta(days=days))
+                self.record_to_date.set_date(today)
+            else:
+                self.record_from_date.delete(0, tk.END)
+                self.record_from_date.insert(0, from_date)
+                self.record_to_date.delete(0, tk.END)
+                self.record_to_date.insert(0, to_date)
+            
+            # Apply filter
+            self.search_records()
+        
+        last_7_btn = tk.Button(
+            row3,
+            text="📅 Last 7 Days",
+            font=('Segoe UI', 9),
+            bg='#17a2b8',
+            fg='white',
+            relief='flat',
+            padx=10,
+            pady=5,
+            command=lambda: filter_last_days(7),
+            cursor='hand2'
+        )
+        last_7_btn.pack(side=tk.LEFT, padx=2)
+        
+        last_15_btn = tk.Button(
+            row3,
+            text="📅 Last 15 Days",
+            font=('Segoe UI', 9),
+            bg='#17a2b8',
+            fg='white',
+            relief='flat',
+            padx=10,
+            pady=5,
+            command=lambda: filter_last_days(15),
+            cursor='hand2'
+        )
+        last_15_btn.pack(side=tk.LEFT, padx=2)
+        
+        last_30_btn = tk.Button(
+            row3,
+            text="📅 Last 30 Days",
+            font=('Segoe UI', 9),
+            bg='#17a2b8',
+            fg='white',
+            relief='flat',
+            padx=10,
+            pady=5,
+            command=lambda: filter_last_days(30),
+            cursor='hand2'
+        )
+        last_30_btn.pack(side=tk.LEFT, padx=2)
+        
         # Actions frame
         actions_frame = tk.LabelFrame(
             top_frame,
@@ -1643,6 +1711,9 @@ class LibraryApp:
             return 'break'
         self.records_tree.bind('<MouseWheel>', _records_vwheel)
         self.records_tree.bind('<Shift-MouseWheel>', _records_hwheel)
+        
+        # Bind double-click event for sending overdue letter
+        self.records_tree.bind('<Double-1>', self.on_record_double_click)
 
         # Initial population of records (avoid empty first view)
         try:
@@ -1888,27 +1959,28 @@ class LibraryApp:
                     state="readonly"
                 )
                 entry.set("Technology")  # Default category
+                entry.grid(row=i, column=1, pady=(0, 15))
             elif field_name == "book_id":
                 # Book ID entry with auto-generate option
                 id_frame = tk.Frame(form_frame, bg='white')
-                entry = tk.Entry(
+                book_id_entry = tk.Entry(
                     id_frame,
                     font=('Segoe UI', 11),
                     width=30,
                     relief='solid',
                     bd=2
                 )
-                entry.pack(side=tk.TOP, fill=tk.X)
+                book_id_entry.pack(side=tk.TOP, fill=tk.X)
                 
                 def toggle_auto_gen():
                     if auto_gen_var.get():
                         next_id = self.db.get_next_book_id()
-                        entry.delete(0, tk.END)
-                        entry.insert(0, next_id)
-                        entry.config(state='readonly')
+                        book_id_entry.delete(0, tk.END)
+                        book_id_entry.insert(0, next_id)
+                        book_id_entry.config(state='readonly')
                     else:
-                        entry.config(state='normal')
-                        entry.delete(0, tk.END)
+                        book_id_entry.config(state='normal')
+                        book_id_entry.delete(0, tk.END)
                 
                 auto_check = tk.Checkbutton(
                     id_frame,
@@ -1922,6 +1994,7 @@ class LibraryApp:
                 auto_check.pack(side=tk.TOP, anchor='w', pady=(3, 0))
                 
                 id_frame.grid(row=i, column=1, pady=(0, 15))
+                entry = book_id_entry  # Store the actual entry widget
             else:
                 entry = tk.Entry(
                     form_frame,
@@ -1932,10 +2005,9 @@ class LibraryApp:
                 )
                 if field_name == "copies":
                     entry.insert(0, "1")  # Default to 1 copy
+                    entry.config(validate='key', validatecommand=(dialog.register(lambda P: P.isdigit() or P == ""), '%P'))
                 entry.grid(row=i, column=1, pady=(0, 15))
             
-            if field_name != "book_id":
-                entry.grid(row=i, column=1, pady=(0, 15))
             entries[field_name] = entry
         
         # Buttons
@@ -2342,12 +2414,19 @@ class LibraryApp:
             fine_val = record[8]
             academic_year_val = record[9] if len(record) > 9 else 'N/A'
             
+            # Apply type filter
             if type_filter != "All":
                 if type_filter == "Overdue":
-                    if fine_val == '0':
+                    # Overdue means fine > 0
+                    if fine_val == 0 or fine_val == '0':
                         continue
-                else:
-                    if status_val.lower() != type_filter.lower():
+                elif type_filter == "Issued":
+                    # Issued means status is 'borrowed'
+                    if status_val.lower() != 'borrowed':
+                        continue
+                elif type_filter == "Returned":
+                    # Returned means status is 'returned'
+                    if status_val.lower() != 'returned':
                         continue
             
             # Apply academic year filter
@@ -2532,13 +2611,220 @@ class LibraryApp:
                 else:
                     fine_val_num = fine
                     fine_is_num = True
-                fine_display = f"{fine_val_num} (Late)" if fine_is_num and isinstance(fine_val_num, int) and fine_val_num > 0 else str(fine_val_num)
+                # Add "Rs" prefix and "(Late)" suffix for overdue records
+                if fine_is_num and isinstance(fine_val_num, int) and fine_val_num > 0:
+                    fine_display = f"Rs {fine_val_num} (Late)"
+                else:
+                    fine_display = f"Rs {fine_val_num}" if fine_is_num else str(fine_val_num)
                 tag = 'late' if (fine_is_num and isinstance(fine_val_num, int) and fine_val_num > 0) else ''
                 self.records_tree.insert('', 'end', values=(*base, status, fine_display), tags=(tag,))
             try:
                 self.records_tree.tag_configure('late', background='#fff3cd')
             except Exception:
                 pass
+    
+    def on_record_double_click(self, event):
+        """Handle double-click on record to send overdue letter"""
+        selection = self.records_tree.selection()
+        if not selection:
+            return
+        
+        # Get the selected record data
+        item = self.records_tree.item(selection[0])
+        values = item['values']
+        
+        if not values or len(values) < 9:
+            return
+        
+        # Extract record details
+        enrollment_no = values[0]
+        student_name = values[1]
+        book_id = values[2]
+        book_title = values[3]
+        issue_date = values[4]
+        due_date = values[5]
+        return_date = values[6]
+        status = values[7]
+        fine_info = str(values[8])
+        
+        # Extract fine amount to check if overdue
+        fine_amount = 0
+        try:
+            # Remove "Rs", "(Late)", and other text to get the number
+            fine_str = fine_info.replace('Rs', '').replace('(Late)', '').strip()
+            fine_amount = int(fine_str)
+        except:
+            fine_amount = 0
+        
+        # Check if this is an overdue record (borrowed + fine > 0)
+        if status.lower() == 'borrowed' and fine_amount > 0:
+            # Show dialog to confirm sending letter
+            response = messagebox.askyesno(
+                "Send Overdue Letter",
+                f"Send overdue letter to:\n\n"
+                f"Student: {student_name}\n"
+                f"Enrollment: {enrollment_no}\n"
+                f"Book: {book_title}\n"
+                f"Fine: {fine_info}\n\n"
+                f"Generate Word document?",
+                icon='question'
+            )
+            
+            if response:
+                self.generate_overdue_letter(
+                    enrollment_no, student_name, book_id, 
+                    book_title, issue_date, due_date, fine_info
+                )
+        else:
+            messagebox.showinfo(
+                "Not Overdue",
+                "This record is not overdue. Letters can only be sent for overdue borrowed books.",
+                icon='info'
+            )
+    
+    def generate_overdue_letter(self, enrollment_no, student_name, book_id, book_title, issue_date, due_date, fine_info):
+        """Generate overdue letter as Word document"""
+        if not Document:
+            messagebox.showerror("Error", "python-docx is not installed. Cannot generate Word document.")
+            return
+        
+        try:
+            # Calculate days overdue
+            from datetime import datetime as _dt
+            due_d = _dt.strptime(due_date, '%Y-%m-%d')
+            today = _dt.now()
+            days_overdue = (today.date() - due_d.date()).days
+            
+            # Extract fine amount
+            fine_amount = 0
+            try:
+                fine_str = fine_info.replace('(Late)', '').strip()
+                fine_amount = int(fine_str)
+            except:
+                fine_amount = days_overdue * FINE_PER_DAY
+            
+            # Create Word document
+            doc = Document()
+            
+            # Add header
+            header = doc.add_heading('LIBRARY OF COMPUTER DEPARTMENT', 0)
+            header.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            # Add date
+            date_para = doc.add_paragraph()
+            date_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            date_run = date_para.add_run(f"Date: {today.strftime('%B %d, %Y')}")
+            date_run.font.size = Pt(11)
+            
+            doc.add_paragraph()  # Spacing
+            
+            # Add subject
+            subject = doc.add_paragraph()
+            subject_run = subject.add_run('Subject: Overdue Book Notice')
+            subject_run.bold = True
+            subject_run.font.size = Pt(12)
+            subject.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            doc.add_paragraph()  # Spacing
+            
+            # Recipient details
+            to_para = doc.add_paragraph()
+            to_run = to_para.add_run(f'To,\n{student_name}\nEnrollment No: {enrollment_no}')
+            to_run.font.size = Pt(11)
+            
+            doc.add_paragraph()  # Spacing
+            
+            # Body of letter
+            body = doc.add_paragraph()
+            body_text = (
+                f"Dear {student_name},\n\n"
+                f"This is to inform you that the following book borrowed from the Library of Computer Department "
+                f"is overdue and needs to be returned immediately.\n\n"
+            )
+            body_run = body.add_run(body_text)
+            body_run.font.size = Pt(11)
+            
+            # Book details table
+            doc.add_paragraph('Book Details:', style='Heading 2')
+            table = doc.add_table(rows=5, cols=2)
+            table.style = 'Light Grid Accent 1'
+            
+            table.cell(0, 0).text = 'Book ID:'
+            table.cell(0, 1).text = str(book_id)
+            table.cell(1, 0).text = 'Book Title:'
+            table.cell(1, 1).text = book_title
+            table.cell(2, 0).text = 'Issue Date:'
+            table.cell(2, 1).text = issue_date
+            table.cell(3, 0).text = 'Due Date:'
+            table.cell(3, 1).text = due_date
+            table.cell(4, 0).text = 'Days Overdue:'
+            table.cell(4, 1).text = str(days_overdue)
+            
+            doc.add_paragraph()  # Spacing
+            
+            # Fine details
+            fine_para = doc.add_paragraph()
+            fine_run = fine_para.add_run(
+                f"As per library rules, a fine of ₹{FINE_PER_DAY} per day is applicable for overdue books.\n"
+                f"Your current fine amount is: ₹{fine_amount}\n\n"
+            )
+            fine_run.font.size = Pt(11)
+            fine_run.bold = True
+            
+            # Request
+            request_para = doc.add_paragraph()
+            request_text = (
+                "You are hereby requested to return the book to the library at the earliest and clear the pending fine. "
+                "Failure to do so may result in restrictions on future borrowing privileges.\n\n"
+                "Please contact the library desk for any queries or clarifications.\n\n"
+            )
+            request_run = request_para.add_run(request_text)
+            request_run.font.size = Pt(11)
+            
+            # Closing
+            doc.add_paragraph()  # Spacing
+            closing = doc.add_paragraph()
+            closing_text = "Thank you for your cooperation.\n\nYours sincerely,\n\n"
+            closing_run = closing.add_run(closing_text)
+            closing_run.font.size = Pt(11)
+            
+            # Signature
+            signature = doc.add_paragraph()
+            signature_run = signature.add_run('Librarian\nLibrary of Computer Department')
+            signature_run.font.size = Pt(11)
+            signature_run.bold = True
+            
+            # Save the document
+            default_filename = f"Overdue_Letter_{enrollment_no}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
+            filepath = filedialog.asksaveasfilename(
+                defaultextension=".docx",
+                filetypes=[("Word Document", "*.docx")],
+                initialfile=default_filename,
+                title="Save Overdue Letter"
+            )
+            
+            if filepath:
+                doc.save(filepath)
+                messagebox.showinfo(
+                    "Success", 
+                    f"Overdue letter generated successfully!\n\nSaved to:\n{filepath}",
+                    icon='info'
+                )
+                
+                # Ask if user wants to open the document
+                if messagebox.askyesno("Open Document", "Do you want to open the document now?"):
+                    try:
+                        if platform.system() == 'Windows':
+                            os.startfile(filepath)
+                        elif platform.system() == 'Darwin':  # macOS
+                            subprocess.call(['open', filepath])
+                        else:  # Linux
+                            subprocess.call(['xdg-open', filepath])
+                    except Exception as e:
+                        messagebox.showwarning("Warning", f"Document saved but couldn't open automatically.\nError: {e}")
+        
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to generate overdue letter.\n\nError: {e}")
     
     def get_student_name(self, enrollment_no):
         """Get student name by enrollment number"""
@@ -3180,10 +3466,10 @@ class LibraryApp:
         cancel_btn.pack(side=tk.LEFT, padx=5)
     
     def show_promotion_history_dialog(self):
-        """Show promotion history in a dialog with download option"""
+        """Show promotion history summary (Letter Number, Date, Time, Student Count)"""
         dialog = tk.Toplevel(self.root)
         dialog.title("Promotion History")
-        dialog.geometry("900x600")
+        dialog.geometry("800x600")
         dialog.configure(bg='white')
         dialog.transient(self.root)
         dialog.grab_set()
@@ -3194,7 +3480,7 @@ class LibraryApp:
         # Title
         title_label = tk.Label(
             dialog,
-            text="📜 Promotion History",
+            text="📜 Promotion History Summary",
             font=('Segoe UI', 16, 'bold'),
             bg='white',
             fg=self.colors['accent']
@@ -3209,8 +3495,8 @@ class LibraryApp:
         v_scroll = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL)
         h_scroll = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL)
         
-        # Treeview
-        columns = ('Enrollment No', 'Student Name', 'Old Year', 'New Year', 'Letter Number', 'Academic Year', 'Promotion Date')
+        # Treeview - Simplified columns
+        columns = ('Letter Number', 'Date', 'Time', '1st→2nd', '2nd→3rd', '3rd→Pass Out', 'Total Students')
         tree = ttk.Treeview(
             tree_frame,
             columns=columns,
@@ -3224,7 +3510,7 @@ class LibraryApp:
         h_scroll.config(command=tree.xview)
         
         # Configure columns
-        column_widths = [120, 150, 80, 80, 120, 120, 150]
+        column_widths = [150, 100, 80, 80, 80, 100, 100]
         for col, width in zip(columns, column_widths):
             tree.heading(col, text=col)
             tree.column(col, width=width, anchor='center')
@@ -3237,27 +3523,74 @@ class LibraryApp:
         tree_frame.grid_rowconfigure(0, weight=1)
         tree_frame.grid_columnconfigure(0, weight=1)
         
-        # Load data
+        # Load and process data
         history = self.db.get_promotion_history()
+        
+        # Group by promotion date/time and letter number
+        from collections import defaultdict
+        grouped = defaultdict(lambda: {'1st→2nd': 0, '2nd→3rd': 0, '3rd→Pass Out': 0, 'letter': '', 'datetime': ''})
+        
         for record in history:
-            tree.insert('', 'end', values=record)
+            # record: (enrollment_no, student_name, old_year, new_year, letter_number, academic_year, promotion_date)
+            old_year = record[2]
+            new_year = record[3]
+            letter_num = record[4]
+            promo_datetime = record[6]
+            
+            key = (letter_num, promo_datetime)
+            grouped[key]['letter'] = letter_num
+            grouped[key]['datetime'] = promo_datetime
+            
+            # Count transitions
+            if old_year == '1st' and new_year == '2nd':
+                grouped[key]['1st→2nd'] += 1
+            elif old_year == '2nd' and new_year == '3rd':
+                grouped[key]['2nd→3rd'] += 1
+            elif old_year == '3rd' and new_year == 'Pass Out':
+                grouped[key]['3rd→Pass Out'] += 1
+        
+        # Display grouped data
+        summary_data = []
+        for key, data in grouped.items():
+            try:
+                # Parse datetime
+                dt = datetime.strptime(data['datetime'], '%Y-%m-%d %H:%M:%S')
+                date_str = dt.strftime('%Y-%m-%d')
+                time_str = dt.strftime('%H:%M:%S')
+            except:
+                date_str = data['datetime']
+                time_str = ''
+            
+            total = data['1st→2nd'] + data['2nd→3rd'] + data['3rd→Pass Out']
+            
+            row = (
+                data['letter'],
+                date_str,
+                time_str,
+                data['1st→2nd'],
+                data['2nd→3rd'],
+                data['3rd→Pass Out'],
+                total
+            )
+            summary_data.append(row)
+            tree.insert('', 'end', values=row)
         
         # Button frame
         btn_frame = tk.Frame(dialog, bg='white')
         btn_frame.pack(pady=20)
         
         def download_history():
-            """Download promotion history as Excel file"""
-            if not history:
+            """Download promotion history summary as Excel file"""
+            if not summary_data:
                 messagebox.showinfo("Info", "No promotion history to download")
                 return
             
             try:
                 # Create DataFrame
-                df = pd.DataFrame(history, columns=columns)
+                df = pd.DataFrame(summary_data, columns=columns)
                 
                 # Save to file
-                filename = f"promotion_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                filename = f"promotion_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
                 file_path = filedialog.asksaveasfilename(
                     defaultextension=".xlsx",
                     filetypes=[("Excel files", "*.xlsx")],
@@ -3266,7 +3599,7 @@ class LibraryApp:
                 
                 if file_path:
                     with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
-                        sheet = 'Promotion History'
+                        sheet = 'Promotion Summary'
                         df.to_excel(writer, sheet_name=sheet, index=False, startrow=4)
                         ws = writer.book[sheet]
                         self._write_excel_header_openpyxl(ws, start_row=1)

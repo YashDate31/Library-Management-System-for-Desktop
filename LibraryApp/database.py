@@ -366,24 +366,35 @@ class Database:
     # Removed add_sample_data_if_empty to keep production database empty on first run
 
     def get_next_book_id(self):
-        """Generate next book ID automatically (e.g., BK001, BK002, etc.)"""
+        """Generate next book ID automatically as simple numbers (1, 2, 3, etc.)"""
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute('SELECT book_id FROM books ORDER BY id DESC LIMIT 1')
-            last_book = cursor.fetchone()
-            if last_book:
-                last_id = last_book[0]
-                # Extract number from last book ID (e.g., BK001 -> 001)
-                if last_id.startswith('BK') and len(last_id) > 2:
-                    try:
-                        num = int(last_id[2:])
-                        return f"BK{num + 1:03d}"
-                    except:
-                        pass
-            return "BK001"  # First book
+            # Get all existing Book IDs
+            cursor.execute('SELECT book_id FROM books')
+            all_ids = cursor.fetchall()
+            
+            # Extract numeric IDs
+            numeric_ids = []
+            for row in all_ids:
+                try:
+                    numeric_ids.append(int(row[0]))
+                except:
+                    pass
+            
+            # Find the smallest available number starting from 1
+            if not numeric_ids:
+                return "1"
+            
+            # Sort and find first gap
+            numeric_ids.sort()
+            for i in range(1, max(numeric_ids) + 2):
+                if i not in numeric_ids:
+                    return str(i)
+            
+            return str(max(numeric_ids) + 1)
         except:
-            return "BK001"
+            return "1"
         finally:
             conn.close()
     
@@ -421,39 +432,54 @@ class Database:
             conn.close()
     
     def undo_last_promotion(self):
-        """Undo the last promotion (revert student year and delete promotion record)"""
+        """Undo the last promotion activity (revert ALL students promoted in the last batch)"""
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
-            # Get the last promotion record
+            # Get the most recent promotion date/time
             cursor.execute('''
-                SELECT enrollment_no, old_year, new_year
+                SELECT promotion_date
                 FROM promotion_history
                 ORDER BY promotion_date DESC
                 LIMIT 1
             ''')
-            last_promo = cursor.fetchone()
+            last_promo_time = cursor.fetchone()
             
-            if not last_promo:
+            if not last_promo_time:
                 return False, "No promotion to undo"
             
-            enrollment_no, old_year, new_year = last_promo
+            last_time = last_promo_time[0]
             
-            # Revert student year
+            # Get ALL promotion records from that batch (same timestamp)
             cursor.execute('''
-                UPDATE students
-                SET year = ?
-                WHERE enrollment_no = ?
-            ''', (old_year, enrollment_no))
+                SELECT enrollment_no, old_year, new_year
+                FROM promotion_history
+                WHERE promotion_date = ?
+            ''', (last_time,))
             
-            # Delete the last promotion record
+            all_last_promos = cursor.fetchall()
+            
+            if not all_last_promos:
+                return False, "No promotion records found"
+            
+            # Revert all students from that promotion
+            count = 0
+            for enrollment_no, old_year, new_year in all_last_promos:
+                cursor.execute('''
+                    UPDATE students
+                    SET year = ?
+                    WHERE enrollment_no = ?
+                ''', (old_year, enrollment_no))
+                count += 1
+            
+            # Delete all promotion records from that batch
             cursor.execute('''
                 DELETE FROM promotion_history
-                WHERE id = (SELECT id FROM promotion_history ORDER BY promotion_date DESC LIMIT 1)
-            ''')
+                WHERE promotion_date = ?
+            ''', (last_time,))
             
             conn.commit()
-            return True, f"Promotion undone for {enrollment_no}"
+            return True, f"Undone promotion for {count} student(s) from last activity"
         except Exception as e:
             return False, f"Error: {str(e)}"
         finally:
