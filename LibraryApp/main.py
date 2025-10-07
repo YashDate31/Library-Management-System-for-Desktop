@@ -1711,6 +1711,23 @@ class LibraryApp:
         # Optional Excel version button retained for users wanting spreadsheet format
         # Excel overdue letter button removed per user request (Word only)
         
+        # Tip label for double-click feature
+        tip_frame = tk.Frame(actions_frame, bg=self.colors['primary'])
+        tip_frame.pack(padx=10, pady=(0, 10))
+        
+        tip_label = tk.Label(
+            tip_frame,
+            text="💡 Tip: Double-click on overdue student to send letter",
+            font=('Segoe UI', 9, 'italic'),
+            bg='#fff3cd',
+            fg='#856404',
+            relief='solid',
+            bd=1,
+            padx=10,
+            pady=5
+        )
+        tip_label.pack()
+        
         # Records list
         records_list_frame = tk.LabelFrame(
             records_frame,
@@ -3230,12 +3247,14 @@ class LibraryApp:
                 # Add header then table using openpyxl for styling flexibility
                 with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
                     sheet = 'Students'
-                    # Write data after header block (header takes 4 rows including blank)
-                    start_row = 4  # header returns row 5, so data starts at row 5 (0-indexed as 4)
+                    # Write data after header block (header returns start_row + 5)
+                    start_row = 5  # header takes 5 rows (including blank), so data starts at row 6 (0-indexed as 5)
                     df.to_excel(writer, sheet_name=sheet, index=False, startrow=start_row)
                     ws = writer.book[sheet]
                     # Write required header above
                     self._write_excel_header_openpyxl(ws, start_row=1)
+                    # Auto-adjust column widths
+                    self._auto_adjust_column_width(ws)
                 messagebox.showinfo("Success", f"Students data exported to {file_path}")
                 
                 # Ask if user wants to open the file
@@ -3791,9 +3810,11 @@ class LibraryApp:
             if file_path:
                 with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
                     sheet = 'Books'
-                    df.to_excel(writer, sheet_name=sheet, index=False, startrow=4)
+                    df.to_excel(writer, sheet_name=sheet, index=False, startrow=5)
                     ws = writer.book[sheet]
                     self._write_excel_header_openpyxl(ws, start_row=1)
+                    # Auto-adjust column widths
+                    self._auto_adjust_column_width(ws)
                 messagebox.showinfo("Success", f"Books data exported to {file_path}")
                 
                 # Ask if user wants to open the file
@@ -3852,9 +3873,11 @@ class LibraryApp:
             if file_path:
                 with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
                     sheet = 'Records'
-                    df.to_excel(writer, sheet_name=sheet, index=False, startrow=4)
+                    df.to_excel(writer, sheet_name=sheet, index=False, startrow=5)
                     ws = writer.book[sheet]
                     self._write_excel_header_openpyxl(ws, start_row=1)
+                    # Auto-adjust column widths
+                    self._auto_adjust_column_width(ws)
                 messagebox.showinfo("Success", f"Records data exported to {file_path}")
                 
                 # Ask if user wants to open the file
@@ -3869,7 +3892,7 @@ class LibraryApp:
     # ------------------------------------------------------------------
     def get_current_overdue_records(self):
         """Return list of overdue (currently issued and past due date) records.
-        Each record tuple: (Enrollment No, Student Name, Book ID, Book Title, Issue Date, Due Date, Return Date, Status, Fine)
+        Each record dict with: Enrollment No, Student Name, Book ID, Book Title, Issue Date, Due Date, Days Overdue, Accrued Fine
         """
         overdue = []
         try:
@@ -3877,24 +3900,29 @@ class LibraryApp:
             today = datetime.now().date()
             from datetime import datetime as _dt
             for rec in all_records:
-                enroll, name, book_id, title, borrow_date, due_date, return_date, status, fine = rec
-                if status == 'borrowed':
-                    try:
-                        due_d = _dt.strptime(due_date, '%Y-%m-%d').date()
-                        if due_d < today:
-                            days_overdue = (today - due_d).days
-                            overdue.append({
-                                'Enrollment No': enroll,
-                                'Student Name': name,
-                                'Book ID': book_id,
-                                'Book Title': title,
-                                'Issue Date': borrow_date,
-                                'Due Date': due_date,
-                                'Days Overdue': days_overdue,
-                                'Accrued Fine': int(days_overdue) * FINE_PER_DAY
-                            })
-                    except Exception:
-                        continue
+                # Now handling 10 fields (with academic_year at the end)
+                if len(rec) >= 9:
+                    enroll, name, book_id, title, borrow_date, due_date, return_date, status, fine = rec[:9]
+                    # If there's a 10th field, it's academic_year (we don't need it here)
+                    
+                    if status == 'borrowed':
+                        try:
+                            due_d = _dt.strptime(due_date, '%Y-%m-%d').date()
+                            if due_d < today:
+                                days_overdue = (today - due_d).days
+                                overdue.append({
+                                    'Enrollment No': enroll,
+                                    'Student Name': name,
+                                    'Book ID': book_id,
+                                    'Book Title': title,
+                                    'Issue Date': borrow_date,
+                                    'Due Date': due_date,
+                                    'Days Overdue': days_overdue,
+                                    'Accrued Fine': int(days_overdue) * FINE_PER_DAY
+                                })
+                        except Exception as e:
+                            print(f"Error processing overdue record: {e}")
+                            continue
             return overdue
         except Exception as e:
             print(f"Overdue fetch error: {e}")
@@ -4011,16 +4039,39 @@ class LibraryApp:
                 return
 
             doc = Document()
-            def add_center(text, bold=True, size=16):
+            
+            # Add logo at the top if available
+            logo_path = os.path.join(os.path.dirname(__file__), 'logo.png')
+            if os.path.exists(logo_path):
+                try:
+                    # Add logo centered at top
+                    logo_para = doc.add_paragraph()
+                    logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    logo_run = logo_para.add_run()
+                    logo_run.add_picture(logo_path, width=Pt(60))
+                except Exception as e:
+                    print(f"Could not add logo: {e}")
+            
+            def add_center(text, bold=True, size=16, color=None):
                 p = doc.add_paragraph()
                 run = p.add_run(text)
                 run.bold = bold
                 run.font.size = Pt(size)
+                if color:
+                    from docx.shared import RGBColor
+                    run.font.color.rgb = RGBColor(*color)
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-            add_center("Government Polytechnic Awasari (Kh)", True, 18)
-            add_center("Computer Department", True, 16)
-            add_center("Departmental Library", True, 14)
+            # Main heading - VERY LARGE with dark blue color
+            add_center("Government Polytechnic Awasari (Kh)", True, 22, (31, 71, 136))
+            # Subheading - Large with medium blue color
+            add_center("Departmental Library", True, 18, (46, 92, 138))
+            # Sub-subheading - Medium with light blue color
+            add_center("Computer Department", True, 16, (54, 95, 145))
+            
+            # Add a line separator
+            doc.add_paragraph("_" * 60).alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
             # Date and Ref aligned to the right
             meta_p = doc.add_paragraph()
             meta_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
@@ -4306,67 +4357,152 @@ class LibraryApp:
 
     # ---------------------- Excel Helpers ----------------------
     def _write_excel_header_openpyxl(self, worksheet, start_row=1):
-        """Write the required header into an openpyxl worksheet with proper formatting.
-        Main heading: Government Polytechnic Awasari(Kh) - large and centered
-        Subheading: Departmental Library - smaller
-        Sub-subheading: Computer Engineering - even smaller
+        """Write the required header into an openpyxl worksheet with proper formatting and logo.
+        Main heading: Government Polytechnic Awasari(Kh) - very large and centered
+        Subheading: Departmental Library - medium
+        Sub-subheading: Computer Department - smaller
+        Includes logo image on the left side
         Returns the next row after the header.
         """
-        from openpyxl.styles import Font, Alignment
+        from openpyxl.styles import Font, Alignment, Border, Side
+        from openpyxl.drawing.image import Image as XLImage
+        from openpyxl.utils import get_column_letter
         
-        # Main heading - large, bold, centered
-        cell_main = worksheet.cell(row=start_row, column=1)
+        # Set row heights for better appearance
+        worksheet.row_dimensions[start_row].height = 30
+        worksheet.row_dimensions[start_row + 1].height = 25
+        worksheet.row_dimensions[start_row + 2].height = 20
+        
+        # Add logo if available
+        logo_path = os.path.join(os.path.dirname(__file__), 'logo.png')
+        if os.path.exists(logo_path):
+            try:
+                img = XLImage(logo_path)
+                # Resize logo to fit nicely (adjust size as needed)
+                img.width = 60
+                img.height = 60
+                # Position logo in column A, spanning rows
+                worksheet.add_image(img, f'A{start_row}')
+            except Exception as e:
+                print(f"Could not add logo: {e}")
+        
+        # Determine the number of columns to merge (assuming at least 7 columns)
+        max_col = max(7, worksheet.max_column)
+        
+        # Main heading - VERY LARGE, bold, centered
+        merge_range_main = f'B{start_row}:{get_column_letter(max_col)}{start_row}'
+        worksheet.merge_cells(merge_range_main)
+        cell_main = worksheet[f'B{start_row}']
         cell_main.value = "Government Polytechnic Awasari(Kh)"
-        cell_main.font = Font(size=16, bold=True, name='Arial')
+        cell_main.font = Font(size=20, bold=True, name='Arial', color='1F4788')  # Dark blue
         cell_main.alignment = Alignment(horizontal='center', vertical='center')
         
-        # Subheading - medium, bold, centered
-        cell_sub1 = worksheet.cell(row=start_row + 1, column=1)
+        # Subheading - Large, bold, centered
+        merge_range_sub1 = f'B{start_row + 1}:{get_column_letter(max_col)}{start_row + 1}'
+        worksheet.merge_cells(merge_range_sub1)
+        cell_sub1 = worksheet[f'B{start_row + 1}']
         cell_sub1.value = "Departmental Library"
-        cell_sub1.font = Font(size=13, bold=True, name='Arial')
+        cell_sub1.font = Font(size=16, bold=True, name='Arial', color='2E5C8A')  # Medium blue
         cell_sub1.alignment = Alignment(horizontal='center', vertical='center')
         
-        # Sub-subheading - smaller, centered
-        cell_sub2 = worksheet.cell(row=start_row + 2, column=1)
-        cell_sub2.value = "Computer Engineering"
-        cell_sub2.font = Font(size=11, bold=True, name='Arial')
+        # Sub-subheading - Medium, bold, centered
+        merge_range_sub2 = f'B{start_row + 2}:{get_column_letter(max_col)}{start_row + 2}'
+        worksheet.merge_cells(merge_range_sub2)
+        cell_sub2 = worksheet[f'B{start_row + 2}']
+        cell_sub2.value = "Computer Department"
+        cell_sub2.font = Font(size=14, bold=True, name='Arial', color='365F91')  # Light blue
         cell_sub2.alignment = Alignment(horizontal='center', vertical='center')
         
+        # Add a separator line
+        thin_border = Border(bottom=Side(style='thin', color='000000'))
+        for col in range(1, max_col + 1):
+            worksheet.cell(row=start_row + 3, column=col).border = thin_border
+        
         # Add a blank row for spacing
-        return start_row + 4
+        return start_row + 5
 
     def _xlsxwriter_write_header(self, worksheet, workbook, start_row=0):
-        """Write the required header into an xlsxwriter worksheet with proper formatting."""
-        # Main heading - large, bold, centered
+        """Write the required header into an xlsxwriter worksheet with proper formatting and logo."""
+        # Main heading - VERY LARGE, bold, centered with color
         fmt_main = workbook.add_format({
+            'bold': True, 
+            'font_size': 20, 
+            'align': 'center',
+            'valign': 'vcenter',
+            'font_name': 'Arial',
+            'font_color': '#1F4788'  # Dark blue
+        })
+        # Subheading - Large, bold, centered with color
+        fmt_sub1 = workbook.add_format({
             'bold': True, 
             'font_size': 16, 
             'align': 'center',
             'valign': 'vcenter',
-            'font_name': 'Arial'
+            'font_name': 'Arial',
+            'font_color': '#2E5C8A'  # Medium blue
         })
-        # Subheading - medium, bold, centered
-        fmt_sub1 = workbook.add_format({
-            'bold': True, 
-            'font_size': 13, 
-            'align': 'center',
-            'valign': 'vcenter',
-            'font_name': 'Arial'
-        })
-        # Sub-subheading - smaller, centered
+        # Sub-subheading - Medium, bold, centered with color
         fmt_sub2 = workbook.add_format({
             'bold': True, 
-            'font_size': 11, 
+            'font_size': 14, 
             'align': 'center',
             'valign': 'vcenter',
-            'font_name': 'Arial'
+            'font_name': 'Arial',
+            'font_color': '#365F91'  # Light blue
+        })
+        # Separator line format
+        fmt_line = workbook.add_format({
+            'bottom': 1,
+            'bottom_color': '#000000'
         })
         
-        worksheet.write(start_row + 0, 0, "Government Polytechnic Awasari(Kh)", fmt_main)
-        worksheet.write(start_row + 1, 0, "Departmental Library", fmt_sub1)
-        worksheet.write(start_row + 2, 0, "Computer Engineering", fmt_sub2)
+        # Set row heights for better appearance
+        worksheet.set_row(start_row, 30)
+        worksheet.set_row(start_row + 1, 25)
+        worksheet.set_row(start_row + 2, 20)
+        
+        # Add logo if available
+        logo_path = os.path.join(os.path.dirname(__file__), 'logo.png')
+        if os.path.exists(logo_path):
+            try:
+                worksheet.insert_image(start_row, 0, logo_path, 
+                                     {'x_scale': 0.3, 'y_scale': 0.3, 'x_offset': 5, 'y_offset': 5})
+            except Exception as e:
+                print(f"Could not add logo: {e}")
+        
+        # Merge cells for headers (assuming 7 columns minimum)
+        worksheet.merge_range(start_row, 1, start_row, 6, "Government Polytechnic Awasari(Kh)", fmt_main)
+        worksheet.merge_range(start_row + 1, 1, start_row + 1, 6, "Departmental Library", fmt_sub1)
+        worksheet.merge_range(start_row + 2, 1, start_row + 2, 6, "Computer Department", fmt_sub2)
+        
+        # Add separator line
+        for col in range(7):
+            worksheet.write(start_row + 3, col, "", fmt_line)
+        
         # Add blank row for spacing
-        return start_row + 4
+        return start_row + 5
+
+    def _auto_adjust_column_width(self, worksheet):
+        """Auto-adjust column widths in openpyxl worksheet based on content"""
+        try:
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                
+                for cell in column:
+                    try:
+                        if cell.value:
+                            cell_length = len(str(cell.value))
+                            if cell_length > max_length:
+                                max_length = cell_length
+                    except:
+                        pass
+                
+                # Set width with some padding (max 50 to avoid overly wide columns)
+                adjusted_width = min(max_length + 2, 50)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+        except Exception as e:
+            print(f"Could not auto-adjust columns: {e}")
 
     # =====================================================================
     # ANALYSIS TAB - Charts, Graphs, and Data Visualization
@@ -4674,7 +4810,29 @@ class LibraryApp:
             bg=self.colors['primary'],
             fg=self.colors['accent']
         )
-        self.stats_summary_frame.pack(fill=tk.X)
+        self.stats_summary_frame.pack(fill=tk.X, pady=(0, 20))
+
+        # Row 4: Popular & Least Popular Books
+        books_popularity_row = tk.Frame(charts_container, bg=self.colors['primary'])
+        books_popularity_row.pack(fill=tk.X, pady=(0, 20))
+        
+        self.popular_books_frame = tk.LabelFrame(
+            books_popularity_row,
+            text="📈 Most Popular Books (High Demand)",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        )
+        self.popular_books_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        
+        self.least_popular_books_frame = tk.LabelFrame(
+            books_popularity_row,
+            text="📉 Least Popular Books (Low Demand)",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        )
+        self.least_popular_books_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(10, 0))
 
         # (Focused sections are now placed near the filter controls above)
         
@@ -4808,6 +4966,8 @@ class LibraryApp:
             _clear(self.daily_trend_frame)
         if hasattr(self, 'popular_books_frame'):
             _clear(self.popular_books_frame)
+        if hasattr(self, 'least_popular_books_frame'):
+            _clear(self.least_popular_books_frame)
         if hasattr(self, 'inventory_overdue_frame'):
             _clear(self.inventory_overdue_frame)
         _clear(self.stats_summary_frame)
@@ -4845,10 +5005,12 @@ class LibraryApp:
         self.create_borrow_status_pie()
         self.create_student_activity_pie(days)
         self.create_inventory_overdue_donut()
+        # Popular and Least Popular Books - always show for book demand analysis
+        self.create_popular_books_chart(days)
+        self.create_least_popular_books_chart(days)
         # Optional charts when Compact Mode is OFF
         if hasattr(self, 'analysis_compact_mode') and not self.analysis_compact_mode.get():
             self.create_daily_trend_chart(days)
-            self.create_popular_books_chart(days)
         # Summary always
         self.create_summary_stats(days)
 
@@ -5323,6 +5485,76 @@ class LibraryApp:
         except Exception as e:
             print(f"Error creating popular books chart: {e}")
 
+    def create_least_popular_books_chart(self, days):
+        """Create bar chart showing least popular books (books with least borrows or zero borrows)"""
+        try:
+            # Get data
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+            
+            # Get books with lowest borrow count in the period (including zero borrows)
+            cursor.execute("""
+                SELECT 
+                    b.title,
+                    COALESCE(COUNT(br.id), 0) as borrow_count
+                FROM books b
+                LEFT JOIN borrow_records br ON b.book_id = br.book_id AND br.borrow_date >= ?
+                GROUP BY b.book_id, b.title
+                ORDER BY borrow_count ASC, b.title
+                LIMIT 10
+            """, (start_date,))
+            
+            results = cursor.fetchall()
+            conn.close()
+            
+            if not results:
+                no_data_label = tk.Label(
+                    self.least_popular_books_frame,
+                    text=f"No book data available",
+                    font=('Segoe UI', 12),
+                    bg=self.colors['primary'],
+                    fg='#666666'
+                )
+                no_data_label.pack(expand=True)
+                return
+            
+            titles = [row[0][:20] + ('...' if len(row[0]) > 20 else '') for row in results]
+            counts = [row[1] for row in results]
+            
+            # Create figure
+            fig = Figure(figsize=(6, 4), dpi=100)
+            ax = fig.add_subplot(111)
+            
+            bars = ax.barh(titles, counts, color='#e74c3c', alpha=0.7)
+            ax.set_title(f'Least Popular Books (Last {days} Days)', fontsize=12, fontweight='bold')
+            ax.set_xlabel('Times Issued')
+            
+            # Add click interaction
+            def on_least_popular_click(event):
+                if event.inaxes == ax:
+                    for i, bar in enumerate(bars):
+                        contains, info = bar.contains(event)
+                        if contains:
+                            # Show all students who borrowed that book in period (if any)
+                            full_title = results[i][0]
+                            self.show_book_borrowers_dialog(full_title, days)
+                            break
+            
+            fig.tight_layout()
+            
+            # Add to GUI
+            canvas = FigureCanvasTkAgg(fig, self.least_popular_books_frame)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            canvas.mpl_connect('button_press_event', on_least_popular_click)
+            
+            self.current_charts['least_popular_books'] = (fig, titles, counts)
+            
+        except Exception as e:
+            print(f"Error creating least popular books chart: {e}")
+
     # ---------------------- Focused Insights ----------------------
     def create_student_specific_pie(self, days, enrollment_no):
         """Pie: student's borrow status in period (borrowed vs returned)."""
@@ -5786,6 +6018,34 @@ class LibraryApp:
             
             # Create document
             doc = Document()
+            
+            # Add logo at the top if available
+            logo_path = os.path.join(os.path.dirname(__file__), 'logo.png')
+            if os.path.exists(logo_path):
+                try:
+                    logo_para = doc.add_paragraph()
+                    logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    logo_run = logo_para.add_run()
+                    logo_run.add_picture(logo_path, width=Pt(60))
+                except Exception as e:
+                    print(f"Could not add logo: {e}")
+            
+            # Institutional Header with colors
+            def add_colored_center(text, size, rgb):
+                from docx.shared import RGBColor
+                p = doc.add_paragraph()
+                run = p.add_run(text)
+                run.bold = True
+                run.font.size = Pt(size)
+                run.font.color.rgb = RGBColor(*rgb)
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            add_colored_center("Government Polytechnic Awasari (Kh)", 22, (31, 71, 136))
+            add_colored_center("Departmental Library", 18, (46, 92, 138))
+            add_colored_center("Computer Department", 16, (54, 95, 145))
+            
+            # Add separator line
+            doc.add_paragraph("_" * 60).alignment = WD_ALIGN_PARAGRAPH.CENTER
             
             # Header
             header = doc.add_heading(f'Library Analysis Report', 0)
