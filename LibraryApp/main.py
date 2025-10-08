@@ -2342,124 +2342,13 @@ class LibraryApp:
             messagebox.showerror("Error", message)
     
     def import_students_from_excel(self):
-        """Import students from Excel file with year selection dialog"""
-        # First, show dialog to select year
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Import Students from Excel")
-        dialog.geometry("450x350")
-        dialog.configure(bg='white')
-        dialog.transient(self.root)
-        dialog.grab_set()
-        
-        # Center the dialog
-        dialog.geometry("+%d+%d" % (self.root.winfo_rootx() + 200, self.root.winfo_rooty() + 100))
-        
-        # Title
-        title_label = tk.Label(
-            dialog,
-            text="📥 Import Students",
-            font=('Segoe UI', 16, 'bold'),
-            bg='white',
-            fg=self.colors['accent']
-        )
-        title_label.pack(pady=(20, 10))
-        
-        # Info text
-        info_label = tk.Label(
-            dialog,
-            text="Select which year these students belong to:",
-            font=('Segoe UI', 11),
-            bg='white',
-            fg=self.colors['text']
-        )
-        info_label.pack(pady=(0, 20))
-        
-        # Year selection frame
-        year_frame = tk.Frame(dialog, bg='white')
-        year_frame.pack(pady=20)
-        
-        year_var = tk.StringVar(value="1st")
-        
-        years = ["1st", "2nd", "3rd"]
-        for year in years:
-            rb = tk.Radiobutton(
-                year_frame,
-                text=f"{year} Year",
-                variable=year_var,
-                value=year,
-                font=('Segoe UI', 12),
-                bg='white',
-                fg=self.colors['accent'],
-                selectcolor='white'
-            )
-            rb.pack(anchor='w', pady=5)
-        
-        # Note
-        note_label = tk.Label(
-            dialog,
-            text="Note: All students in the Excel file will be assigned to the selected year.",
-            font=('Segoe UI', 9, 'italic'),
-            bg='white',
-            fg='#666',
-            wraplength=400
-        )
-        note_label.pack(pady=(10, 20))
-        
-        # Buttons
-        btn_frame = tk.Frame(dialog, bg='white')
-        btn_frame.pack(pady=20)
-        
-        selected_year = [None]  # Use list to store value from nested function
-        
-        def proceed_import():
-            selected_year[0] = year_var.get()
-            dialog.destroy()
-        
-        import_btn = tk.Button(
-            btn_frame,
-            text="📁 Select Excel File",
-            font=('Segoe UI', 12, 'bold'),
-            bg=self.colors['secondary'],
-            fg='white',
-            relief='flat',
-            padx=20,
-            pady=10,
-            command=proceed_import,
-            cursor='hand2'
-        )
-        import_btn.pack(side=tk.LEFT, padx=(0, 10))
-        
-        cancel_btn = tk.Button(
-            btn_frame,
-            text="❌ Cancel",
-            font=('Segoe UI', 12, 'bold'),
-            bg='#6c757d',
-            fg='white',
-            relief='flat',
-            padx=20,
-            pady=10,
-            command=dialog.destroy,
-            cursor='hand2'
-        )
-        cancel_btn.pack(side=tk.LEFT)
-        
-        # Wait for dialog to close
-        self.root.wait_window(dialog)
-        
-        # If cancelled, return
-        if selected_year[0] is None:
-            return
-        
-        target_year = selected_year[0]
-        
-        # Now select Excel file
+        """Import students from Excel file (append; skip invalid or duplicate)."""
         file_path = filedialog.askopenfilename(
             title="Select Students Excel file",
             filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
         )
         if not file_path:
             return
-        
         try:
             df = pd.read_excel(file_path)
             # Normalize columns
@@ -2489,8 +2378,7 @@ class LibraryApp:
                     email = str(row.get('email', '')).strip()
                     phone = str(row.get('phone', '')).strip()
                     department = str(row.get('department', 'Computer')).strip() or 'Computer'
-                    # Use selected year instead of Excel column
-                    year = target_year
+                    year = str(row.get('year', '2nd Year')).strip() or '2nd Year'
                     if not enrollment or not name or enrollment.lower() == 'nan' or name.lower() == 'nan':
                         skipped += 1
                         continue
@@ -2508,7 +2396,7 @@ class LibraryApp:
                     errors += 1
                     error_list.append(f"Row {row_no}: {e}")
             summary = (
-                f"Import completed for {target_year} Year!\n\nAdded: {added}\nDuplicates: {duplicate}\n"
+                f"Import completed!\n\nAdded: {added}\nDuplicates: {duplicate}\n"
                 f"Skipped (missing enrollment/name): {skipped}\nErrors: {errors}"
             )
             if error_list:
@@ -3397,13 +3285,13 @@ class LibraryApp:
                 # Add header then table using openpyxl for styling flexibility
                 with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
                     sheet = 'Students'
-                    # Write data after header block (header returns start_row + 5)
-                    start_row = 5  # header takes 5 rows (including blank), so data starts at row 6 (0-indexed as 5)
-                    df.to_excel(writer, sheet_name=sheet, index=False, startrow=start_row)
+                    # Write institutional header first
+                    header_end_row = 6  # New enhanced header takes 6 rows
+                    df.to_excel(writer, sheet_name=sheet, index=False, startrow=header_end_row)
                     ws = writer.book[sheet]
-                    # Write required header above
+                    # Write enhanced header
                     self._write_excel_header_openpyxl(ws, start_row=1)
-                    # Auto-adjust column widths
+                    # Apply enhanced auto-adjust with styling
                     self._auto_adjust_column_width(ws)
                 messagebox.showinfo("Success", f"Students data exported to {file_path}")
                 
@@ -3439,6 +3327,166 @@ class LibraryApp:
             return {1:'1st',2:'2nd',3:'3rd'}[new_num]
         except Exception:
             return stored_year_label or '1st'
+
+    def export_all_students_direct(self):
+        """Direct export of students with year selection for Share Data function"""
+        # Create year selection dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Export Students - Select Year")
+        dialog.geometry("400x350")
+        dialog.configure(bg='white')
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.geometry("+%d+%d" % (self.root.winfo_rootx() + 200, self.root.winfo_rooty() + 200))
+        
+        # Title
+        title_label = tk.Label(
+            dialog,
+            text="📊 Export Students",
+            font=('Segoe UI', 16, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        )
+        title_label.pack(pady=(20, 30))
+        
+        # Info
+        info_label = tk.Label(
+            dialog,
+            text="Select which year students to export:",
+            font=('Segoe UI', 12),
+            bg='white',
+            fg=self.colors['text']
+        )
+        info_label.pack(pady=(0, 20))
+        
+        # Year selection frame
+        year_frame = tk.Frame(dialog, bg='white')
+        year_frame.pack(expand=True, padx=40)
+        
+        year_var = tk.StringVar(value="All")
+        
+        # Year options with student counts
+        year_options = [
+            ("📚 All Students", "All"),
+            ("🥇 1st Year", "1st"),
+            ("🥈 2nd Year", "2nd"), 
+            ("🥉 3rd Year", "3rd"),
+            ("🎓 Pass Out", "Pass Out")
+        ]
+        
+        for text, value in year_options:
+            rb = tk.Radiobutton(
+                year_frame,
+                text=text,
+                variable=year_var,
+                value=value,
+                font=('Segoe UI', 12),
+                bg='white',
+                fg=self.colors['accent'],
+                selectcolor=self.colors['secondary'],
+                activebackground='white',
+                activeforeground=self.colors['accent']
+            )
+            rb.pack(anchor='w', pady=8)
+        
+        # Buttons frame
+        btn_frame = tk.Frame(dialog, bg='white')
+        btn_frame.pack(pady=30)
+        
+        def perform_export():
+            selected_year = year_var.get()
+            dialog.destroy()
+            self._export_students_by_year(selected_year)
+        
+        # Export button
+        export_btn = tk.Button(
+            btn_frame,
+            text="📊 Export to Excel",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            relief='flat',
+            padx=25,
+            pady=12,
+            command=perform_export,
+            cursor='hand2'
+        )
+        export_btn.pack(side=tk.LEFT, padx=(0, 15))
+        
+        # Cancel button
+        cancel_btn = tk.Button(
+            btn_frame,
+            text="❌ Cancel",
+            font=('Segoe UI', 12, 'bold'),
+            bg='#6c757d',
+            fg='white',
+            relief='flat',
+            padx=25,
+            pady=12,
+            command=dialog.destroy,
+            cursor='hand2'
+        )
+        cancel_btn.pack(side=tk.LEFT)
+
+    def _export_students_by_year(self, year_filter):
+        """Helper function to export students filtered by year"""
+        try:
+            students = self.db.get_students()
+            
+            # Filter by Computer department and selected year
+            filtered_students = []
+            for student in students:
+                if student[5] == "Computer":  # Department filter
+                    # Check year filter
+                    if year_filter == "All" or student[6] == year_filter:
+                        filtered_students.append({
+                            'Enrollment No': student[1],
+                            'Name': student[2],
+                            'Email': student[3],
+                            'Phone': student[4],
+                            'Department': student[5],
+                            'Year': student[6],
+                            'Registered': student[7]
+                        })
+            
+            if not filtered_students:
+                messagebox.showwarning("Warning", f"No students found for {year_filter}!")
+                return
+            
+            # Create DataFrame
+            df = pd.DataFrame(filtered_students)
+            
+            # Save to file
+            year_suffix = year_filter if year_filter != "All" else "all_years"
+            filename = f"students_{year_suffix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel files", "*.xlsx")],
+                initialfile=filename
+            )
+            
+            if file_path:
+                # Add professional header and formatting
+                with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                    sheet_name = f'Students_{year_filter}' if year_filter != "All" else 'All_Students'
+                    header_end_row = 6  # Enhanced header takes 6 rows
+                    df.to_excel(writer, sheet_name=sheet_name, index=False, startrow=header_end_row)
+                    ws = writer.book[sheet_name]
+                    # Write enhanced header
+                    self._write_excel_header_openpyxl(ws, start_row=1)
+                    # Apply enhanced auto-adjust with styling
+                    self._auto_adjust_column_width(ws)
+                    
+                messagebox.showinfo("Success", f"{year_filter} students data exported to {file_path}")
+                
+                # Ask if user wants to open the file
+                if messagebox.askyesno("Open File", "Do you want to open the exported file?"):
+                    self.open_file(file_path)
+                    
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export students: {str(e)}")
 
     def promote_student_years(self):
         """Enhanced promotion with letter number, academic year creation, and history tracking"""
@@ -3515,34 +3563,44 @@ class LibraryApp:
         )
         year_label.grid(row=2, column=0, sticky='w', pady=(0, 15), padx=(0, 20))
         
-        # Auto-suggest current academic year
+        # Auto-suggest NEXT academic year for teacher convenience
         current_year = datetime.now().year
-        suggested_year = f"{current_year}-{current_year + 1}"
+        # If we're in July-December, suggest next year
+        # If we're in January-June, suggest current year
+        if datetime.now().month >= 7:  # July onwards = next academic year
+            suggested_year = f"{current_year + 1}-{current_year + 2}"
+        else:  # January-June = current academic year
+            suggested_year = f"{current_year}-{current_year + 1}"
         
         # Get all academic years from database
         all_academic_years = self.db.get_all_academic_years()
         
-        # If no years exist, add the suggested year
-        if not all_academic_years:
-            all_academic_years = [suggested_year]
-        # If suggested year is not in list, add it at the beginning
-        elif suggested_year not in all_academic_years:
-            all_academic_years.insert(0, suggested_year)
+        # Create a list with suggested year first, then existing years
+        year_options = []
+        if suggested_year not in all_academic_years:
+            year_options.append(suggested_year)
+        year_options.extend(all_academic_years)
+        
+        # Also add next few years for convenience
+        for i in range(1, 4):
+            future_year = f"{current_year + i}-{current_year + i + 1}"
+            if future_year not in year_options:
+                year_options.append(future_year)
         
         # Create combobox for academic year selection
         year_entry = ttk.Combobox(
             form_frame,
             font=('Segoe UI', 11),
             width=28,
-            values=all_academic_years,
-            state='readonly'
+            values=year_options,
+            state='normal'  # Allow typing custom years
         )
         year_entry.set(suggested_year)
         year_entry.grid(row=2, column=1, pady=(0, 15))
         
         year_hint = tk.Label(
             form_frame,
-            text=f"(Default: {suggested_year})",
+            text=f"(Suggested: {suggested_year} - You can type custom year)",
             font=('Segoe UI', 8, 'italic'),
             bg='white',
             fg='#666'
@@ -3961,10 +4019,11 @@ class LibraryApp:
             if file_path:
                 with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
                     sheet = 'Books'
-                    df.to_excel(writer, sheet_name=sheet, index=False, startrow=5)
+                    header_end_row = 6  # Enhanced header takes 6 rows
+                    df.to_excel(writer, sheet_name=sheet, index=False, startrow=header_end_row)
                     ws = writer.book[sheet]
                     self._write_excel_header_openpyxl(ws, start_row=1)
-                    # Auto-adjust column widths
+                    # Apply enhanced auto-adjust with styling
                     self._auto_adjust_column_width(ws)
                 messagebox.showinfo("Success", f"Books data exported to {file_path}")
                 
@@ -4024,10 +4083,11 @@ class LibraryApp:
             if file_path:
                 with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
                     sheet = 'Records'
-                    df.to_excel(writer, sheet_name=sheet, index=False, startrow=5)
+                    header_end_row = 6  # Enhanced header takes 6 rows
+                    df.to_excel(writer, sheet_name=sheet, index=False, startrow=header_end_row)
                     ws = writer.book[sheet]
                     self._write_excel_header_openpyxl(ws, start_row=1)
-                    # Auto-adjust column widths
+                    # Apply enhanced auto-adjust with styling
                     self._auto_adjust_column_width(ws)
                 messagebox.showinfo("Success", f"Records data exported to {file_path}")
                 
@@ -4130,7 +4190,8 @@ class LibraryApp:
                     current_row += 3
                     
                     # Add subject and body text
-                    ws.cell(row=current_row, column=1, value="Subject: Submission of Overdue Library Books").font = openpyxl.styles.Font(bold=True)
+                    from openpyxl.styles import Font
+                    ws.cell(row=current_row, column=1, value="Subject: Submission of Overdue Library Books").font = Font(bold=True)
                     current_row += 2
                     ws.cell(row=current_row, column=1, value="Dear Students,")
                     current_row += 2
@@ -4140,7 +4201,7 @@ class LibraryApp:
                     current_row += 1
                     ws.cell(row=current_row, column=1, value="Failure to comply today will trigger disciplinary action per departmental policy.")
                     current_row += 2
-                    ws.cell(row=current_row, column=1, value="Overdue Book List:").font = openpyxl.styles.Font(bold=True)
+                    ws.cell(row=current_row, column=1, value="Overdue Book List:").font = Font(bold=True)
                     current_row += 2
                     
                     # Write table data
@@ -4437,7 +4498,7 @@ class LibraryApp:
         # Data type buttons
         data_types = [
             ("📊 Dashboard Summary", self.export_dashboard_summary),
-            ("👥 Students Data", self.export_students_dialog),
+            ("👥 Students Data", self.export_all_students_direct),
             ("📚 Books Data", self.export_books_to_excel),
             ("📋 Transaction Records", self.export_records_to_excel)
         ]
@@ -4507,7 +4568,8 @@ class LibraryApp:
                 with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
                     # Write statistics
                     stats_df = pd.DataFrame(summary_data['Library Statistics'][1:], columns=summary_data['Library Statistics'][0])
-                    stats_df.to_excel(writer, sheet_name='Statistics', index=False, startrow=5)
+                    header_end_row = 6  # Enhanced header takes 6 rows
+                    stats_df.to_excel(writer, sheet_name='Statistics', index=False, startrow=header_end_row)
                     ws_stats = writer.book['Statistics']
                     self._write_excel_header_openpyxl(ws_stats, start_row=1)
                     self._auto_adjust_column_width(ws_stats)
@@ -4517,7 +4579,7 @@ class LibraryApp:
                         activities_df = pd.DataFrame(activities, columns=[
                             'Type', 'Student', 'Book', 'Date', 'Status'
                         ])
-                        activities_df.to_excel(writer, sheet_name='Recent Activities', index=False, startrow=5)
+                        activities_df.to_excel(writer, sheet_name='Recent Activities', index=False, startrow=header_end_row)
                         ws_act = writer.book['Recent Activities']
                         self._write_excel_header_openpyxl(ws_act, start_row=1)
                         self._auto_adjust_column_width(ws_act)
@@ -4545,69 +4607,93 @@ class LibraryApp:
 
     # ---------------------- Excel Helpers ----------------------
     def _write_excel_header_openpyxl(self, worksheet, start_row=1):
-        """Write the required header into an openpyxl worksheet with proper formatting and logo.
-        Main heading: Government Polytechnic Awasari(Kh) - very large and centered
-        Subheading: Departmental Library - medium
-        Sub-subheading: Computer Department - smaller
-        Includes logo image on the left side
+        """Write the required header into an openpyxl worksheet with professional formatting like Word documents.
+        Creates a beautifully formatted header with logo, merged cells, colors, and borders.
         Returns the next row after the header.
         """
-        from openpyxl.styles import Font, Alignment, Border, Side
+        from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
         from openpyxl.drawing.image import Image as XLImage
         from openpyxl.utils import get_column_letter
         
-        # Set row heights for better appearance
-        worksheet.row_dimensions[start_row].height = 30
-        worksheet.row_dimensions[start_row + 1].height = 25
-        worksheet.row_dimensions[start_row + 2].height = 20
+        # Set generous row heights for professional appearance
+        worksheet.row_dimensions[start_row].height = 45
+        worksheet.row_dimensions[start_row + 1].height = 35
+        worksheet.row_dimensions[start_row + 2].height = 30
+        worksheet.row_dimensions[start_row + 3].height = 8  # Separator row
+        worksheet.row_dimensions[start_row + 4].height = 15  # Spacing row
         
         # Add logo if available
         logo_path = os.path.join(os.path.dirname(__file__), 'logo.png')
         if os.path.exists(logo_path):
             try:
                 img = XLImage(logo_path)
-                # Resize logo to fit nicely (adjust size as needed)
-                img.width = 60
-                img.height = 60
-                # Position logo in column A, spanning rows
+                # Larger logo for professional appearance
+                img.width = 80
+                img.height = 80
+                # Position logo in column A, centered
                 worksheet.add_image(img, f'A{start_row}')
             except Exception as e:
                 print(f"Could not add logo: {e}")
         
-        # Determine the number of columns to merge (assuming at least 7 columns)
-        max_col = max(7, worksheet.max_column)
+        # Determine the number of columns to merge (ensure at least 8 columns for better appearance)
+        max_col = max(8, worksheet.max_column if worksheet.max_column > 1 else 8)
         
-        # Main heading - VERY LARGE, bold, centered
+        # Create border styles
+        thin_border = Border(
+            left=Side(style='thin', color='365F91'),
+            right=Side(style='thin', color='365F91'),
+            top=Side(style='thin', color='365F91'),
+            bottom=Side(style='thin', color='365F91')
+        )
+        
+        # Create background fills for gradient effect
+        main_fill = PatternFill(start_color='E8F0FE', end_color='E8F0FE', fill_type='solid')  # Light blue background
+        
+        # Main heading - VERY LARGE, bold, centered with background
         merge_range_main = f'B{start_row}:{get_column_letter(max_col)}{start_row}'
         worksheet.merge_cells(merge_range_main)
         cell_main = worksheet[f'B{start_row}']
         cell_main.value = "Government Polytechnic Awasari(Kh)"
-        cell_main.font = Font(size=20, bold=True, name='Arial', color='1F4788')  # Dark blue
-        cell_main.alignment = Alignment(horizontal='center', vertical='center')
+        cell_main.font = Font(size=22, bold=True, name='Calibri', color='1F4788')  # Dark blue
+        cell_main.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        cell_main.fill = main_fill
+        cell_main.border = thin_border
         
-        # Subheading - Large, bold, centered
+        # Subheading - Large, bold, centered with background
         merge_range_sub1 = f'B{start_row + 1}:{get_column_letter(max_col)}{start_row + 1}'
         worksheet.merge_cells(merge_range_sub1)
         cell_sub1 = worksheet[f'B{start_row + 1}']
         cell_sub1.value = "Departmental Library"
-        cell_sub1.font = Font(size=16, bold=True, name='Arial', color='2E5C8A')  # Medium blue
+        cell_sub1.font = Font(size=18, bold=True, name='Calibri', color='2E5C8A')  # Medium blue
         cell_sub1.alignment = Alignment(horizontal='center', vertical='center')
+        cell_sub1.fill = PatternFill(start_color='F0F6FF', end_color='F0F6FF', fill_type='solid')
+        cell_sub1.border = thin_border
         
-        # Sub-subheading - Medium, bold, centered
+        # Sub-subheading - Medium, bold, centered with background
         merge_range_sub2 = f'B{start_row + 2}:{get_column_letter(max_col)}{start_row + 2}'
         worksheet.merge_cells(merge_range_sub2)
         cell_sub2 = worksheet[f'B{start_row + 2}']
         cell_sub2.value = "Computer Department"
-        cell_sub2.font = Font(size=14, bold=True, name='Arial', color='365F91')  # Light blue
+        cell_sub2.font = Font(size=16, bold=True, name='Calibri', color='365F91')  # Light blue
         cell_sub2.alignment = Alignment(horizontal='center', vertical='center')
+        cell_sub2.fill = PatternFill(start_color='F8FAFF', end_color='F8FAFF', fill_type='solid')
+        cell_sub2.border = thin_border
         
-        # Add a separator line
-        thin_border = Border(bottom=Side(style='thin', color='000000'))
+        # Add a professional separator line across all columns
+        thick_border = Border(bottom=Side(style='thick', color='1F4788'))
         for col in range(1, max_col + 1):
-            worksheet.cell(row=start_row + 3, column=col).border = thin_border
+            cell = worksheet.cell(row=start_row + 3, column=col)
+            cell.border = thick_border
+            cell.fill = PatternFill(start_color='1F4788', end_color='1F4788', fill_type='solid')
         
-        # Add a blank row for spacing
-        return start_row + 5
+        # Add borders to logo column for consistency
+        for row in range(start_row, start_row + 3):
+            logo_cell = worksheet.cell(row=row, column=1)
+            logo_cell.border = thin_border
+            logo_cell.fill = main_fill
+        
+        # Return next available row (after spacing)
+        return start_row + 6
 
     def _xlsxwriter_write_header(self, worksheet, workbook, start_row=0):
         """Write the required header into an xlsxwriter worksheet with proper formatting and logo."""
@@ -4671,26 +4757,91 @@ class LibraryApp:
         return start_row + 5
 
     def _auto_adjust_column_width(self, worksheet):
-        """Auto-adjust column widths in openpyxl worksheet based on content"""
+        """Auto-adjust column widths in openpyxl worksheet based on content with enhanced formatting"""
         try:
+            # First, apply column formatting to data headers
+            from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+            
+            # Find data start row (after header)
+            data_start_row = None
+            for row in range(1, worksheet.max_row + 1):
+                cell_value = worksheet.cell(row=row, column=1).value
+                if cell_value and isinstance(cell_value, str) and any(header in cell_value.lower() for header in ['enrollment', 'book', 'student', 'name', 'id']):
+                    data_start_row = row
+                    break
+            
+            # Style data headers if found
+            if data_start_row:
+                header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+                header_font = Font(color='FFFFFF', bold=True, size=11, name='Calibri')
+                header_alignment = Alignment(horizontal='center', vertical='center')
+                header_border = Border(
+                    left=Side(style='thin', color='FFFFFF'),
+                    right=Side(style='thin', color='FFFFFF'),
+                    top=Side(style='thin', color='FFFFFF'),
+                    bottom=Side(style='thin', color='FFFFFF')
+                )
+                
+                # Apply header styling
+                for col in range(1, worksheet.max_column + 1):
+                    cell = worksheet.cell(row=data_start_row, column=col)
+                    if cell.value:  # Only style cells with content
+                        cell.fill = header_fill
+                        cell.font = header_font
+                        cell.alignment = header_alignment
+                        cell.border = header_border
+            
+            # Auto-adjust column widths based on content
             for column in worksheet.columns:
                 max_length = 0
                 column_letter = column[0].column_letter
                 
                 for cell in column:
                     try:
-                        if cell.value:
-                            # Get the length of the cell value as string
+                        if cell.value and not cell.coordinate.startswith('A'):  # Skip logo column
                             cell_length = len(str(cell.value))
                             if cell_length > max_length:
                                 max_length = cell_length
                     except:
                         pass
                 
-                # Set width with generous padding (minimum 15, add 6 for padding, max 70)
-                # This ensures even long content is visible
-                adjusted_width = max(15, min(max_length + 6, 70))
+                # Enhanced width calculation with better minimum and maximum
+                if column_letter == 'A':  # Logo column
+                    adjusted_width = 12
+                elif max_length < 8:  # Short content
+                    adjusted_width = 15
+                elif max_length < 20:  # Medium content
+                    adjusted_width = max_length + 6
+                else:  # Long content
+                    adjusted_width = min(max_length + 4, 65)
+                
                 worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            # Add alternating row colors for better readability
+            if data_start_row:
+                light_fill = PatternFill(start_color='F8F9FA', end_color='F8F9FA', fill_type='solid')
+                data_border = Border(
+                    left=Side(style='thin', color='E0E0E0'),
+                    right=Side(style='thin', color='E0E0E0'),
+                    top=Side(style='thin', color='E0E0E0'),
+                    bottom=Side(style='thin', color='E0E0E0')
+                )
+                
+                for row in range(data_start_row + 1, worksheet.max_row + 1):
+                    if (row - data_start_row) % 2 == 0:  # Even rows
+                        for col in range(1, worksheet.max_column + 1):
+                            cell = worksheet.cell(row=row, column=col)
+                            if not cell.coordinate.startswith('A'):  # Skip logo column
+                                cell.fill = light_fill
+                                cell.border = data_border
+                                cell.alignment = Alignment(vertical='center')
+                    else:  # Odd rows
+                        for col in range(1, worksheet.max_column + 1):
+                            cell = worksheet.cell(row=row, column=col)
+                            if not cell.coordinate.startswith('A'):  # Skip logo column
+                                cell.border = data_border
+                                cell.alignment = Alignment(vertical='center')
+                                
         except Exception as e:
             print(f"Could not auto-adjust columns: {e}")
 
