@@ -2342,13 +2342,124 @@ class LibraryApp:
             messagebox.showerror("Error", message)
     
     def import_students_from_excel(self):
-        """Import students from Excel file (append; skip invalid or duplicate)."""
+        """Import students from Excel file with year selection dialog"""
+        # First, show dialog to select year
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Import Students from Excel")
+        dialog.geometry("450x350")
+        dialog.configure(bg='white')
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.geometry("+%d+%d" % (self.root.winfo_rootx() + 200, self.root.winfo_rooty() + 100))
+        
+        # Title
+        title_label = tk.Label(
+            dialog,
+            text="📥 Import Students",
+            font=('Segoe UI', 16, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        )
+        title_label.pack(pady=(20, 10))
+        
+        # Info text
+        info_label = tk.Label(
+            dialog,
+            text="Select which year these students belong to:",
+            font=('Segoe UI', 11),
+            bg='white',
+            fg=self.colors['text']
+        )
+        info_label.pack(pady=(0, 20))
+        
+        # Year selection frame
+        year_frame = tk.Frame(dialog, bg='white')
+        year_frame.pack(pady=20)
+        
+        year_var = tk.StringVar(value="1st")
+        
+        years = ["1st", "2nd", "3rd"]
+        for year in years:
+            rb = tk.Radiobutton(
+                year_frame,
+                text=f"{year} Year",
+                variable=year_var,
+                value=year,
+                font=('Segoe UI', 12),
+                bg='white',
+                fg=self.colors['accent'],
+                selectcolor='white'
+            )
+            rb.pack(anchor='w', pady=5)
+        
+        # Note
+        note_label = tk.Label(
+            dialog,
+            text="Note: All students in the Excel file will be assigned to the selected year.",
+            font=('Segoe UI', 9, 'italic'),
+            bg='white',
+            fg='#666',
+            wraplength=400
+        )
+        note_label.pack(pady=(10, 20))
+        
+        # Buttons
+        btn_frame = tk.Frame(dialog, bg='white')
+        btn_frame.pack(pady=20)
+        
+        selected_year = [None]  # Use list to store value from nested function
+        
+        def proceed_import():
+            selected_year[0] = year_var.get()
+            dialog.destroy()
+        
+        import_btn = tk.Button(
+            btn_frame,
+            text="📁 Select Excel File",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=10,
+            command=proceed_import,
+            cursor='hand2'
+        )
+        import_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        cancel_btn = tk.Button(
+            btn_frame,
+            text="❌ Cancel",
+            font=('Segoe UI', 12, 'bold'),
+            bg='#6c757d',
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=10,
+            command=dialog.destroy,
+            cursor='hand2'
+        )
+        cancel_btn.pack(side=tk.LEFT)
+        
+        # Wait for dialog to close
+        self.root.wait_window(dialog)
+        
+        # If cancelled, return
+        if selected_year[0] is None:
+            return
+        
+        target_year = selected_year[0]
+        
+        # Now select Excel file
         file_path = filedialog.askopenfilename(
             title="Select Students Excel file",
             filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
         )
         if not file_path:
             return
+        
         try:
             df = pd.read_excel(file_path)
             # Normalize columns
@@ -2378,7 +2489,8 @@ class LibraryApp:
                     email = str(row.get('email', '')).strip()
                     phone = str(row.get('phone', '')).strip()
                     department = str(row.get('department', 'Computer')).strip() or 'Computer'
-                    year = str(row.get('year', '2nd Year')).strip() or '2nd Year'
+                    # Use selected year instead of Excel column
+                    year = target_year
                     if not enrollment or not name or enrollment.lower() == 'nan' or name.lower() == 'nan':
                         skipped += 1
                         continue
@@ -2396,7 +2508,7 @@ class LibraryApp:
                     errors += 1
                     error_list.append(f"Row {row_no}: {e}")
             summary = (
-                f"Import completed!\n\nAdded: {added}\nDuplicates: {duplicate}\n"
+                f"Import completed for {target_year} Year!\n\nAdded: {added}\nDuplicates: {duplicate}\n"
                 f"Skipped (missing enrollment/name): {skipped}\nErrors: {errors}"
             )
             if error_list:
@@ -2805,9 +2917,38 @@ class LibraryApp:
             # Create Word document
             doc = Document()
             
-            # Add header
-            header = doc.add_heading('LIBRARY OF COMPUTER DEPARTMENT', 0)
-            header.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            # Add logo at the top if available
+            logo_path = os.path.join(os.path.dirname(__file__), 'logo.png')
+            if os.path.exists(logo_path):
+                try:
+                    logo_para = doc.add_paragraph()
+                    logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    logo_run = logo_para.add_run()
+                    logo_run.add_picture(logo_path, width=Pt(80))
+                except Exception as e:
+                    print(f"Could not add logo: {e}")
+            
+            # Add institutional header with colors
+            def add_colored_header(text, size, rgb_color):
+                from docx.shared import RGBColor
+                p = doc.add_paragraph()
+                run = p.add_run(text)
+                run.bold = True
+                run.font.size = Pt(size)
+                run.font.color.rgb = RGBColor(*rgb_color)
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                return p
+            
+            # Three-line header with gradient colors
+            add_colored_header("Government Polytechnic Awasari (Kh)", 20, (31, 71, 136))
+            add_colored_header("Departmental Library", 16, (46, 92, 138))
+            add_colored_header("Computer Department", 14, (54, 95, 145))
+            
+            # Add separator line
+            sep_para = doc.add_paragraph("_" * 70)
+            sep_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            doc.add_paragraph()  # Spacing
             
             # Add date
             date_para = doc.add_paragraph()
@@ -2888,10 +3029,19 @@ class LibraryApp:
             closing_run.font.size = Pt(11)
             
             # Signature
+            doc.add_paragraph()
+            doc.add_paragraph("__________________________")
             signature = doc.add_paragraph()
-            signature_run = signature.add_run('Librarian\nLibrary of Computer Department')
+            signature_run = signature.add_run('Librarian')
             signature_run.font.size = Pt(11)
             signature_run.bold = True
+            
+            dept1 = doc.add_paragraph()
+            dept1.add_run('Departmental Library').font.size = Pt(10)
+            dept2 = doc.add_paragraph()
+            dept2.add_run('Computer Department').font.size = Pt(10)
+            dept3 = doc.add_paragraph()
+            dept3.add_run('Government Polytechnic Awasari (Kh)').font.size = Pt(10)
             
             # Save the document
             default_filename = f"Overdue_Letter_{enrollment_no}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
@@ -3715,6 +3865,7 @@ class LibraryApp:
                         df.to_excel(writer, sheet_name=sheet, index=False, startrow=4)
                         ws = writer.book[sheet]
                         self._write_excel_header_openpyxl(ws, start_row=1)
+                        self._auto_adjust_column_width(ws)
                     
                     messagebox.showinfo("Success", f"Promotion history exported to {file_path}")
                     
@@ -3967,14 +4118,39 @@ class LibraryApp:
             try:
                 with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
                     sheet_name = 'Overdue Notice'
-                    startrow = len(body_lines) + 1
+                    
+                    # Add institutional header with logo first
+                    ws = writer.book.create_sheet(sheet_name)
+                    header_rows = self._write_excel_header_openpyxl(ws, start_row=1)
+                    
+                    # Add date and ref below header
+                    current_row = header_rows + 1
+                    ws.cell(row=current_row, column=1, value=f"Date: {today_str}")
+                    ws.cell(row=current_row + 1, column=1, value=f"Ref: {ref_code}")
+                    current_row += 3
+                    
+                    # Add subject and body text
+                    ws.cell(row=current_row, column=1, value="Subject: Submission of Overdue Library Books").font = openpyxl.styles.Font(bold=True)
+                    current_row += 2
+                    ws.cell(row=current_row, column=1, value="Dear Students,")
+                    current_row += 2
+                    ws.cell(row=current_row, column=1, value="The following students are hereby notified to immediately submit the listed library books that are now overdue.")
+                    current_row += 1
+                    ws.cell(row=current_row, column=1, value=f"A fine of Rs {FINE_PER_DAY} per day has accrued (or will continue to accrue) until the books are returned.")
+                    current_row += 1
+                    ws.cell(row=current_row, column=1, value="Failure to comply today will trigger disciplinary action per departmental policy.")
+                    current_row += 2
+                    ws.cell(row=current_row, column=1, value="Overdue Book List:").font = openpyxl.styles.Font(bold=True)
+                    current_row += 2
+                    
+                    # Write table data
+                    startrow = current_row
                     df.to_excel(writer, sheet_name=sheet_name, index=False, startrow=startrow)
-                    ws = writer.book[sheet_name]
-                    for idx, line in enumerate(body_lines, start=1):
-                        ws.cell(row=idx, column=1, value=line)
-                    for col_idx, col_name in enumerate(df.columns, start=1):
-                        max_len = max(len(str(col_name)), *(len(str(v)) for v in df[col_name].astype(str)))
-                        ws.column_dimensions[chr(64+col_idx)].width = min(max_len + 2, 50)
+                    
+                    # Auto-adjust columns for the table
+                    self._auto_adjust_column_width(ws)
+                    
+                    # Add closing text
                     closing_start = startrow + len(df) + 3
                     closing_lines = [
                         "", "You are directed to return the above books without further delay.",
@@ -4091,9 +4267,19 @@ class LibraryApp:
 
             columns = ["Enrollment No", "Student Name", "Book ID", "Book Title", "Issue Date", "Due Date", "Days Overdue", "Accrued Fine"]
             table = doc.add_table(rows=1, cols=len(columns))
+            table.style = 'Light Grid Accent 1'  # Professional table style with borders
+            
+            # Header row - bold and formatted
             hdr = table.rows[0].cells
             for i, col in enumerate(columns):
                 hdr[i].text = col
+                # Make header bold
+                for paragraph in hdr[i].paragraphs:
+                    for run in paragraph.runs:
+                        run.bold = True
+                        run.font.size = Pt(11)
+            
+            # Data rows
             for rec in overdue:
                 row = table.add_row().cells
                 row[0].text = str(rec['Enrollment No'])
@@ -4103,7 +4289,7 @@ class LibraryApp:
                 row[4].text = str(rec['Issue Date'])
                 row[5].text = str(rec['Due Date'])
                 row[6].text = str(rec['Days Overdue'])
-                row[7].text = str(rec['Accrued Fine'])
+                row[7].text = "Rs " + str(rec['Accrued Fine'])  # Add Rs prefix for clarity
 
             doc.add_paragraph()
             clause = doc.add_paragraph()
@@ -4321,18 +4507,20 @@ class LibraryApp:
                 with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
                     # Write statistics
                     stats_df = pd.DataFrame(summary_data['Library Statistics'][1:], columns=summary_data['Library Statistics'][0])
-                    stats_df.to_excel(writer, sheet_name='Statistics', index=False, startrow=3)
+                    stats_df.to_excel(writer, sheet_name='Statistics', index=False, startrow=5)
                     ws_stats = writer.book['Statistics']
                     self._write_excel_header_openpyxl(ws_stats, start_row=1)
+                    self._auto_adjust_column_width(ws_stats)
                     
                     # Write recent activities
                     if activities:
                         activities_df = pd.DataFrame(activities, columns=[
                             'Type', 'Student', 'Book', 'Date', 'Status'
                         ])
-                        activities_df.to_excel(writer, sheet_name='Recent Activities', index=False, startrow=3)
+                        activities_df.to_excel(writer, sheet_name='Recent Activities', index=False, startrow=5)
                         ws_act = writer.book['Recent Activities']
                         self._write_excel_header_openpyxl(ws_act, start_row=1)
+                        self._auto_adjust_column_width(ws_act)
                 
                 messagebox.showinfo("Success", f"Dashboard summary exported to {file_path}")
                 
@@ -4492,14 +4680,16 @@ class LibraryApp:
                 for cell in column:
                     try:
                         if cell.value:
+                            # Get the length of the cell value as string
                             cell_length = len(str(cell.value))
                             if cell_length > max_length:
                                 max_length = cell_length
                     except:
                         pass
                 
-                # Set width with some padding (max 50 to avoid overly wide columns)
-                adjusted_width = min(max_length + 2, 50)
+                # Set width with generous padding (minimum 15, add 6 for padding, max 70)
+                # This ensures even long content is visible
+                adjusted_width = max(15, min(max_length + 6, 70))
                 worksheet.column_dimensions[column_letter].width = adjusted_width
         except Exception as e:
             print(f"Could not auto-adjust columns: {e}")
