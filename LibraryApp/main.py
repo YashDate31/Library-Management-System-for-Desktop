@@ -140,15 +140,84 @@ class LibraryApp:
         except Exception as e:
             # Fail silently – styling is not critical for functionality
             print(f"Style setup warning: {e}")
+
     def create_login_interface(self):
-        """Render the login screen (simplified)"""
+        """Render the login screen with college branding"""
         for w in self.root.winfo_children():
             w.destroy()
-        wrapper = tk.Frame(self.root, bg=self.colors['primary'])
-        wrapper.pack(expand=True)
-        card = tk.Frame(wrapper, bg='#3a5373', bd=0, relief='flat', padx=40, pady=30)
+
+        root = self.root
+        root.configure(bg=self.colors['primary'])
+
+        wrapper = tk.Frame(root, bg=self.colors['primary'])
+        wrapper.pack(fill=tk.BOTH, expand=True)
+
+        # Small top spacer so content is nearer the top-middle
+        tk.Frame(wrapper, height=40, bg=self.colors['primary']).pack(fill=tk.X)
+
+        # Top branding area: logo + titles
+        branding = tk.Frame(wrapper, bg=self.colors['primary'])
+        branding.pack(pady=(0, 10))
+
+        # Logo (reuse same file as main header if present).
+        # When running as EXE, images are in the PyInstaller temp dir (sys._MEIPASS).
+        logo_path = None
+        try:
+            from PIL import Image, ImageTk
+            if hasattr(sys, '_MEIPASS'):
+                base_dir = sys._MEIPASS
+            else:
+                base_dir = os.path.dirname(__file__)
+            for candidate in ("logo.png", "college_logo.png", "college_logo.jpg"):
+                p = os.path.join(base_dir, candidate)
+                if os.path.exists(p):
+                    logo_path = p
+                    break
+            if logo_path:
+                img = Image.open(logo_path)
+                img.thumbnail((96, 96), Image.Resampling.LANCZOS)
+                self.login_logo_photo = ImageTk.PhotoImage(img)
+                tk.Label(branding, image=self.login_logo_photo, bg=self.colors['primary']).pack(pady=(0, 8))
+            else:
+                raise FileNotFoundError
+        except Exception:
+            tk.Label(
+                branding,
+                text="📚",
+                font=('Segoe UI', 40, 'bold'),
+                bg=self.colors['primary'],
+                fg=self.colors['secondary']
+            ).pack(pady=(0, 8))
+
+        # College name (big title)
+        tk.Label(
+            branding,
+            text="Government Polytechnic Awasari (Kh)",
+            font=('Segoe UI', 24, 'bold'),
+            bg=self.colors['primary'],
+            fg=self.colors['accent']
+        ).pack()
+
+        # Department / app name (subtitle)
+        tk.Label(
+            branding,
+            text="Library of Computer Department",
+            font=('Segoe UI', 14),
+            bg=self.colors['primary'],
+            fg='#666666'
+        ).pack(pady=(6, 0))
+
+        # Login card with subtle shadow
+        card_outer = tk.Frame(wrapper, bg=self.colors['primary'])
+        card_outer.pack(pady=(16, 0))
+
+        shadow = tk.Frame(card_outer, bg='#d0d7e2')
+        shadow.pack(padx=2, pady=2)
+
+        card = tk.Frame(shadow, bg='#3a5373', bd=0, relief='flat', padx=50, pady=36)
         card.pack()
-        tk.Label(card, text="Admin Login", font=('Segoe UI', 18, 'bold'), bg='#3a5373', fg='white').pack(pady=(0,10))
+
+        tk.Label(card, text="Admin Login", font=('Segoe UI', 20, 'bold'), bg='#3a5373', fg='white').pack(pady=(0,14))
 
         tk.Label(card, text="Username", font=('Segoe UI', 10, 'bold'), bg='#3a5373', fg='white').pack(anchor='w')
         user_entry = tk.Entry(card, font=('Segoe UI', 11), width=28, bg='#2b3e56', fg='white', insertbackground='white', relief='solid', bd=1)
@@ -3333,102 +3402,149 @@ class LibraryApp:
         # Create year selection dialog
         dialog = tk.Toplevel(self.root)
         dialog.title("Export Students - Select Year")
-        dialog.geometry("400x350")
-        dialog.configure(bg='white')
+        dialog.geometry("450x550")  # Increased height significantly
+        dialog.configure(bg='#f8f9fa')  # Light gray background
         dialog.transient(self.root)
         dialog.grab_set()
+        dialog.resizable(False, False)
         
         # Center the dialog
-        dialog.geometry("+%d+%d" % (self.root.winfo_rootx() + 200, self.root.winfo_rooty() + 200))
+        dialog.geometry("+%d+%d" % (self.root.winfo_rootx() + 180, self.root.winfo_rooty() + 100))
         
-        # Title
+        # Main container with border
+        main_frame = tk.Frame(
+            dialog, 
+            bg='white', 
+            relief='ridge', 
+            bd=2,
+            padx=25,
+            pady=20
+        )
+        main_frame.pack(fill='both', expand=True, padx=15, pady=15)
+        
+        # Title with icon
+        title_frame = tk.Frame(main_frame, bg='white')
+        title_frame.pack(pady=(0, 20))
+        
         title_label = tk.Label(
-            dialog,
-            text="📊 Export Students",
-            font=('Segoe UI', 16, 'bold'),
+            title_frame,
+            text="📊 Export Students Data",
+            font=('Segoe UI', 18, 'bold'),
             bg='white',
             fg=self.colors['accent']
         )
-        title_label.pack(pady=(20, 30))
+        title_label.pack()
         
-        # Info
-        info_label = tk.Label(
-            dialog,
+        # Subtitle
+        subtitle_label = tk.Label(
+            title_frame,
             text="Select which year students to export:",
             font=('Segoe UI', 12),
             bg='white',
-            fg=self.colors['text']
+            fg='#6c757d'
         )
-        info_label.pack(pady=(0, 20))
+        subtitle_label.pack(pady=(5, 0))
         
-        # Year selection frame
-        year_frame = tk.Frame(dialog, bg='white')
-        year_frame.pack(expand=True, padx=40)
+        # Year selection container with background
+        selection_frame = tk.Frame(
+            main_frame, 
+            bg='#f8f9fa',
+            relief='solid',
+            bd=1,
+            padx=20,
+            pady=15
+        )
+        selection_frame.pack(fill='x', pady=(0, 20))
         
         year_var = tk.StringVar(value="All")
         
-        # Year options with student counts
+        # Year options with better styling
         year_options = [
-            ("📚 All Students", "All"),
-            ("🥇 1st Year", "1st"),
-            ("🥈 2nd Year", "2nd"), 
-            ("🥉 3rd Year", "3rd"),
-            ("🎓 Pass Out", "Pass Out")
+            ("📚 All Students", "All", "#4285f4"),
+            ("🥇 1st Year", "1st", "#34a853"), 
+            ("🥈 2nd Year", "2nd", "#fbbc04"),
+            ("🥉 3rd Year", "3rd", "#ea4335"),
+            ("🎓 Pass Out", "Pass Out", "#9333ea")
         ]
         
-        for text, value in year_options:
+        for i, (text, value, color) in enumerate(year_options):
             rb = tk.Radiobutton(
-                year_frame,
+                selection_frame,
                 text=text,
                 variable=year_var,
                 value=value,
-                font=('Segoe UI', 12),
-                bg='white',
-                fg=self.colors['accent'],
-                selectcolor=self.colors['secondary'],
-                activebackground='white',
-                activeforeground=self.colors['accent']
+                font=('Segoe UI', 12, 'bold'),
+                bg='#f8f9fa',
+                fg=color,
+                selectcolor='white',
+                activebackground='#f8f9fa',
+                activeforeground=color,
+                relief='flat',
+                padx=10,
+                pady=6
             )
-            rb.pack(anchor='w', pady=8)
+            rb.pack(anchor='w', pady=4)
         
-        # Buttons frame
-        btn_frame = tk.Frame(dialog, bg='white')
-        btn_frame.pack(pady=30)
+        # Buttons container - FIXED positioning at bottom
+        btn_container = tk.Frame(main_frame, bg='white')
+        btn_container.pack(side='bottom', pady=(20, 0))
         
         def perform_export():
             selected_year = year_var.get()
             dialog.destroy()
             self._export_students_by_year(selected_year)
         
-        # Export button
+        # Export button with gradient-like styling
         export_btn = tk.Button(
-            btn_frame,
+            btn_container,
             text="📊 Export to Excel",
             font=('Segoe UI', 12, 'bold'),
-            bg=self.colors['secondary'],
+            bg='#28a745',
             fg='white',
             relief='flat',
             padx=25,
             pady=12,
             command=perform_export,
-            cursor='hand2'
+            cursor='hand2',
+            activebackground='#218838',
+            activeforeground='white'
         )
         export_btn.pack(side=tk.LEFT, padx=(0, 15))
         
         # Cancel button
         cancel_btn = tk.Button(
-            btn_frame,
+            btn_container,
             text="❌ Cancel",
             font=('Segoe UI', 12, 'bold'),
-            bg='#6c757d',
+            bg='#dc3545',
             fg='white',
             relief='flat',
             padx=25,
             pady=12,
             command=dialog.destroy,
-            cursor='hand2'
+            cursor='hand2',
+            activebackground='#c82333',
+            activeforeground='white'
         )
         cancel_btn.pack(side=tk.LEFT)
+        
+        # Add hover effects
+        def on_enter_export(e):
+            export_btn.configure(bg='#218838')
+        
+        def on_leave_export(e):
+            export_btn.configure(bg='#28a745')
+            
+        def on_enter_cancel(e):
+            cancel_btn.configure(bg='#c82333')
+        
+        def on_leave_cancel(e):
+            cancel_btn.configure(bg='#dc3545')
+        
+        export_btn.bind("<Enter>", on_enter_export)
+        export_btn.bind("<Leave>", on_leave_export)
+        cancel_btn.bind("<Enter>", on_enter_cancel)
+        cancel_btn.bind("<Leave>", on_leave_cancel)
 
     def _export_students_by_year(self, year_filter):
         """Helper function to export students filtered by year"""
@@ -4503,6 +4619,13 @@ class LibraryApp:
             ("📋 Transaction Records", self.export_records_to_excel)
         ]
         
+        def create_button_command(cmd, dialog_ref):
+            """Create button command that handles dialog closing properly"""
+            def button_action():
+                dialog_ref.destroy()
+                cmd()
+            return button_action
+        
         for text, command in data_types:
             btn = tk.Button(
                 buttons_frame,
@@ -4513,7 +4636,7 @@ class LibraryApp:
                 relief='flat',
                 padx=20,
                 pady=15,
-                command=lambda cmd=command: [cmd(), dialog.destroy()],
+                command=create_button_command(command, dialog),
                 cursor='hand2',
                 width=25
             )

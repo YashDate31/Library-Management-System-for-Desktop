@@ -9,6 +9,7 @@ a = Analysis(
     datas=[
         ('library.db', '.'),
         ('requirements.txt', '.'),
+        ('logo.png', '.'),
     ],
     hiddenimports=[
         'pandas', 'openpyxl', 'docx', 'tkcalendar',
