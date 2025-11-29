@@ -16,6 +16,11 @@ import webbrowser
 import subprocess
 import platform
 from io import BytesIO
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
+import json
 
 # Optional: Word export support
 try:
@@ -102,6 +107,9 @@ class LibraryApp:
         self.book_category_filter = tk.StringVar(value="All")
         self.record_search_var = tk.StringVar()
         self.record_type_filter = tk.StringVar(value="All")
+        
+        # Email settings
+        self.email_settings = self.load_email_settings()
 
         # Launch login interface
         self.create_login_interface()
@@ -140,6 +148,478 @@ class LibraryApp:
         except Exception as e:
             # Fail silently – styling is not critical for functionality
             print(f"Style setup warning: {e}")
+    
+    def load_email_settings(self):
+        """Load email settings from JSON file"""
+        settings_file = os.path.join(os.path.dirname(__file__), 'email_settings.json')
+        if hasattr(sys, '_MEIPASS'):
+            # Running as EXE, store settings next to executable
+            settings_file = os.path.join(os.path.dirname(sys.executable), 'email_settings.json')
+        
+        default_settings = {
+            'smtp_server': 'smtp.gmail.com',
+            'smtp_port': 587,
+            'sender_email': '',
+            'sender_password': '',
+            'enabled': False
+        }
+        
+        if os.path.exists(settings_file):
+            try:
+                with open(settings_file, 'r') as f:
+                    return json.load(f)
+            except:
+                return default_settings
+        return default_settings
+    
+    def save_email_settings(self, settings):
+        """Save email settings to JSON file"""
+        settings_file = os.path.join(os.path.dirname(__file__), 'email_settings.json')
+        if hasattr(sys, '_MEIPASS'):
+            settings_file = os.path.join(os.path.dirname(sys.executable), 'email_settings.json')
+        
+        try:
+            with open(settings_file, 'w') as f:
+                json.dump(settings, f, indent=4)
+            return True
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save email settings.\n\n{e}")
+            return False
+    
+    def open_email_settings(self):
+        """Open email settings dialog with tabs for configuration and history"""
+        settings_win = tk.Toplevel(self.root)
+        settings_win.title("📧 Email Settings - Library Management System")
+        settings_win.geometry("700x800")
+        settings_win.configure(bg='#f5f7fa')
+        settings_win.transient(self.root)
+        settings_win.grab_set()
+        settings_win.resizable(False, False)
+        
+        # Center the window
+        settings_win.update_idletasks()
+        x = (settings_win.winfo_screenwidth() // 2) - (700 // 2)
+        y = (settings_win.winfo_screenheight() // 2) - (800 // 2)
+        settings_win.geometry(f"+{x}+{y}")
+        
+        # Main container with shadow effect
+        container = tk.Frame(settings_win, bg='#f5f7fa')
+        container.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        
+        # White card
+        card = tk.Frame(container, bg='white', relief='flat', bd=0)
+        card.pack(fill=tk.BOTH, expand=True)
+        
+        # Add subtle shadow
+        shadow_frame = tk.Frame(container, bg='#d0d7e2', relief='flat')
+        shadow_frame.place(in_=card, relx=0.005, rely=0.005, relwidth=1, relheight=1)
+        card.lift()
+        
+        # Create notebook for tabs
+        notebook = ttk.Notebook(card)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Tab 1: Configuration
+        config_tab = tk.Frame(notebook, bg='white')
+        notebook.add(config_tab, text="  ⚙️ Configuration  ")
+        
+        # Tab 2: Email History
+        history_tab = tk.Frame(notebook, bg='white')
+        notebook.add(history_tab, text="  📋 Email History  ")
+        
+        # Build configuration tab
+        self._build_config_tab(config_tab, settings_win)
+        
+        # Build history tab
+        self._build_history_tab(history_tab)
+    
+    def _build_config_tab(self, parent, settings_win):
+        """Build the configuration tab content"""
+        main_frame = tk.Frame(parent, bg='white', padx=30, pady=25)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Header with icon
+        header_frame = tk.Frame(main_frame, bg='white')
+        header_frame.pack(fill=tk.X, pady=(0, 8))
+        
+        title = tk.Label(header_frame, text="📧 Email Configuration", 
+                        font=('Segoe UI', 18, 'bold'), bg='white', fg=self.colors['accent'])
+        title.pack(anchor='w')
+        
+        subtitle = tk.Label(header_frame, text="Setup automatic email delivery for overdue notices", 
+                           font=('Segoe UI', 10), bg='white', fg='#666')
+        subtitle.pack(anchor='w', pady=(2, 0))
+        
+        # Separator line
+        separator = tk.Frame(main_frame, height=2, bg='#e1e8ed')
+        separator.pack(fill=tk.X, pady=(10, 20))
+        
+        # Info box
+        info_box = tk.Frame(main_frame, bg='#e7f3ff', relief='flat', bd=1)
+        info_box.pack(fill=tk.X, pady=(0, 20), padx=5)
+        
+        info_inner = tk.Frame(info_box, bg='#e7f3ff')
+        info_inner.pack(fill=tk.X, padx=12, pady=10)
+        
+        tk.Label(info_inner, text="ℹ️", font=('Segoe UI', 14), bg='#e7f3ff', fg='#0066cc').pack(side=tk.LEFT, padx=(0, 8))
+        info_text = tk.Label(info_inner, 
+                            text="Use Gmail to send overdue letters automatically.\nYou'll need a Gmail App Password (not your regular password).",
+                            font=('Segoe UI', 9), bg='#e7f3ff', fg='#0066cc', justify=tk.LEFT)
+        info_text.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Enable checkbox with better styling
+        enable_frame = tk.Frame(main_frame, bg='#f8f9fa', relief='flat', bd=1)
+        enable_frame.pack(fill=tk.X, pady=(0, 20), padx=5)
+        
+        enable_inner = tk.Frame(enable_frame, bg='#f8f9fa')
+        enable_inner.pack(fill=tk.X, padx=12, pady=12)
+        
+        enable_var = tk.BooleanVar(value=self.email_settings.get('enabled', False))
+        enable_check = tk.Checkbutton(enable_inner, text="✓ Enable automatic email sending",
+                                     variable=enable_var, font=('Segoe UI', 11, 'bold'),
+                                     bg='#f8f9fa', activebackground='#f8f9fa', fg='#28a745',
+                                     selectcolor='white')
+        enable_check.pack(anchor='w')
+        
+        # Form fields
+        form_frame = tk.Frame(main_frame, bg='white')
+        form_frame.pack(fill=tk.BOTH, expand=True)
+        
+        def create_field(parent, label_text, help_text, is_password=False, default_value=''):
+            field_container = tk.Frame(parent, bg='white')
+            field_container.pack(fill=tk.X, pady=(0, 16))
+            
+            # Label with help text
+            label_frame = tk.Frame(field_container, bg='white')
+            label_frame.pack(fill=tk.X, pady=(0, 4))
+            
+            label = tk.Label(label_frame, text=label_text, 
+                           font=('Segoe UI', 10, 'bold'), bg='white', fg='#333')
+            label.pack(side=tk.LEFT)
+            
+            if help_text:
+                help_label = tk.Label(label_frame, text=f"({help_text})", 
+                                    font=('Segoe UI', 9), bg='white', fg='#888')
+                help_label.pack(side=tk.LEFT, padx=(5, 0))
+            
+            # Entry field
+            entry = tk.Entry(field_container, font=('Segoe UI', 11), 
+                           relief='solid', bd=1, 
+                           bg='#f8f9fa' if not is_password else '#fff3cd',
+                           fg='#333')
+            if is_password:
+                entry.config(show='●')
+            entry.insert(0, default_value)
+            entry.pack(fill=tk.X, ipady=8)
+            
+            # Focus effects
+            def on_focus_in(e):
+                entry.config(bg='white', relief='solid', bd=2)
+            def on_focus_out(e):
+                entry.config(bg='#f8f9fa' if not is_password else '#fff3cd', relief='solid', bd=1)
+            
+            entry.bind('<FocusIn>', on_focus_in)
+            entry.bind('<FocusOut>', on_focus_out)
+            
+            return entry
+        
+        # SMTP Server (readonly-ish, pre-filled)
+        smtp_server = create_field(form_frame, "SMTP Server", "Gmail's mail server", 
+                                   default_value=self.email_settings.get('smtp_server', 'smtp.gmail.com'))
+        smtp_server.config(fg='#666')
+        
+        # SMTP Port (readonly-ish, pre-filled)
+        smtp_port = create_field(form_frame, "SMTP Port", "Gmail uses port 587", 
+                                default_value=str(self.email_settings.get('smtp_port', 587)))
+        smtp_port.config(fg='#666')
+        
+        # Gmail Address (main input)
+        sender_email = create_field(form_frame, "Your Gmail Address", "e.g., yourname@gmail.com", 
+                                    default_value=self.email_settings.get('sender_email', ''))
+        
+        # App Password (secure input)
+        sender_password = create_field(form_frame, "Gmail App Password", "16-character password from Google", 
+                                      is_password=True,
+                                      default_value=self.email_settings.get('sender_password', ''))
+        
+        # Help link with better styling
+        help_frame = tk.Frame(main_frame, bg='white')
+        help_frame.pack(fill=tk.X, pady=(5, 20))
+        
+        help_link = tk.Label(help_frame, text="🔗 How to generate Gmail App Password? Click here", 
+                            font=('Segoe UI', 9, 'underline'), bg='white', fg='#0066cc', cursor='hand2')
+        help_link.pack(anchor='w')
+        help_link.bind('<Button-1>', lambda e: webbrowser.open('https://support.google.com/accounts/answer/185833'))
+        help_link.bind('<Enter>', lambda e: help_link.config(fg='#0052a3'))
+        help_link.bind('<Leave>', lambda e: help_link.config(fg='#0066cc'))
+        
+        # Bottom separator
+        separator2 = tk.Frame(main_frame, height=1, bg='#e1e8ed')
+        separator2.pack(fill=tk.X, pady=(0, 20))
+        
+        # Buttons with better styling
+        button_frame = tk.Frame(main_frame, bg='white')
+        button_frame.pack(fill=tk.X)
+        
+        def save_settings():
+            settings = {
+                'smtp_server': smtp_server.get().strip() or 'smtp.gmail.com',
+                'smtp_port': int(smtp_port.get().strip() or 587),
+                'sender_email': sender_email.get().strip(),
+                'sender_password': sender_password.get().strip(),
+                'enabled': enable_var.get()
+            }
+            
+            if settings['enabled'] and not settings['sender_email']:
+                messagebox.showwarning("⚠️ Missing Information", 
+                                     "Please enter your Gmail address to enable email sending!")
+                sender_email.focus()
+                return
+            
+            if settings['enabled'] and not settings['sender_password']:
+                messagebox.showwarning("⚠️ Missing Information", 
+                                     "Please enter your Gmail App Password to enable email sending!")
+                sender_password.focus()
+                return
+            
+            if self.save_email_settings(settings):
+                self.email_settings = settings
+                messagebox.showinfo("✅ Success", 
+                                  "Email settings saved successfully!\n\n"
+                                  "You can now send overdue letters automatically.")
+                settings_win.destroy()
+        
+        def on_save_hover_in(e):
+            save_btn.config(bg='#236b9e')
+        def on_save_hover_out(e):
+            save_btn.config(bg=self.colors['secondary'])
+        
+        save_btn = tk.Button(button_frame, text="💾 Save Settings", 
+                           font=('Segoe UI', 11, 'bold'),
+                           bg=self.colors['secondary'], fg='white', 
+                           padx=30, pady=10,
+                           cursor='hand2', relief='flat', 
+                           activebackground='#236b9e',
+                           command=save_settings)
+        save_btn.pack(side=tk.LEFT, padx=(0, 10))
+        save_btn.bind('<Enter>', on_save_hover_in)
+        save_btn.bind('<Leave>', on_save_hover_out)
+        
+        def on_cancel_hover_in(e):
+            cancel_btn.config(bg='#999999')
+        def on_cancel_hover_out(e):
+            cancel_btn.config(bg='#cccccc')
+        
+        cancel_btn = tk.Button(button_frame, text="✕ Cancel", 
+                             font=('Segoe UI', 11),
+                             bg='#cccccc', fg='#333', 
+                             padx=30, pady=10,
+                             cursor='hand2', relief='flat',
+                             activebackground='#999999',
+                             command=settings_win.destroy)
+        cancel_btn.pack(side=tk.LEFT)
+        cancel_btn.bind('<Enter>', on_cancel_hover_in)
+        cancel_btn.bind('<Leave>', on_cancel_hover_out)
+        
+        # Focus on email field if empty
+        if not sender_email.get():
+            sender_email.focus()
+    
+    def _build_history_tab(self, parent):
+        """Build the email history tab content"""
+        main_frame = tk.Frame(parent, bg='white', padx=20, pady=20)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Title
+        title = tk.Label(main_frame, text="📋 Sent Email History", 
+                        font=('Segoe UI', 16, 'bold'), bg='white', fg=self.colors['accent'])
+        title.pack(pady=(0, 10))
+        
+        subtitle = tk.Label(main_frame, text="Track all overdue letters sent via email", 
+                           font=('Segoe UI', 10), bg='white', fg='#666')
+        subtitle.pack(pady=(0, 15))
+        
+        # Treeview for history
+        tree_frame = tk.Frame(main_frame, bg='white')
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Scrollbars
+        v_scroll = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL)
+        h_scroll = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL)
+        
+        # Treeview
+        columns = ('Date/Time', 'Student', 'Enrollment', 'Email', 'Book', 'Status')
+        history_tree = ttk.Treeview(tree_frame, columns=columns, show='headings',
+                                    yscrollcommand=v_scroll.set, xscrollcommand=h_scroll.set,
+                                    height=15)
+        
+        v_scroll.config(command=history_tree.yview)
+        h_scroll.config(command=history_tree.xview)
+        
+        # Define columns
+        history_tree.heading('Date/Time', text='Date/Time')
+        history_tree.heading('Student', text='Student Name')
+        history_tree.heading('Enrollment', text='Enrollment No')
+        history_tree.heading('Email', text='Email Address')
+        history_tree.heading('Book', text='Book Title')
+        history_tree.heading('Status', text='Status')
+        
+        history_tree.column('Date/Time', width=140, anchor='center')
+        history_tree.column('Student', width=150)
+        history_tree.column('Enrollment', width=120, anchor='center')
+        history_tree.column('Email', width=180)
+        history_tree.column('Book', width=200)
+        history_tree.column('Status', width=100, anchor='center')
+        
+        # Pack
+        history_tree.grid(row=0, column=0, sticky='nsew')
+        v_scroll.grid(row=0, column=1, sticky='ns')
+        h_scroll.grid(row=1, column=0, sticky='ew')
+        
+        tree_frame.grid_rowconfigure(0, weight=1)
+        tree_frame.grid_columnconfigure(0, weight=1)
+        
+        # Load history
+        self._load_email_history(history_tree)
+        
+        # Buttons
+        btn_frame = tk.Frame(main_frame, bg='white')
+        btn_frame.pack(pady=(15, 0))
+        
+        refresh_btn = tk.Button(btn_frame, text="🔄 Refresh", font=('Segoe UI', 10, 'bold'),
+                               bg=self.colors['secondary'], fg='white', padx=20, pady=8,
+                               cursor='hand2', relief='flat',
+                               command=lambda: self._load_email_history(history_tree))
+        refresh_btn.pack(side=tk.LEFT, padx=5)
+        
+        clear_btn = tk.Button(btn_frame, text="🗑️ Clear History", font=('Segoe UI', 10),
+                             bg='#dc3545', fg='white', padx=20, pady=8,
+                             cursor='hand2', relief='flat',
+                             command=lambda: self._clear_email_history(history_tree))
+        clear_btn.pack(side=tk.LEFT, padx=5)
+    
+    def _load_email_history(self, tree):
+        """Load email history from JSON file"""
+        # Clear existing items
+        for item in tree.get_children():
+            tree.delete(item)
+        
+        history_file = os.path.join(os.path.dirname(__file__), 'email_history.json')
+        if hasattr(sys, '_MEIPASS'):
+            history_file = os.path.join(os.path.dirname(sys.executable), 'email_history.json')
+        
+        if os.path.exists(history_file):
+            try:
+                with open(history_file, 'r') as f:
+                    history = json.load(f)
+                
+                # Sort by date (newest first)
+                history = sorted(history, key=lambda x: x.get('timestamp', ''), reverse=True)
+                
+                for entry in history:
+                    status_icon = '✅' if entry.get('success') else '❌'
+                    tree.insert('', 'end', values=(
+                        entry.get('timestamp', 'N/A'),
+                        entry.get('student_name', 'N/A'),
+                        entry.get('enrollment_no', 'N/A'),
+                        entry.get('student_email', 'N/A'),
+                        entry.get('book_title', 'N/A'),
+                        status_icon
+                    ))
+            except:
+                pass
+    
+    def _clear_email_history(self, tree):
+        """Clear all email history"""
+        if not messagebox.askyesno("Confirm", "Are you sure you want to clear all email history?\n\nThis cannot be undone."):
+            return
+        
+        history_file = os.path.join(os.path.dirname(__file__), 'email_history.json')
+        if hasattr(sys, '_MEIPASS'):
+            history_file = os.path.join(os.path.dirname(sys.executable), 'email_history.json')
+        
+        try:
+            if os.path.exists(history_file):
+                os.remove(history_file)
+            self._load_email_history(tree)
+            messagebox.showinfo("Success", "Email history cleared successfully!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to clear history.\n\n{e}")
+    
+    def _log_email_sent(self, enrollment_no, student_name, student_email, book_title, success, error_message=''):
+        """Log sent email to history file"""
+        history_file = os.path.join(os.path.dirname(__file__), 'email_history.json')
+        if hasattr(sys, '_MEIPASS'):
+            history_file = os.path.join(os.path.dirname(sys.executable), 'email_history.json')
+        
+        # Load existing history
+        history = []
+        if os.path.exists(history_file):
+            try:
+                with open(history_file, 'r') as f:
+                    history = json.load(f)
+            except:
+                history = []
+        
+        # Add new entry
+        entry = {
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'enrollment_no': enrollment_no,
+            'student_name': student_name,
+            'student_email': student_email,
+            'book_title': book_title,
+            'success': success,
+            'error_message': error_message
+        }
+        history.append(entry)
+        
+        # Save history
+        try:
+            with open(history_file, 'w') as f:
+                json.dump(history, f, indent=4)
+        except:
+            pass
+    
+    def send_email_with_attachment(self, recipient_email, subject, body, attachment_path):
+        """Send email with Word document attachment"""
+        if not self.email_settings.get('enabled', False):
+            return False, "Email sending is not enabled. Configure in Settings."
+        
+        if not recipient_email:
+            return False, "Student email address is not available."
+        
+        try:
+            # Create message
+            msg = MIMEMultipart()
+            msg['From'] = self.email_settings['sender_email']
+            msg['To'] = recipient_email
+            msg['Subject'] = subject
+            
+            # Add body
+            msg.attach(MIMEText(body, 'plain'))
+            
+            # Attach file if exists
+            if attachment_path and os.path.exists(attachment_path):
+                with open(attachment_path, 'rb') as f:
+                    attachment = MIMEApplication(f.read(), _subtype='vnd.openxmlformats-officedocument.wordprocessingml.document')
+                    attachment.add_header('Content-Disposition', 'attachment', filename=os.path.basename(attachment_path))
+                    msg.attach(attachment)
+            
+            # Connect and send
+            server = smtplib.SMTP(self.email_settings['smtp_server'], self.email_settings['smtp_port'])
+            server.starttls()
+            server.login(self.email_settings['sender_email'], self.email_settings['sender_password'])
+            server.send_message(msg)
+            server.quit()
+            
+            return True, "Email sent successfully!"
+            
+        except smtplib.SMTPAuthenticationError:
+            return False, "Authentication failed. Please check your email and app password."
+        except smtplib.SMTPException as e:
+            return False, f"SMTP error: {str(e)}"
+        except Exception as e:
+            return False, f"Failed to send email: {str(e)}"
 
     def create_login_interface(self):
         """Render the login screen with college branding"""
@@ -445,6 +925,23 @@ class LibraryApp:
             command=self._prompt_and_promote
         )
         promote_btn_hdr.pack(side=tk.LEFT, padx=(10, 0))
+        
+        # Email Settings button
+        email_settings_btn = tk.Button(
+            user_top_row,
+            text='📧 Email',
+            font=('Segoe UI', 10, 'bold'),
+            bg='#28a745',
+            fg='white',
+            relief='flat',
+            padx=10,
+            pady=2,
+            cursor='hand2',
+            activebackground='#218838',
+            activeforeground='white',
+            command=self.open_email_settings
+        )
+        email_settings_btn.pack(side=tk.LEFT, padx=(10, 0))
         # Removed version label and duplicate Developer Info button as requested
 
     # Removed "Clear All Data" button from header as requested
@@ -3000,37 +3497,139 @@ class LibraryApp:
             dept3 = doc.add_paragraph()
             dept3.add_run('Government Polytechnic Awasari (Kh)').font.size = Pt(10)
             
-            # Save the document
+            # Save the document to temp location first
+            import tempfile
+            temp_dir = tempfile.gettempdir()
             default_filename = f"Overdue_Letter_{enrollment_no}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
-            filepath = filedialog.asksaveasfilename(
+            temp_filepath = os.path.join(temp_dir, default_filename)
+            doc.save(temp_filepath)
+            
+            # Get student email
+            student_email = self.get_student_email(enrollment_no)
+            
+            # Try to send email automatically if enabled
+            email_sent = False
+            email_message = ""
+            
+            if self.email_settings.get('enabled', False) and student_email:
+                email_subject = f"Overdue Book Notice - {book_title}"
+                email_body = f"""Dear {student_name},
+
+This is an automated notification from the Library of Computer Department, Government Polytechnic Awasari (Kh).
+
+The following book borrowed from our library is overdue and needs to be returned immediately:
+
+Book ID: {book_id}
+Book Title: {book_title}
+Issue Date: {issue_date}
+Due Date: {due_date}
+Days Overdue: {days_overdue}
+Fine Amount: ₹{fine_amount}
+
+As per library rules, a fine of ₹{FINE_PER_DAY} per day is applicable for overdue books.
+
+Please return the book to the library at the earliest and clear the pending fine. Failure to do so may result in restrictions on future borrowing privileges.
+
+For any queries, please contact the library desk.
+
+Thank you for your cooperation.
+
+Librarian
+Departmental Library
+Computer Department
+Government Polytechnic Awasari (Kh)
+
+---
+Note: This is an automated email. Please find the attached formal overdue letter.
+"""
+                
+                success, message = self.send_email_with_attachment(
+                    student_email, 
+                    email_subject, 
+                    email_body, 
+                    temp_filepath
+                )
+                email_sent = success
+                email_message = message
+                
+                # Log email attempt to history
+                self._log_email_sent(
+                    enrollment_no,
+                    student_name,
+                    student_email,
+                    book_title,
+                    success,
+                    message if not success else ''
+                )
+            
+            # Now ask user where to save the document
+            final_filepath = filedialog.asksaveasfilename(
                 defaultextension=".docx",
                 filetypes=[("Word Document", "*.docx")],
                 initialfile=default_filename,
                 title="Save Overdue Letter"
             )
             
-            if filepath:
-                doc.save(filepath)
-                messagebox.showinfo(
-                    "Success", 
-                    f"Overdue letter generated successfully!\n\nSaved to:\n{filepath}",
-                    icon='info'
-                )
+            if final_filepath:
+                # Copy from temp to final location
+                import shutil
+                shutil.copy(temp_filepath, final_filepath)
+                
+                # Show success message with email status
+                if email_sent:
+                    success_msg = (
+                        f"✅ Overdue letter generated and emailed successfully!\n\n"
+                        f"📧 Email sent to: {student_email}\n"
+                        f"💾 Document saved to:\n{final_filepath}"
+                    )
+                elif self.email_settings.get('enabled', False):
+                    success_msg = (
+                        f"⚠️ Document saved but email failed!\n\n"
+                        f"Reason: {email_message}\n\n"
+                        f"💾 Document saved to:\n{final_filepath}"
+                    )
+                else:
+                    success_msg = (
+                        f"✅ Overdue letter generated successfully!\n\n"
+                        f"💾 Saved to:\n{final_filepath}\n\n"
+                        f"💡 Tip: Enable email in Settings to send automatically!"
+                    )
+                
+                messagebox.showinfo("Success", success_msg, icon='info')
                 
                 # Ask if user wants to open the document
                 if messagebox.askyesno("Open Document", "Do you want to open the document now?"):
                     try:
                         if platform.system() == 'Windows':
-                            os.startfile(filepath)
+                            os.startfile(final_filepath)
                         elif platform.system() == 'Darwin':  # macOS
-                            subprocess.call(['open', filepath])
+                            subprocess.call(['open', final_filepath])
                         else:  # Linux
-                            subprocess.call(['xdg-open', filepath])
+                            subprocess.call(['xdg-open', final_filepath])
                     except Exception as e:
                         messagebox.showwarning("Warning", f"Document saved but couldn't open automatically.\nError: {e}")
+            
+            # Clean up temp file
+            try:
+                if os.path.exists(temp_filepath):
+                    os.remove(temp_filepath)
+            except:
+                pass
         
         except Exception as e:
             messagebox.showerror("Error", f"Failed to generate overdue letter.\n\nError: {e}")
+    
+    def get_student_email(self, enrollment_no):
+        """Get student email by enrollment number"""
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT email FROM students WHERE enrollment_no = ?", (enrollment_no,))
+            result = cursor.fetchone()
+            conn.close()
+            return result[0] if result and result[0] else None
+        except:
+            return None
     
     def get_student_name(self, enrollment_no):
         """Get student name by enrollment number"""
