@@ -21,6 +21,8 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 import json
+import threading
+import time
 
 # Optional: Word export support
 try:
@@ -110,6 +112,10 @@ class LibraryApp:
         
         # Email settings
         self.email_settings = self.load_email_settings()
+        
+        # Start reminder email scheduler if enabled
+        if self.email_settings.get('reminder_enabled', False):
+            self.schedule_reminder_emails()
 
         # Launch login interface
         self.create_login_interface()
@@ -161,13 +167,18 @@ class LibraryApp:
             'smtp_port': 587,
             'sender_email': '',
             'sender_password': '',
-            'enabled': False
+            'enabled': False,
+            'reminder_enabled': False,
+            'reminder_days_before': 2
         }
         
         if os.path.exists(settings_file):
             try:
                 with open(settings_file, 'r') as f:
-                    return json.load(f)
+                    loaded_settings = json.load(f)
+                    # Merge with defaults to ensure all keys exist
+                    default_settings.update(loaded_settings)
+                    return default_settings
             except:
                 return default_settings
         return default_settings
@@ -235,7 +246,36 @@ class LibraryApp:
     
     def _build_config_tab(self, parent, settings_win):
         """Build the configuration tab content"""
-        main_frame = tk.Frame(parent, bg='white', padx=30, pady=25)
+        # Create canvas and scrollbar for scrolling
+        canvas = tk.Canvas(parent, bg='white', highlightthickness=0)
+        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg='white')
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Enable mouse wheel scrolling
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        def bind_mousewheel(event):
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        def unbind_mousewheel(event):
+            canvas.unbind_all("<MouseWheel>")
+        
+        canvas.bind("<Enter>", bind_mousewheel)
+        canvas.bind("<Leave>", unbind_mousewheel)
+        
+        main_frame = tk.Frame(scrollable_frame, bg='white', padx=30, pady=25)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
         # Header with icon
@@ -342,6 +382,70 @@ class LibraryApp:
                                       is_password=True,
                                       default_value=self.email_settings.get('sender_password', ''))
         
+        # Separator for reminder section
+        reminder_separator = tk.Frame(main_frame, height=2, bg='#e1e8ed')
+        reminder_separator.pack(fill=tk.X, pady=(20, 20))
+        
+        # Reminder settings section
+        reminder_header = tk.Label(main_frame, text="📅 Automatic Reminders", 
+                                  font=('Segoe UI', 14, 'bold'), bg='white', fg=self.colors['accent'])
+        reminder_header.pack(anchor='w', pady=(0, 5))
+        
+        reminder_subtitle = tk.Label(main_frame, text="Send automatic reminder emails before books become overdue", 
+                                    font=('Segoe UI', 9), bg='white', fg='#666')
+        reminder_subtitle.pack(anchor='w', pady=(0, 15))
+        
+        # Reminder enable checkbox
+        reminder_enable_frame = tk.Frame(main_frame, bg='#f0f8ff', relief='flat', bd=1)
+        reminder_enable_frame.pack(fill=tk.X, pady=(0, 15), padx=5)
+        
+        reminder_enable_inner = tk.Frame(reminder_enable_frame, bg='#f0f8ff')
+        reminder_enable_inner.pack(fill=tk.X, padx=12, pady=12)
+        
+        reminder_enabled_var = tk.BooleanVar(value=self.email_settings.get('reminder_enabled', False))
+        reminder_check = tk.Checkbutton(reminder_enable_inner, text="✉️ Send automatic reminder emails before due date",
+                                       variable=reminder_enabled_var, font=('Segoe UI', 10, 'bold'),
+                                       bg='#f0f8ff', activebackground='#f0f8ff', fg='#0066cc',
+                                       selectcolor='white')
+        reminder_check.pack(anchor='w')
+        
+        # Days before field
+        days_frame = tk.Frame(main_frame, bg='white')
+        days_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        days_label = tk.Label(days_frame, text="Send reminder", 
+                             font=('Segoe UI', 10), bg='white', fg='#333')
+        days_label.pack(side=tk.LEFT)
+        
+        reminder_days_var = tk.StringVar(value=str(self.email_settings.get('reminder_days_before', 2)))
+        days_entry = tk.Entry(days_frame, textvariable=reminder_days_var, 
+                             font=('Segoe UI', 11), width=5,
+                             relief='solid', bd=1, bg='#f8f9fa', justify='center')
+        days_entry.pack(side=tk.LEFT, padx=8)
+        
+        days_suffix = tk.Label(days_frame, text="days before due date", 
+                              font=('Segoe UI', 10), bg='white', fg='#333')
+        days_suffix.pack(side=tk.LEFT)
+        
+        # Schedule info
+        schedule_label = tk.Label(main_frame, text="⏰ Reminders are sent daily at 9:00 AM automatically", 
+                                 font=('Segoe UI', 9, 'italic'), bg='white', fg='#666')
+        schedule_label.pack(anchor='w', pady=(5, 10))
+        
+        # Test button
+        def test_reminders():
+            settings_win.withdraw()  # Hide settings window temporarily
+            self.send_reminder_emails_now()
+            settings_win.deiconify()  # Show it again
+        
+        test_btn = tk.Button(main_frame, text="🔔 Send Reminders Now (Test)", 
+                           font=('Segoe UI', 10),
+                           bg='#28a745', fg='white', 
+                           padx=20, pady=8,
+                           cursor='hand2', relief='flat',
+                           command=test_reminders)
+        test_btn.pack(anchor='w', pady=(5, 15))
+        
         # Help link with better styling
         help_frame = tk.Frame(main_frame, bg='white')
         help_frame.pack(fill=tk.X, pady=(5, 20))
@@ -367,7 +471,9 @@ class LibraryApp:
                 'smtp_port': int(smtp_port.get().strip() or 587),
                 'sender_email': sender_email.get().strip(),
                 'sender_password': sender_password.get().strip(),
-                'enabled': enable_var.get()
+                'enabled': enable_var.get(),
+                'reminder_enabled': reminder_enabled_var.get(),
+                'reminder_days_before': int(reminder_days_var.get() or 2)
             }
             
             if settings['enabled'] and not settings['sender_email']:
@@ -383,10 +489,19 @@ class LibraryApp:
                 return
             
             if self.save_email_settings(settings):
+                old_reminder_enabled = self.email_settings.get('reminder_enabled', False)
+                new_reminder_enabled = settings['reminder_enabled']
+                
                 self.email_settings = settings
+                
+                # Start or stop reminder scheduler based on changes
+                if new_reminder_enabled and not old_reminder_enabled:
+                    self.schedule_reminder_emails()
+                
                 messagebox.showinfo("✅ Success", 
                                   "Email settings saved successfully!\n\n"
-                                  "You can now send overdue letters automatically.")
+                                  "You can now send overdue letters automatically." + 
+                                  ("\n\nAutomatic reminders are now active!" if new_reminder_enabled else ""))
                 settings_win.destroy()
         
         def on_save_hover_in(e):
@@ -620,6 +735,148 @@ class LibraryApp:
             return False, f"SMTP error: {str(e)}"
         except Exception as e:
             return False, f"Failed to send email: {str(e)}"
+    
+    def schedule_reminder_emails(self):
+        """Start background thread for daily reminder email checks"""
+        def run_scheduler():
+            while True:
+                try:
+                    # Calculate seconds until next 9 AM
+                    now = datetime.now()
+                    target = now.replace(hour=9, minute=0, second=0, microsecond=0)
+                    if now >= target:
+                        # If already past 9 AM today, schedule for 9 AM tomorrow
+                        target += timedelta(days=1)
+                    
+                    wait_seconds = (target - now).total_seconds()
+                    print(f"[Auto-Reminder] Next reminder check scheduled at {target.strftime('%Y-%m-%d %H:%M:%S')}")
+                    
+                    # Wait until 9 AM
+                    time.sleep(wait_seconds)
+                    
+                    # Check and send reminders
+                    if self.email_settings.get('reminder_enabled', False):
+                        self.check_and_send_reminders()
+                    
+                except Exception as e:
+                    print(f"[Auto-Reminder] Scheduler error: {e}")
+                    time.sleep(3600)  # Wait 1 hour and retry on error
+        
+        # Start daemon thread
+        thread = threading.Thread(target=run_scheduler, daemon=True)
+        thread.start()
+        print("[Auto-Reminder] Background scheduler started.")
+    
+    def check_and_send_reminders(self):
+        """Check for books due soon and send reminder emails"""
+        if not self.email_settings.get('reminder_enabled', False):
+            return
+        
+        days_before = self.email_settings.get('reminder_days_before', 2)
+        
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Calculate target due date (N days from now)
+            target_date = (datetime.now() + timedelta(days=days_before)).strftime('%Y-%m-%d')
+            
+            # Find books due on target date that are not yet returned
+            query = """
+                SELECT b.enrollment_no, s.name, s.email, bk.title, b.due_date
+                FROM borrow_records b
+                JOIN students s ON b.enrollment_no = s.enrollment_no
+                JOIN books bk ON b.book_id = bk.book_id
+                WHERE b.due_date = ? AND b.return_date IS NULL AND s.email IS NOT NULL AND s.email != ''
+            """
+            cursor.execute(query, (target_date,))
+            records = cursor.fetchall()
+            conn.close()
+            
+            if not records:
+                print(f"[Auto-Reminder] No books due on {target_date}. No reminders sent.")
+                return
+            
+            # Send reminder emails
+            success_count = 0
+            fail_count = 0
+            
+            for enrollment, name, email, book_title, due_date in records:
+                # Compose friendly reminder email
+                subject = f"Reminder: Book Due Soon - {book_title}"
+                body = f"""Dear {name},
+
+This is a friendly reminder that you have a book due in {days_before} day(s).
+
+📚 Book Details:
+   Title: {book_title}
+   Due Date: {due_date}
+
+Please return the book on or before the due date to avoid overdue fines.
+
+If you have already returned the book, please disregard this message.
+
+Thank you,
+Library of Computer Department
+Government Polytechnic Awasari (Kh)"""
+                
+                # Send email (no attachment for reminders)
+                success, message = self.send_email_with_attachment(email, subject, body, None)
+                
+                # Log attempt
+                self.log_email_history(
+                    enrollment,
+                    name,
+                    email,
+                    book_title,
+                    success,
+                    "" if success else message
+                )
+                
+                if success:
+                    success_count += 1
+                    print(f"[Auto-Reminder] ✅ Sent to {name} ({email})")
+                else:
+                    fail_count += 1
+                    print(f"[Auto-Reminder] ❌ Failed for {name}: {message}")
+            
+            print(f"[Auto-Reminder] Summary: {success_count} sent, {fail_count} failed")
+            
+        except Exception as e:
+            print(f"[Auto-Reminder] Error checking reminders: {e}")
+    
+    def send_reminder_emails_now(self):
+        """Manually trigger reminder email check (for testing)"""
+        if not self.email_settings.get('reminder_enabled', False):
+            messagebox.showwarning("Reminders Disabled", "Automatic reminders are not enabled.\n\nPlease enable them in Email Settings first.")
+            return
+        
+        if not self.email_settings.get('enabled', False):
+            messagebox.showwarning("Email Disabled", "Email sending is not enabled.\n\nPlease enable it in Email Settings first.")
+            return
+        
+        # Show progress message
+        progress = tk.Toplevel(self.root)
+        progress.title("Sending Reminders")
+        progress.geometry("400x120")
+        progress.configure(bg='white')
+        progress.transient(self.root)
+        progress.resizable(False, False)
+        
+        tk.Label(progress, text="🔔 Checking for books due soon...", font=('Segoe UI', 12), bg='white').pack(pady=20)
+        status_label = tk.Label(progress, text="Please wait...", font=('Segoe UI', 10), bg='white', fg='#666')
+        status_label.pack(pady=10)
+        
+        progress.update()
+        
+        # Run check in background
+        def run_check():
+            self.check_and_send_reminders()
+            progress.destroy()
+            messagebox.showinfo("Reminders Sent", "Reminder emails have been sent to students with books due soon.\n\nCheck the Email History tab for details.")
+        
+        thread = threading.Thread(target=run_check, daemon=True)
+        thread.start()
 
     def create_login_interface(self):
         """Render the login screen with college branding"""
@@ -4966,7 +5223,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
     def export_overdue_notice_letter_word(self):
         """Generate the overdue notice as a formatted Microsoft Word (.docx) document.
         Provides proper headings, paragraphs, table, punishment clause, and signature block.
-        Offers to also create Excel/text version afterward.
+        Now also sends emails to all overdue students automatically.
         """
         try:
             overdue = self.get_current_overdue_records()
@@ -4979,6 +5236,18 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     "python-docx is not installed. Please install it (pip install python-docx) and try again."
                 )
                 return
+            
+            # Ask if user wants to send emails to all overdue students
+            send_emails = False
+            if self.email_settings.get('enabled', False):
+                send_emails = messagebox.askyesno(
+                    "Send Emails?",
+                    f"Found {len(overdue)} overdue student(s).\n\n"
+                    "Do you want to send overdue notice emails to ALL of them automatically?\n\n"
+                    "✉️ Email will be sent to each student with their overdue letter attached.",
+                    icon='question'
+                )
+            
             today_str = datetime.now().strftime('%Y-%m-%d')
             ref_code = f"Library/Overdue/{datetime.now().strftime('%Y%m%d')}"
             base_filename = f"overdue_notice_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -4994,6 +5263,8 @@ Note: This is an automated email. Please find the attached formal overdue letter
             
             # Add logo at the top if available
             logo_path = os.path.join(os.path.dirname(__file__), 'logo.png')
+            if hasattr(sys, '_MEIPASS'):
+                logo_path = os.path.join(sys._MEIPASS, 'logo.png')
             if os.path.exists(logo_path):
                 try:
                     # Add logo centered at top
@@ -5084,7 +5355,228 @@ Note: This is an automated email. Please find the attached formal overdue letter
             doc.add_paragraph("Government Polytechnic Awasari (Kh)")
 
             doc.save(file_path)
-            messagebox.showinfo("Overdue Notice", f"Word overdue notice exported:\n{file_path}")
+            
+            # Send emails to all overdue students if requested
+            email_results = []
+            if send_emails:
+                import tempfile
+                progress_win = tk.Toplevel(self.root)
+                progress_win.title("Sending Emails...")
+                progress_win.geometry("500x200")
+                progress_win.transient(self.root)
+                progress_win.grab_set()
+                
+                # Center the window
+                progress_win.update_idletasks()
+                x = (progress_win.winfo_screenwidth() // 2) - (250)
+                y = (progress_win.winfo_screenheight() // 2) - (100)
+                progress_win.geometry(f"+{x}+{y}")
+                
+                label = tk.Label(progress_win, text="Sending overdue emails...", 
+                               font=('Segoe UI', 12), pady=20)
+                label.pack()
+                
+                status_label = tk.Label(progress_win, text="", font=('Segoe UI', 10), 
+                                      wraplength=450, justify=tk.LEFT)
+                status_label.pack(pady=10)
+                
+                progress_win.update()
+                
+                sent_count = 0
+                failed_count = 0
+                
+                for idx, rec in enumerate(overdue, 1):
+                    enrollment_no = str(rec['Enrollment No'])
+                    student_name = str(rec['Student Name'])
+                    book_id = str(rec['Book ID'])
+                    book_title = str(rec['Book Title'])
+                    issue_date = str(rec['Issue Date'])
+                    due_date = str(rec['Due Date'])
+                    days_overdue = str(rec['Days Overdue'])
+                    fine = str(rec['Accrued Fine'])
+                    
+                    status_label.config(text=f"Sending email {idx}/{len(overdue)}\nTo: {student_name} ({enrollment_no})")
+                    progress_win.update()
+                    
+                    # Get student email
+                    student_email = self.get_student_email(enrollment_no)
+                    
+                    if student_email:
+                        # Generate individual letter for this student
+                        temp_doc = Document()
+                        
+                        # Add same header
+                        if os.path.exists(logo_path):
+                            try:
+                                logo_para = temp_doc.add_paragraph()
+                                logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                logo_run = logo_para.add_run()
+                                logo_run.add_picture(logo_path, width=Pt(80))
+                            except:
+                                pass
+                        
+                        def add_center_temp(text, bold=True, size=16, color=None):
+                            p = temp_doc.add_paragraph()
+                            run = p.add_run(text)
+                            run.bold = bold
+                            run.font.size = Pt(size)
+                            if color:
+                                from docx.shared import RGBColor
+                                run.font.color.rgb = RGBColor(*color)
+                            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        
+                        add_center_temp("Government Polytechnic Awasari (Kh)", True, 20, (31, 71, 136))
+                        add_center_temp("Departmental Library", True, 16, (46, 92, 138))
+                        add_center_temp("Computer Department", True, 14, (54, 95, 145))
+                        temp_doc.add_paragraph("_" * 70).alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        temp_doc.add_paragraph()
+                        
+                        date_para = temp_doc.add_paragraph()
+                        date_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                        date_para.add_run(f"Date: {datetime.now().strftime('%B %d, %Y')}")
+                        temp_doc.add_paragraph()
+                        
+                        subject = temp_doc.add_paragraph()
+                        subject.add_run('Subject: Overdue Book Notice').bold = True
+                        subject.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        temp_doc.add_paragraph()
+                        
+                        to_para = temp_doc.add_paragraph()
+                        to_para.add_run(f'To,\n{student_name}\nEnrollment No: {enrollment_no}')
+                        temp_doc.add_paragraph()
+                        
+                        body = temp_doc.add_paragraph()
+                        body.add_run(
+                            f"Dear {student_name},\n\n"
+                            f"This is to inform you that the following book borrowed from the Library of Computer Department "
+                            f"is overdue and needs to be returned immediately.\n\n"
+                        )
+                        
+                        temp_doc.add_paragraph('Book Details:', style='Heading 2')
+                        details_table = temp_doc.add_table(rows=5, cols=2)
+                        details_table.style = 'Light Grid Accent 1'
+                        details_table.cell(0, 0).text = 'Book ID:'
+                        details_table.cell(0, 1).text = book_id
+                        details_table.cell(1, 0).text = 'Book Title:'
+                        details_table.cell(1, 1).text = book_title
+                        details_table.cell(2, 0).text = 'Issue Date:'
+                        details_table.cell(2, 1).text = issue_date
+                        details_table.cell(3, 0).text = 'Due Date:'
+                        details_table.cell(3, 1).text = due_date
+                        details_table.cell(4, 0).text = 'Days Overdue:'
+                        details_table.cell(4, 1).text = days_overdue
+                        
+                        temp_doc.add_paragraph()
+                        fine_para = temp_doc.add_paragraph()
+                        fine_run = fine_para.add_run(
+                            f"As per library rules, a fine of ₹{FINE_PER_DAY} per day is applicable for overdue books.\n"
+                            f"Your current fine amount is: ₹{fine}\n\n"
+                        )
+                        fine_run.bold = True
+                        
+                        request_para = temp_doc.add_paragraph()
+                        request_para.add_run(
+                            "You are hereby requested to return the book to the library at the earliest and clear the pending fine. "
+                            "Failure to do so may result in restrictions on future borrowing privileges.\n\n"
+                            "Please contact the library desk for any queries or clarifications.\n\n"
+                        )
+                        
+                        temp_doc.add_paragraph()
+                        temp_doc.add_paragraph("Thank you for your cooperation.\n\nYours sincerely,\n\n")
+                        temp_doc.add_paragraph("__________________________")
+                        temp_doc.add_paragraph("Librarian").runs[0].bold = True
+                        temp_doc.add_paragraph('Departmental Library')
+                        temp_doc.add_paragraph('Computer Department')
+                        temp_doc.add_paragraph('Government Polytechnic Awasari (Kh)')
+                        
+                        # Save to temp file
+                        temp_dir = tempfile.gettempdir()
+                        temp_file = os.path.join(temp_dir, f"Overdue_{enrollment_no}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx")
+                        temp_doc.save(temp_file)
+                        
+                        # Send email
+                        email_subject = f"Overdue Book Notice - {book_title}"
+                        email_body = f"""Dear {student_name},
+
+This is an automated notification from the Library of Computer Department, Government Polytechnic Awasari (Kh).
+
+The following book borrowed from our library is overdue and needs to be returned immediately:
+
+Book ID: {book_id}
+Book Title: {book_title}
+Issue Date: {issue_date}
+Due Date: {due_date}
+Days Overdue: {days_overdue}
+Fine Amount: ₹{fine}
+
+As per library rules, a fine of ₹{FINE_PER_DAY} per day is applicable for overdue books.
+
+Please return the book to the library at the earliest and clear the pending fine. Failure to do so may result in restrictions on future borrowing privileges.
+
+For any queries, please contact the library desk.
+
+Thank you for your cooperation.
+
+Librarian
+Departmental Library
+Computer Department
+Government Polytechnic Awasari (Kh)
+
+---
+Note: This is an automated email. Please find the attached formal overdue letter.
+"""
+                        
+                        success, message = self.send_email_with_attachment(
+                            student_email, 
+                            email_subject, 
+                            email_body, 
+                            temp_file
+                        )
+                        
+                        # Log the email
+                        self._log_email_sent(
+                            enrollment_no,
+                            student_name,
+                            student_email,
+                            book_title,
+                            success,
+                            message if not success else ''
+                        )
+                        
+                        if success:
+                            sent_count += 1
+                            email_results.append(f"✅ {student_name} ({enrollment_no})")
+                        else:
+                            failed_count += 1
+                            email_results.append(f"❌ {student_name} ({enrollment_no}) - {message}")
+                        
+                        # Clean up temp file
+                        try:
+                            os.remove(temp_file)
+                        except:
+                            pass
+                    else:
+                        failed_count += 1
+                        email_results.append(f"❌ {student_name} ({enrollment_no}) - No email address")
+                
+                progress_win.destroy()
+                
+                # Show results
+                result_message = f"📧 Email Sending Complete!\n\n"
+                result_message += f"✅ Successfully sent: {sent_count}\n"
+                result_message += f"❌ Failed: {failed_count}\n\n"
+                
+                if email_results:
+                    result_message += "Details:\n" + "\n".join(email_results[:10])  # Show first 10
+                    if len(email_results) > 10:
+                        result_message += f"\n... and {len(email_results) - 10} more"
+                
+                result_message += f"\n\n💾 Master document saved at:\n{file_path}"
+                
+                messagebox.showinfo("Email Results", result_message)
+            else:
+                messagebox.showinfo("Overdue Notice", f"Word overdue notice exported:\n{file_path}")
+            
             if messagebox.askyesno("Open File", "Open the Word letter now?"):
                 self.open_file(file_path)
             # Excel/text companion removed per user request
@@ -5606,17 +6098,18 @@ Note: This is an automated email. Please find the attached formal overdue letter
 
         # Mousewheel scrolling (Windows/Linux)
         def _wheel_units(delta):
-            # Robust units across devices: at least 1 step
-            if delta > 0:
-                return -1
-            elif delta < 0:
-                return 1
-            return 0
+            # Smooth scrolling with moderate speed
+            units = int(-delta / 120)  # Standard Windows mouse wheel delta is 120
+            if units == 0:
+                units = -1 if delta > 0 else 1
+            return units * 2  # Multiply by 2 for balanced smooth scrolling
+        
         def _on_vwheel(event):
             units = _wheel_units(event.delta)
             if units:
                 main_canvas.yview_scroll(units, 'units')
             return 'break'
+        
         def _on_hwheel(event):
             units = _wheel_units(event.delta)
             if units:
