@@ -63,11 +63,16 @@ The dashboard provides an at-a-glance view of:
 
 **Add Student:**
 - Click "➕ Add Student"
-- Fill in: Enrollment No, Name, Class, Division, Roll No, Contact, Email
+- Fill in: Enrollment No, Name, Email, Phone, Department, Year
 - Click "Save"
 
+**Edit Student:**
+- Double-click any student in the list
+- Edit: Name, Email, Phone, Year (Enrollment No cannot be changed)
+- Click "💾 Save Changes" or "🗑️ Delete" to remove
+
 **Import Students from Excel:**
-- Prepare Excel file with columns: `Enrollment No | Name | Class | Division | Roll No | Contact | Email`
+- Prepare Excel file with columns: `Enrollment No | Name | Email | Phone | Department | Year`
 - Click "Import from Excel"
 - Select your Excel file
 - Students will be added in bulk
@@ -78,9 +83,17 @@ The app accepts **flexible column names** - both formats work:
 
 **Students Import - Use either format:**
 ```
-Option 1 (Human-readable):  Enrollment No | Name | Class | Division | Roll No | Contact | Email
-Option 2 (Technical style):  enrollment_no | name | class | division | roll_no | contact | email
+Option 1 (Human-readable):  Enrollment No | Name | Email | Phone | Department | Year
+Option 2 (Technical style):  enrollment_no | name | email | phone | department | year
 ```
+
+**Field Details:**
+- **Enrollment No** - Required, unique student ID
+- **Name** - Required, student full name
+- **Email** - Optional (needed for email notifications)
+- **Phone** - Optional, contact number
+- **Department** - Optional, defaults to "Computer"
+- **Year** - Optional, use: "1st Year", "2nd Year", "3rd Year", or "Pass Out"
 
 **Key Points:**
 - ✅ Both formats work (app auto-converts)
@@ -97,14 +110,20 @@ Option 2 (Technical style):  enrollment_no | name | class | division | roll_no |
 
 **Add Book:**
 - Click "➕ Add Book"
-- Fill in: Book ID, Title, Author, Publisher, Category, Number of Copies
+- Fill in: Book ID, Title, Author, ISBN, Category, Total Copies
 - Click "Save"
+
+**Edit Book:**
+- Double-click any book in the list
+- Edit: Title, Author, ISBN, Category, Total Copies (Book ID cannot be changed)
+- Available copies are calculated automatically (Total - Borrowed)
+- Click "💾 Save Changes" or "🗑️ Delete" to remove
 
 **Categories Available:**
 - Core CS, Web Development, Programming, Database, AI/ML, Networking, Operating Systems, Algorithms, Software Engineering, Mobile Development, Cloud Computing, Cybersecurity, IoT, Competitive Programming, Project Guides, Others
 
 **Import Books from Excel:**
-- Prepare Excel with columns: `Book ID | Title | Author | Publisher | Category | Copies`
+- Prepare Excel with columns: `Book ID | Title | Author | ISBN | Category | Total Copies`
 - Click "Import from Excel"
 - Bulk add books instantly
 
@@ -114,9 +133,17 @@ The app accepts **flexible column names** - both formats work:
 
 **Books Import - Use either format:**
 ```
-Option 1 (Human-readable):  Book ID | Title | Author | Publisher | Category | Copies
-Option 2 (Technical style):  book_id | title | author | publisher | category | copies
+Option 1 (Human-readable):  Book ID | Title | Author | ISBN | Category | Total Copies
+Option 2 (Technical style):  book_id | title | author | isbn | category | total_copies
 ```
+
+**Field Details:**
+- **Book ID** - Required, unique identifier for the book
+- **Title** - Required, book title
+- **Author** - Required, book author name
+- **ISBN** - Optional, International Standard Book Number
+- **Category** - Optional (defaults to "Others")
+- **Total Copies** - Optional, defaults to 1
 
 **Key Points:**
 - ✅ Both formats work (app auto-converts)
@@ -125,7 +152,7 @@ Option 2 (Technical style):  book_id | title | author | publisher | category | c
 - ✅ Column order doesn't matter
 
 **Available Categories:**
-- Programming, Database, Web Development, AI/ML, Networking, Operating Systems, 
+- Core CS, Web Development, Programming, Database, AI/ML, Networking, Operating Systems, 
   Algorithms, Software Engineering, Mobile Development, Cloud Computing, 
   Cybersecurity, IoT, Competitive Programming, Project Guides, Others
 
@@ -188,7 +215,7 @@ Visual analytics with interactive charts:
 
 **Promote Students (End of Academic Year):**
 
-⚠️ **IMPORTANT:** Import new 1st year students BEFORE clicking promote! (See Year-End Process section below)
+⚠️ **IMPORTANT:** Click promote FIRST to empty 1st year, THEN import new students! (See Year-End Process section below)
 
 1. Click "⬆️ Promote Student Years"
 2. System will:

@@ -2211,7 +2211,7 @@ Government Polytechnic Awasari (Kh)"""
             self.return_book_details.config(text=details)
     
     def on_student_double_click(self, event):
-        """Handle double-click on student to show delete option"""
+        """Handle double-click on student to show edit dialog"""
         item = self.students_tree.selection()[0] if self.students_tree.selection() else None
         if not item:
             return
@@ -2221,77 +2221,414 @@ Government Polytechnic Awasari (Kh)"""
             return
 
         enrollment_no = student_data[0]
-        student_name = student_data[1]
-
-        # Default placeholders
-        branch = "(branch unknown)"
-        year = "(year unknown)"
-
+        
+        # Get full student details from database
         try:
-            # Use search term to narrow results
-            candidates = self.db.get_students(enrollment_no)
-            for s in candidates:
-                # Expected schema: (enrollment_no, name, email, phone, department, year)
-                if len(s) >= 6 and str(s[0]) == str(enrollment_no):
-                    branch = s[4] or branch
-                    year = s[5] or year
+            students = self.db.get_students(enrollment_no)
+            student = None
+            for s in students:
+                if str(s[1]) == str(enrollment_no):  # s[1] is enrollment_no
+                    student = s
                     break
-        except Exception:
-            pass
-
-        confirm_text = (
-            f"Delete this student?\n\n"
-            f"Name: {student_name}\n"
-            f"Branch: {branch}\n"
-            f"Year: {year}"
+            
+            if not student:
+                messagebox.showerror("Error", "Student not found")
+                return
+            
+            # Show edit dialog
+            self.show_edit_student_dialog(student)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load student details: {e}")
+    
+    def show_edit_student_dialog(self, student):
+        """Show dialog to edit student information"""
+        # student tuple: (id, enrollment_no, name, email, phone, department, year, date_registered)
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Edit Student")
+        dialog.geometry("500x550")
+        dialog.configure(bg='white')
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.geometry("+%d+%d" % (self.root.winfo_rootx() + 100, self.root.winfo_rooty() + 100))
+        
+        # Title
+        title_label = tk.Label(
+            dialog,
+            text="✏️ Edit Student",
+            font=('Segoe UI', 16, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
         )
-
-        result = messagebox.askyesno(
-            "Delete Student",
-            confirm_text,
-            icon='warning'
-        )
-
-        if result:
-            success, message = self.db.delete_student(enrollment_no)
-            if success:
-                try:
-                    self.refresh_students()
-                    # Also refresh dashboard statistics so counts update immediately
-                    self.refresh_dashboard()
-                except Exception:
-                    pass
-                messagebox.showinfo("Success", "Student deleted successfully.")
+        title_label.pack(pady=(20, 30))
+        
+        # Form frame
+        form_frame = tk.Frame(dialog, bg='white')
+        form_frame.pack(expand=True, padx=40)
+        
+        # Form fields
+        fields = [
+            ("Enrollment No:", "enrollment", student[1], False),  # Read-only
+            ("Name:", "name", student[2], True),
+            ("Email:", "email", student[3] or '', True),
+            ("Phone:", "phone", student[4] or '', True),
+            ("Department:", "department", student[5] or 'Computer', False),  # Read-only
+            ("Year:", "year", student[6] or '1st Year', True)
+        ]
+        
+        entries = {}
+        
+        for i, (label_text, field_name, default_value, editable) in enumerate(fields):
+            # Label
+            label = tk.Label(
+                form_frame,
+                text=label_text,
+                font=('Segoe UI', 11, 'bold'),
+                bg='white',
+                fg=self.colors['accent']
+            )
+            label.grid(row=i, column=0, sticky='w', pady=(0, 15), padx=(0, 20))
+            
+            # Entry or Combobox
+            if field_name == "year":
+                entry = ttk.Combobox(
+                    form_frame,
+                    values=["1st Year", "2nd Year", "3rd Year", "Pass Out"],
+                    font=('Segoe UI', 11),
+                    width=25,
+                    state="readonly" if editable else "disabled"
+                )
+                entry.set(default_value)
+                entry.grid(row=i, column=1, pady=(0, 15))
             else:
-                messagebox.showerror("Error", message or "Failed to delete student.")
+                entry = tk.Entry(
+                    form_frame,
+                    font=('Segoe UI', 11),
+                    width=28,
+                    relief='solid',
+                    bd=2
+                )
+                entry.insert(0, default_value)
+                if not editable:
+                    entry.config(state='readonly', bg='#f0f0f0')
+                entry.grid(row=i, column=1, pady=(0, 15))
+            
+            entries[field_name] = entry
+        
+        # Buttons frame
+        btn_frame = tk.Frame(dialog, bg='white')
+        btn_frame.pack(pady=20)
+        
+        def save_changes():
+            # Validate required fields
+            if not entries['name'].get().strip():
+                messagebox.showerror("Error", "Name is required!")
+                return
+            
+            # Update student
+            success, message = self.db.update_student(
+                entries['enrollment'].get(),
+                entries['name'].get().strip(),
+                entries['email'].get().strip(),
+                entries['phone'].get().strip(),
+                entries['department'].get().strip(),
+                entries['year'].get()
+            )
+            
+            if success:
+                messagebox.showinfo("Success", message)
+                dialog.destroy()
+                self.refresh_students()
+                self.refresh_dashboard()
+            else:
+                messagebox.showerror("Error", message)
+        
+        def delete_student():
+            if messagebox.askyesno(
+                "Confirm Delete",
+                f"Delete student: {entries['name'].get()}?\n\nThis action cannot be undone!",
+                icon='warning'
+            ):
+                success, message = self.db.delete_student(entries['enrollment'].get())
+                if success:
+                    messagebox.showinfo("Success", "Student deleted successfully")
+                    dialog.destroy()
+                    self.refresh_students()
+                    self.refresh_dashboard()
+                else:
+                    messagebox.showerror("Error", message)
+        
+        # Save button
+        save_btn = tk.Button(
+            btn_frame,
+            text="💾 Save Changes",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=10,
+            command=save_changes,
+            cursor='hand2'
+        )
+        save_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Delete button
+        delete_btn = tk.Button(
+            btn_frame,
+            text="🗑️ Delete",
+            font=('Segoe UI', 12, 'bold'),
+            bg='#dc3545',
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=10,
+            command=delete_student,
+            cursor='hand2'
+        )
+        delete_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Cancel button
+        cancel_btn = tk.Button(
+            btn_frame,
+            text="❌ Cancel",
+            font=('Segoe UI', 12, 'bold'),
+            bg='#6c757d',
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=10,
+            command=dialog.destroy,
+            cursor='hand2'
+        )
+        cancel_btn.pack(side=tk.LEFT)
 
     def on_book_double_click(self, event):
-        """Handle double-click on book to show delete option"""
+        """Handle double-click on book to show edit dialog"""
         item = self.books_tree.selection()[0] if self.books_tree.selection() else None
         if not item:
             return
+        
         book_data = self.books_tree.item(item, 'values')
         if not book_data:
             return
+        
         book_id = book_data[0]
-        book_title = book_data[1]
-        result = messagebox.askyesno(
-            "Delete Book",
-            f"Delete this book?\n\nID: {book_id}\nTitle: {book_title}",
-            icon='warning'
+        
+        # Get full book details from database
+        try:
+            books = self.db.get_books(book_id)
+            book = None
+            for b in books:
+                if str(b[1]) == str(book_id):  # b[1] is book_id
+                    book = b
+                    break
+            
+            if not book:
+                messagebox.showerror("Error", "Book not found")
+                return
+            
+            # Show edit dialog
+            self.show_edit_book_dialog(book)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load book details: {e}")
+    
+    def show_edit_book_dialog(self, book):
+        """Show dialog to edit book information"""
+        # book tuple: (id, book_id, title, author, isbn, category, total_copies, available_copies, date_added)
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Edit Book")
+        dialog.geometry("500x600")
+        dialog.configure(bg='white')
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.geometry("+%d+%d" % (self.root.winfo_rootx() + 100, self.root.winfo_rooty() + 100))
+        
+        # Title
+        title_label = tk.Label(
+            dialog,
+            text="✏️ Edit Book",
+            font=('Segoe UI', 16, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
         )
-        if result:
-            success, message = self.db.delete_book(book_id)
-            if success:
-                try:
-                    self.refresh_books()
-                    # Refresh dashboard statistics to reflect updated totals
-                    self.refresh_dashboard()
-                except Exception:
-                    pass
-                messagebox.showinfo("Success", "Book deleted successfully.")
+        title_label.pack(pady=(20, 30))
+        
+        # Form frame
+        form_frame = tk.Frame(dialog, bg='white')
+        form_frame.pack(expand=True, padx=40)
+        
+        # Get book categories from your predefined list
+        book_categories = [
+            "Core CS", "Web Development", "Programming", "Database",
+            "AI/ML", "Networking", "Operating Systems", "Algorithms",
+            "Software Engineering", "Mobile Development", "Cloud Computing",
+            "Cybersecurity", "IoT", "Competitive Programming", "Project Guides", "Others"
+        ]
+        
+        # Form fields
+        fields = [
+            ("Book ID:", "book_id", book[1], False),  # Read-only
+            ("Title:", "title", book[2], True),
+            ("Author:", "author", book[3], True),
+            ("ISBN:", "isbn", book[4] or '', True),
+            ("Category:", "category", book[5] or 'Others', True),
+            ("Total Copies:", "total_copies", str(book[6]), True),
+            ("Available Copies:", "available_copies", str(book[7]), False)  # Read-only (calculated)
+        ]
+        
+        entries = {}
+        
+        for i, (label_text, field_name, default_value, editable) in enumerate(fields):
+            # Label
+            label = tk.Label(
+                form_frame,
+                text=label_text,
+                font=('Segoe UI', 11, 'bold'),
+                bg='white',
+                fg=self.colors['accent']
+            )
+            label.grid(row=i, column=0, sticky='w', pady=(0, 15), padx=(0, 20))
+            
+            # Entry or Combobox
+            if field_name == "category" and editable:
+                entry = ttk.Combobox(
+                    form_frame,
+                    values=book_categories,
+                    font=('Segoe UI', 11),
+                    width=25,
+                    state="readonly"
+                )
+                entry.set(default_value)
+                entry.grid(row=i, column=1, pady=(0, 15))
             else:
-                messagebox.showerror("Error", message or "Failed to delete book.")
+                entry = tk.Entry(
+                    form_frame,
+                    font=('Segoe UI', 11),
+                    width=28,
+                    relief='solid',
+                    bd=2
+                )
+                entry.insert(0, default_value)
+                if not editable:
+                    entry.config(state='readonly', bg='#f0f0f0')
+                entry.grid(row=i, column=1, pady=(0, 15))
+            
+            entries[field_name] = entry
+        
+        # Info label about available copies
+        info_label = tk.Label(
+            form_frame,
+            text="Note: Available copies will be adjusted automatically based on borrowed books.",
+            font=('Segoe UI', 9, 'italic'),
+            bg='white',
+            fg='#666',
+            wraplength=350
+        )
+        info_label.grid(row=len(fields), column=0, columnspan=2, pady=(5, 0))
+        
+        # Buttons frame
+        btn_frame = tk.Frame(dialog, bg='white')
+        btn_frame.pack(pady=20)
+        
+        def save_changes():
+            # Validate required fields
+            if not all([entries['title'].get().strip(), entries['author'].get().strip()]):
+                messagebox.showerror("Error", "Title and Author are required!")
+                return
+            
+            # Validate total copies is a positive integer
+            try:
+                total_copies = int(entries['total_copies'].get())
+                if total_copies < 1:
+                    messagebox.showerror("Error", "Total copies must be at least 1!")
+                    return
+            except ValueError:
+                messagebox.showerror("Error", "Total copies must be a valid number!")
+                return
+            
+            # Update book
+            success, message = self.db.update_book(
+                entries['book_id'].get(),
+                entries['title'].get().strip(),
+                entries['author'].get().strip(),
+                entries['isbn'].get().strip(),
+                entries['category'].get(),
+                total_copies
+            )
+            
+            if success:
+                messagebox.showinfo("Success", message)
+                dialog.destroy()
+                self.refresh_books()
+                self.refresh_dashboard()
+            else:
+                messagebox.showerror("Error", message)
+        
+        def delete_book():
+            if messagebox.askyesno(
+                "Confirm Delete",
+                f"Delete book: {entries['title'].get()}?\n\nThis action cannot be undone!",
+                icon='warning'
+            ):
+                success, message = self.db.delete_book(entries['book_id'].get())
+                if success:
+                    messagebox.showinfo("Success", "Book deleted successfully")
+                    dialog.destroy()
+                    self.refresh_books()
+                    self.refresh_dashboard()
+                else:
+                    messagebox.showerror("Error", message)
+        
+        # Save button
+        save_btn = tk.Button(
+            btn_frame,
+            text="💾 Save Changes",
+            font=('Segoe UI', 12, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=10,
+            command=save_changes,
+            cursor='hand2'
+        )
+        save_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Delete button
+        delete_btn = tk.Button(
+            btn_frame,
+            text="🗑️ Delete",
+            font=('Segoe UI', 12, 'bold'),
+            bg='#dc3545',
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=10,
+            command=delete_book,
+            cursor='hand2'
+        )
+        delete_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Cancel button
+        cancel_btn = tk.Button(
+            btn_frame,
+            text="❌ Cancel",
+            font=('Segoe UI', 12, 'bold'),
+            bg='#6c757d',
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=10,
+            command=dialog.destroy,
+            cursor='hand2'
+        )
+        cancel_btn.pack(side=tk.LEFT)
         
     # ...existing code...
         # ...existing code...

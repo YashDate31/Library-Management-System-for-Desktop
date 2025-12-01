@@ -120,6 +120,29 @@ class Database:
         finally:
             conn.close()
     
+    def update_student(self, enrollment_no, name, email='', phone='', department='', year=''):
+        """Update an existing student's information"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            # Check if student exists
+            cursor.execute("SELECT id FROM students WHERE enrollment_no = ?", (enrollment_no,))
+            if not cursor.fetchone():
+                return False, "Student not found"
+            
+            # Update student information
+            cursor.execute('''
+                UPDATE students 
+                SET name=?, email=?, phone=?, department=?, year=?
+                WHERE enrollment_no=?
+            ''', (name, email, phone, department, year, enrollment_no))
+            conn.commit()
+            return True, "Student updated successfully"
+        except Exception as e:
+            return False, f"Error: {str(e)}"
+        finally:
+            conn.close()
+    
     def remove_student(self, enrollment_no):
         """Remove a student from the database"""
         conn = self.get_connection()
@@ -167,6 +190,40 @@ class Database:
             return True, "Book added successfully"
         except sqlite3.IntegrityError:
             return False, "Book ID already exists"
+        except Exception as e:
+            return False, f"Error: {str(e)}"
+        finally:
+            conn.close()
+    
+    def update_book(self, book_id, title, author, isbn='', category='', total_copies=1):
+        """Update an existing book's information"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            # Check if book exists
+            cursor.execute("SELECT available_copies, total_copies FROM books WHERE book_id = ?", (book_id,))
+            result = cursor.fetchone()
+            if not result:
+                return False, "Book not found"
+            
+            old_available, old_total = result
+            
+            # Calculate new available copies maintaining the difference
+            borrowed_count = old_total - old_available
+            new_available = total_copies - borrowed_count
+            
+            # Prevent setting total copies less than borrowed count
+            if new_available < 0:
+                return False, f"Cannot set total copies to {total_copies}. {borrowed_count} copies are currently borrowed."
+            
+            # Update book information
+            cursor.execute('''
+                UPDATE books 
+                SET title=?, author=?, isbn=?, category=?, total_copies=?, available_copies=?
+                WHERE book_id=?
+            ''', (title, author, isbn, category, total_copies, new_available, book_id))
+            conn.commit()
+            return True, "Book updated successfully"
         except Exception as e:
             return False, f"Error: {str(e)}"
         finally:
