@@ -70,5 +70,14 @@
         "book_title": "Cracking the Coding Interview",
         "success": true,
         "error_message": ""
+    },
+    {
+        "timestamp": "2025-12-02 10:52:08",
+        "enrollment_no": "24210270082",
+        "student_name": "Rhea Bhatt",
+        "student_email": "rhea.bhatt@student.gpa.edu",
+        "book_title": "Computer Organization and Design",
+        "success": true,
+        "error_message": ""
     }
 ]

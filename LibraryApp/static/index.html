@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Library Portal</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    <!-- Local CSS -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Login Screen -->
+        <div id="login-screen" class="screen active">
+            <div class="login-content">
+                <div class="brand-logo">
+                    <div class="logo-icon"><i class="ri-book-open-line"></i></div>
+                    <h1>Library Portal</h1>
+                    <p>Computer Department</p>
+                </div>
+                
+                <div class="glass-card login-form">
+                    <h2>Student Login</h2>
+                    <p class="subtitle">Enter your details to access library services</p>
+                    
+                    <div class="input-group">
+                        <i class="ri-user-line icon"></i>
+                        <input type="text" id="enrollment-input" placeholder="Enrollment Number" autocomplete="off">
+                    </div>
+                    
+                    <button id="login-btn" class="btn-primary">
+                        <span>Login</span>
+                        <i class="ri-arrow-right-line"></i>
+                    </button>
+                    
+                    <p id="login-error" class="error-msg"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Dashboard -->
+        <div id="dashboard-screen" class="screen">
+            <!-- Header -->
+            <header class="mobile-header">
+                <div class="header-left">
+                    <h1 id="user-greeting">Hi, Student</h1>
+                    <span id="user-dept" class="badge">Computer Dept</span>
+                </div>
+                <button id="logout-btn" class="icon-btn"><i class="ri-logout-box-r-line"></i></button>
+            </header>
+
+            <!-- Navigation Tabs -->
+            <div class="tab-nav">
+                <button class="tab-btn active" data-tab="home">Home</button>
+                <button class="tab-btn" data-tab="catalog">Catalog</button>
+                <button class="tab-btn" data-tab="history">History</button>
+            </div>
+
+            <!-- Content Area -->
+            <div class="content-area">
+                
+                <!-- HOME TAB -->
+                <div id="tab-home" class="tab-content active">
+                    <!-- Stats Grid -->
+                    <div class="stats-grid">
+                        <div class="stat-card blue">
+                            <div class="icon"><i class="ri-book-2-line"></i></div>
+                            <div class="info">
+                                <span class="label">Borrowed</span>
+                                <h3 id="stat-borrowed">0</h3>
+                            </div>
+                        </div>
+                        <div class="stat-card red">
+                            <div class="icon"><i class="ri-money-dollar-circle-line"></i></div>
+                            <div class="info">
+                                <span class="label">Fine Due</span>
+                                <h3 id="stat-fine">₹0</h3>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Current Books -->
+                    <div class="section-title">
+                        <h2>Start Reading</h2>
+                        <a href="#" onclick="switchTab('catalog')">View All</a>
+                    </div>
+                    
+                    <div id="borrowed-list" class="book-list">
+                        <!-- Populated by JS -->
+                        <div class="empty-state">
+                            <i class="ri-book-open-line"></i>
+                            <p>No books borrowed currently</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CATALOG TAB -->
+                <div id="tab-catalog" class="tab-content">
+                    <div class="search-bar">
+                        <i class="ri-search-line"></i>
+                        <input type="text" id="catalog-search" placeholder="Search title, author, category...">
+                    </div>
+                    <div id="catalog-list" class="book-list">
+                        <!-- Populated by JS -->
+                        <div class="loading-spinner"><i class="ri-loader-4-line"></i></div>
+                    </div>
+                </div>
+
+                <!-- HISTORY TAB -->
+                <div id="tab-history" class="tab-content">
+                    <div class="section-title"><h2>Borrowing History</h2></div>
+                    <div id="history-list" class="history-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Bottom Nav (Optional, mostly using Top Tabs here but Bottom is better for mobile) -->
+            <!-- We will stick to the single page scrolling layout with top tabs for simplicity -->
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
