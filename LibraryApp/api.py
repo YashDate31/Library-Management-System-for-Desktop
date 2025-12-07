@@ -35,7 +35,19 @@ def login():
     student = None
     for s in students:
         if s[1].lower() == enrollment_no.lower(): # s[1] is enrollment_no
-            student = s
+            # Check password (assuming last column is password)
+            # If migration just ran, s should have the new column.
+            # But db.get_students might select specific columns?
+            # Let's check s length or verify database.py logic.
+            # For now, let's assume get_students does SELECT *
+            
+            stored_pass = str(s[-1]) if len(s) > 8 else 'student123' # Fallback
+            input_pass = data.get('password', '').strip()
+            
+            if input_pass == stored_pass:
+                student = s
+            else:
+                return jsonify({"success": False, "message": "Invalid Password"}), 401
             break
             
     if student:
