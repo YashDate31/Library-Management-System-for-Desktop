@@ -1,0 +1,27 @@
+feat: Mobile Interface Integration & Desktop Upgrade
+
+This major update introduces a fully functional mobile web interface for students and integrates server controls into the existing desktop application.
+
+1. Backend API Development
+- Implemented a lightweight Flask server (`api.py`) for local intranet access.
+- Added endpoints: `/api/login`, `/api/dashboard`, `/api/history`, `/api/catalog`.
+- Enabled `PRAGMA journal_mode=WAL` in `database.py` for concurrent read/write access.
+- Fixed ZeroDivisionError in Analysis charts for empty databases.
+
+2. Mobile Frontend Interface
+- Designed a "Premium" Glassmorphism UI (`mobile_web/`) ensuring a high-end user experience.
+- Features: Student Dashboard, Book Search (Catalog), Borrowing History.
+- Responsive design optimized for mobile devices.
+
+3. Desktop Application Integration
+- Updated `main.py` with a new "Dashboard" tab containing Server Controls.
+- Added "Start/Stop Server" functionality using background subprocesses.
+- Integrated `qrcode` generation to display a scannable link for students (`http://<IP>:5000`).
+- Implemented automatic server cleanup on application exit.
+
+4. Infrastructure & Deployment
+- Added `populate_dummy_data.py` for generating test data (25 Students, 15 Books).
+- Updated `requirements.txt` with `flask`, `flask-cors`, `qrcode`.
+- Created detailed documentation (`MOBILE_INTEGRATION_REPORT.md`) in the project root.
+
+This update maintains full backward compatibility with the existing Windows 7 offline environment while enabling modern mobile access.
