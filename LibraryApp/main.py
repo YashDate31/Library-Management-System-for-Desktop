@@ -227,8 +227,53 @@ class LibraryApp:
 
     def check_and_send_reminders(self):
         """Check for overdue books and send emails"""
-        # (Simplified for restoration - logic to be implemented or restored fully if needed)
-        pass 
+        if not self.email_settings.get('reminder_enabled', False):
+            return
+
+        try:
+            # Run in a separate thread to avoid freezing GUI
+            threading.Thread(target=self._process_reminders, daemon=True).start()
+        except Exception as e:
+            print(f"Failed to start reminder thread: {e}")
+
+    def _process_reminders(self):
+        """Actual processing of reminders in background"""
+        try:
+            overdue_records = self.get_current_overdue_records()
+            if not overdue_records:
+                return
+
+            sent_count = 0
+            for record in overdue_records:
+                enrollment_no = record['Enrollment No']
+                email = self.get_student_email(enrollment_no)
+                
+                if not email or '@' not in email:
+                    continue
+
+                # Prepare message
+                subject = "Overdue Book Reminder - Govt Polytechnic Awasari (Kh)"
+                # Helper to safely format string with dict
+                msg_template = self.email_settings.get('overdue_message', '')
+                
+                # Manual formatting to be safe
+                body = msg_template.replace('{StudentName}', str(record['Student Name'])) \
+                                   .replace('{BookName}', str(record['Book Title'])) \
+                                   .replace('{BookID}', str(record['Book ID'])) \
+                                   .replace('{IssueDate}', str(record['Issue Date'])) \
+                                   .replace('{DueDate}', str(record['Due Date'])) \
+                                   .replace('{FineAmount}', str(record['Accrued Fine']))
+
+                # Send email
+                print(f"Sending reminder to {enrollment_no} ({email})...")
+                if self.send_email(email, subject, body):
+                    sent_count += 1
+            
+            if sent_count > 0:
+                print(f"Successfully sent {sent_count} reminder emails.")
+                
+        except Exception as e:
+            print(f"Reminder loop error: {e}")
 
     def create_login_interface(self):
         """Render the login screen with college branding"""
@@ -352,14 +397,6 @@ class LibraryApp:
     # I need to ensure create_records_tab, create_analysis_tab, create_print_tab, create_config_tab are present or stubbed.
     # Based on Step 132 view, create_books_tab was at line 311.
     
-    def create_records_tab(self):
-        pass # Stub/Placeholder if missing, will fix if error
-    def create_analysis_tab(self):
-        pass
-    def create_print_tab(self):
-        pass
-    def create_config_tab(self):
-        pass
 
     def refresh_dashboard_borrowed(self):
         """Refresh dashboard borrowed books table"""
