@@ -23,6 +23,14 @@ class Database:
     def init_database(self):
         """Initialize the database with required tables"""
         conn = self.get_connection()
+        
+        # Enable Write-Ahead Logging (WAL) for concurrency
+        # This allows readers to not block writers and vice-versa
+        try:
+            conn.execute('PRAGMA journal_mode=WAL;')
+        except Exception:
+            pass
+            
         cursor = conn.cursor()
         
         # Create students table
@@ -593,6 +601,38 @@ class Database:
             cursor.execute('SELECT year_name FROM academic_years ORDER BY created_date DESC')
             return [row[0] for row in cursor.fetchall()]
         except:
+            return []
+        finally:
+            conn.close()
+
+    def get_student_history(self, enrollment_no):
+        """Get complete borrowing history for a student"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                SELECT b.title, b.author, br.borrow_date, br.due_date, br.return_date, br.status, br.book_id
+                FROM borrow_records br
+                JOIN books b ON br.book_id = b.book_id
+                WHERE br.enrollment_no = ?
+                ORDER BY br.borrow_date DESC
+            ''', (enrollment_no,))
+            
+            # Convert to list of dicts for easier JSON serialization
+            history = []
+            for row in cursor.fetchall():
+                history.append({
+                    'title': row[0],
+                    'author': row[1],
+                    'borrow_date': row[2],
+                    'due_date': row[3],
+                    'return_date': row[4],
+                    'status': row[5],
+                    'book_id': row[6]
+                })
+            return history
+        except Exception as e:
+            print(f"Error getting student history: {e}")
             return []
         finally:
             conn.close()
