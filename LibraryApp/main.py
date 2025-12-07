@@ -7249,6 +7249,86 @@ Note: This is an automated email. Please find the attached formal overdue letter
             sys.exit(0)
 
 # Main application entry point
+    # ----------------------------------------------------------------------
+    # Restored Email and Document Generation Methods
+    # ----------------------------------------------------------------------
+
+    def send_email(self, to_email, subject, body, attachment_path=None):
+        """Send an email with optional attachment using configured credentials"""
+        if not self.email_settings.get('email_address') or not self.email_settings.get('email_password'):
+            print("Email credentials not configured")
+            return False
+
+        try:
+            msg = MIMEMultipart()
+            msg['From'] = self.email_settings['email_address']
+            msg['To'] = to_email
+            msg['Subject'] = subject
+            msg.attach(MIMEText(body, 'plain'))
+
+            if attachment_path and os.path.exists(attachment_path):
+                with open(attachment_path, "rb") as f:
+                    part = MIMEApplication(f.read(), Name=os.path.basename(attachment_path))
+                    part['Content-Disposition'] = f'attachment; filename="{os.path.basename(attachment_path)}"'
+                    msg.attach(part)
+
+            server = smtplib.SMTP('smtp.gmail.com', 587)
+            server.starttls()
+            server.login(self.email_settings['email_address'], self.email_settings['email_password'])
+            server.send_message(msg)
+            server.quit()
+            return True
+        except Exception as e:
+            print(f"Failed to send email: {e}")
+            return False
+
+    def send_email_with_attachment(self, to_email, subject, body, attachment_path):
+        """Wrapper for sending email with attachment (compatibility measure)"""
+        return self.send_email(to_email, subject, body, attachment_path)
+
+    def generate_overdue_notice_word(self, student_name, book_title, fine_amount, due_date):
+        """Generate a Word document for overdue notice"""
+        if Document is None:
+            messagebox.showerror("Error", "python-docx library is not installed.")
+            return None
+
+        try:
+            doc = Document()
+            # Title
+            title = doc.add_paragraph('Overdue Notice')
+            title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = title.runs[0]
+            run.font.bold = True
+            run.font.size = Pt(16)
+            run.font.name = 'Arial'
+
+            doc.add_paragraph(f"Date: {datetime.now().strftime('%Y-%m-%d')}")
+            doc.add_paragraph(f"\nDear {student_name},")
+            doc.add_paragraph(f"This is a formal notice regarding the book '{book_title}' which was due on {due_date}.")
+            doc.add_paragraph(f"Please return it immediately. The current fine amount is {fine_amount}.")
+            doc.add_paragraph("\nRegards,\nLibrary Department")
+
+            # Save to temporary file
+            filename = f"Overdue_Notice_{student_name.replace(' ', '_')}.docx"
+            path = os.path.abspath(filename)
+            doc.save(path)
+            return path
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to generate document: {e}")
+            return None
+
+    def open_file(self, filepath):
+        """Open a file with the default application"""
+        try:
+            if platform.system() == 'Windows':
+                os.startfile(filepath)
+            elif platform.system() == 'Darwin':
+                subprocess.call(('open', filepath))
+            else:
+                subprocess.call(('xdg-open', filepath))
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open file: {e}")
+
 if __name__ == "__main__":
     root = tk.Tk()
     app = LibraryApp(root)
