@@ -11,6 +11,7 @@ const screens = {
 
 const loginBtn = document.getElementById('login-btn');
 const enrollInput = document.getElementById('enrollment-input');
+const passInput = document.getElementById('password-input');
 const loginError = document.getElementById('login-error');
 const logoutBtn = document.getElementById('logout-btn');
 
@@ -74,7 +75,10 @@ function checkSession() {
 
 loginBtn.addEventListener('click', async () => {
     const enrollment = enrollInput.value.trim();
+    const password = passInput.value.trim();
+    
     if (!enrollment) return showError('Please enter enrollment number');
+    if (!password) return showError('Please enter password');
     
     loginBtn.innerHTML = '<i class="ri-loader-4-line"></i>';
     
@@ -82,7 +86,10 @@ loginBtn.addEventListener('click', async () => {
         const res = await fetch(`${API_BASE}/login`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ enrollment_no: enrollment })
+            body: JSON.stringify({ 
+                enrollment_no: enrollment,
+                password: password
+            })
         });
         const data = await res.json();
         

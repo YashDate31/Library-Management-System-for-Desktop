@@ -15,30 +15,37 @@
 </head>
 <body>
     <div id="app">
-        <!-- Login Screen -->
+        <!-- Login Screen (Redesigned) -->
         <div id="login-screen" class="screen active">
-            <div class="login-content">
-                <div class="brand-logo">
-                    <div class="logo-icon"><i class="ri-book-open-line"></i></div>
-                    <h1>Library Portal</h1>
-                    <p>Computer Department</p>
+            <div class="login-container">
+                <div class="login-header">
+                    <div class="brand-badge">
+                        <i class="ri-book-open-line"></i> Library Portal
+                    </div>
+                    <h1>Welcome Back</h1>
+                    <p class="subtitle">Sign in to continue your journey</p>
                 </div>
-                
-                <div class="glass-card login-form">
-                    <h2>Student Login</h2>
-                    <p class="subtitle">Enter your details to access library services</p>
-                    
-                    <div class="input-group">
-                        <i class="ri-user-line icon"></i>
-                        <input type="text" id="enrollment-input" placeholder="Enrollment Number" autocomplete="off">
+
+                <div class="login-form-area">
+                    <div class="form-group">
+                        <label for="enrollment-input">Enrollment Number</label>
+                        <input type="text" id="enrollment-input" class="modern-input" placeholder="e.g. 2106048" autocomplete="off">
                     </div>
                     
-                    <button id="login-btn" class="btn-primary">
-                        <span>Login</span>
-                        <i class="ri-arrow-right-line"></i>
+                    <div class="form-group">
+                        <label for="password-input">Password</label>
+                        <input type="password" id="password-input" class="modern-input" placeholder="Enter your password" autocomplete="off">
+                    </div>
+                    
+                    <button id="login-btn" class="btn-modern">
+                        Sign In
                     </button>
                     
                     <p id="login-error" class="error-msg"></p>
+                    
+                    <div class="login-footer">
+                        <p>Having trouble? <a href="#">Contact Librarian</a></p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -120,9 +127,6 @@
                 </div>
 
             </div>
-
-            <!-- Bottom Nav (Optional, mostly using Top Tabs here but Bottom is better for mobile) -->
-            <!-- We will stick to the single page scrolling layout with top tabs for simplicity -->
         </div>
     </div>
 
