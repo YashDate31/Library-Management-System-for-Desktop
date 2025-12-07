@@ -266,7 +266,8 @@ class LibraryApp:
 
                 # Send email
                 print(f"Sending reminder to {enrollment_no} ({email})...")
-                if self.send_email(email, subject, body):
+                success, _ = self.send_email(email, subject, body)
+                if success:
                     sent_count += 1
             
             if sent_count > 0:
@@ -7416,13 +7417,25 @@ Note: This is an automated email. Please find the attached formal overdue letter
                   
     # ----------------------------------------------------------------------
     # Restored Email and Document Generation Methods
-    # ----------------------------------------------------------------------
+    def _log_email_sent(self, enrollment_no, name, email, book, success, message):
+        """Log email status to history file"""
+        try:
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            status = "SUCCESS" if success else "FAILED"
+            log_line = f"{timestamp} | {enrollment_no} | {name} | {status} | {message}\n"
+            
+            # Simple text logging
+            with open("email_log.txt", "a", encoding="utf-8") as f:
+                f.write(log_line)
+                
+            # Could also log to DB if table exists, but file is safer for now
+        except Exception as e:
+            print(f"Logging failed: {e}")
 
     def send_email(self, to_email, subject, body, attachment_path=None):
-        """Send an email with optional attachment using configured credentials"""
+        """Send an email with optional attachment. Returns (success, message)."""
         if not self.email_settings.get('email_address') or not self.email_settings.get('email_password'):
-            print("Email credentials not configured")
-            return False
+            return False, "Email credentials not configured"
 
         try:
             msg = MIMEMultipart()
@@ -7442,13 +7455,13 @@ Note: This is an automated email. Please find the attached formal overdue letter
             server.login(self.email_settings['email_address'], self.email_settings['email_password'])
             server.send_message(msg)
             server.quit()
-            return True
+            return True, "Email sent successfully"
         except Exception as e:
             print(f"Failed to send email: {e}")
-            return False
+            return False, f"Error: {str(e)}"
 
     def send_email_with_attachment(self, to_email, subject, body, attachment_path):
-        """Wrapper for sending email with attachment (compatibility measure)"""
+        """Wrapper ensuring tuple return (compatibility)"""
         return self.send_email(to_email, subject, body, attachment_path)
 
     def generate_overdue_notice_word(self, student_name, book_title, fine_amount, due_date):
