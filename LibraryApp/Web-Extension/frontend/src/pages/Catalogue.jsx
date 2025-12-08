@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Search, Filter, BookOpen, Bell } from 'lucide-react';
 import RequestModal from '../components/RequestModal';
 
 export default function Catalogue() {
+  const navigate = useNavigate();
   const [books, setBooks] = useState([]);
   const [categories, setCategories] = useState([]);
   const [search, setSearch] = useState('');
@@ -90,7 +92,8 @@ export default function Catalogue() {
             return (
               <div 
                 key={book.book_id} 
-                className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-2 transition-all duration-300 group flex flex-col h-full"
+                onClick={() => navigate(`/books/${book.book_id}`)}
+                className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-2 transition-all duration-300 group flex flex-col h-full cursor-pointer"
               >
                 <div className="h-40 bg-slate-50 rounded-xl mb-4 flex items-center justify-center text-slate-300 group-hover:text-primary transition-colors relative overflow-hidden">
                    <div className="absolute inset-0 bg-gradient-to-tr from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition duration-500"></div>
@@ -116,7 +119,10 @@ export default function Catalogue() {
                   
                   {!isAvailable && (
                     <button 
-                      onClick={() => handleNotifyRequest(book)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleNotifyRequest(book);
+                      }}
                       className="text-primary hover:bg-primary/10 p-1.5 rounded-lg transition"
                       title="Notify when available"
                     >

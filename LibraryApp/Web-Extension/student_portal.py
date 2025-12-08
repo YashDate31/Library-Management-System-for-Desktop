@@ -242,6 +242,33 @@ def api_dashboard():
 
 # --- Write Endpoints (Sandbox Only) ---
 
+@app.route('/api/books/<int:book_id>', methods=['GET'])
+def get_book_details(book_id):
+    """Fetch details for a specific book."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Fetch book details
+        cursor.execute("SELECT * FROM books WHERE book_id = ?", (book_id,))
+        book = cursor.fetchone()
+        
+        if not book:
+            conn.close()
+            return jsonify({'error': 'Book not found'}), 404
+            
+        book_data = dict(book)
+        
+        # Calculate availability
+        cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE book_id = ? AND status = 'borrowed'", (book_id,))
+        borrowed_count = cursor.fetchone()[0]
+        book_data['available_copies'] = book_data['total_copies'] - borrowed_count
+        
+        conn.close()
+        return jsonify(book_data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/request', methods=['POST'])
 def api_submit_request():
     if 'student_id' not in session:

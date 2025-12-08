@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Catalogue from './pages/Catalogue';
+import BookDetails from './pages/BookDetails';
 import Layout from './components/Layout';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
@@ -36,6 +37,7 @@ function App() {
         <Route element={<Layout user={user} setUser={setUser} />}>
           <Route path="/" element={user ? <Dashboard user={user} /> : <Navigate to="/login" />} />
           <Route path="/books" element={user ? <Catalogue /> : <Navigate to="/login" />} />
+          <Route path="/books/:bookId" element={user ? <BookDetails /> : <Navigate to="/login" />} />
         </Route>
       </Routes>
     </BrowserRouter>
