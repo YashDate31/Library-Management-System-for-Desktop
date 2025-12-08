@@ -194,8 +194,8 @@ def api_dashboard():
 
     # 4. Analytics & Gamification (Computed on Read-Only Data)
     stats = {
-        'total_books': len(raw_history) + len(raw_borrows),
-        'total_fines': sum([10 for x in raw_borrows if x.get('status') == 'overdue']), # Mock calculation
+        'total_books': len(raw_history) + len(borrows),
+        'total_fines': sum([10 for x in borrows if x.get('status') == 'overdue']), # Estimated current fines
         'fav_category': 'General',
         'categories': {}
     }
