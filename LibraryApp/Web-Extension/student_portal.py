@@ -302,6 +302,12 @@ def api_books():
 def serve(path):
     if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
         return send_from_directory(app.static_folder, path)
+    
+    # If path is an API call that wasn't matched, return 404
+    if path.startswith('api/'):
+        return jsonify({'error': 'Not Found'}), 404
+        
+    # Otherwise, for SPA routing, return index.html
     return send_from_directory(app.static_folder, 'index.html')
 
 if __name__ == '__main__':

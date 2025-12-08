@@ -88,10 +88,13 @@ export default function Catalogue() {
           {books.map(book => {
             const isAvailable = book.available_copies > 0;
             return (
-              <div key={book.book_id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-lg hover:-translate-y-1 transition group flex flex-col h-full">
+              <div 
+                key={book.book_id} 
+                className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-2 transition-all duration-300 group flex flex-col h-full"
+              >
                 <div className="h-40 bg-slate-50 rounded-xl mb-4 flex items-center justify-center text-slate-300 group-hover:text-primary transition-colors relative overflow-hidden">
-                   <div className="absolute inset-0 bg-gradient-to-tr from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition duration-500"></div>
-                   <BookOpen size={48} className="relative z-10" />
+                   <div className="absolute inset-0 bg-gradient-to-tr from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                   <BookOpen size={48} className="relative z-10 transform group-hover:scale-110 transition-transform duration-300" />
                 </div>
                 
                 <div className="mb-4 flex-1">

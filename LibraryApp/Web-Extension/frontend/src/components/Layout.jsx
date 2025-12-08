@@ -36,9 +36,14 @@ export default function Layout({ user, setUser }) {
         </div>
       </nav>
 
-      <main className="flex-1 container mx-auto p-6 max-w-6xl animate-fade-in">
+      <main className="flex-1 container mx-auto p-6 max-w-6xl animate-fade-in mb-8">
         <Outlet />
       </main>
+
+      {/* Footer */}
+      <footer className="w-full text-center py-6 text-slate-400 text-sm mt-auto border-t border-slate-100 bg-white/50 backdrop-blur-sm">
+        <p>&copy; {new Date().getFullYear()} LibraryConnect. Government Polytechnic Awasari (Kh).</p>
+      </footer>
     </div>
   );
 }
