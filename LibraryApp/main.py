@@ -23,6 +23,11 @@ from email.mime.application import MIMEApplication
 import json
 import threading
 import time
+import socket
+import qrcode
+from PIL import ImageTk, Image
+from student_portal import app as flask_app
+from waitress import serve
 
 # Optional: Word export support
 try:
@@ -116,6 +121,10 @@ class LibraryApp:
         # Start reminder email scheduler if enabled
         if self.email_settings.get('reminder_enabled', False):
             self.schedule_reminder_emails()
+
+        # Student Portal Thread
+        self.portal_thread = None
+        self.portal_port = 5000
 
         # Launch login interface
         self.create_login_interface()
@@ -8027,6 +8036,84 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 
         except Exception as e:
             messagebox.showerror("Export Error", f"Failed to export analysis: {str(e)}")
+
+    def start_student_portal(self):
+        """Start the Flask server in a daemon thread"""
+        if self.portal_thread and self.portal_thread.is_alive():
+            return
+
+        def run_server():
+            # Use waitress for production-ready stable server
+            # Listen on all interfaces (0.0.0.0) so other devices can access
+            print(f"Starting Student Portal on port {self.portal_port}...")
+            serve(flask_app, host='0.0.0.0', port=self.portal_port, threads=4)
+
+        self.portal_thread = threading.Thread(target=run_server, daemon=True)
+        self.portal_thread.start()
+
+    def show_qr_code(self):
+        """Generate and show QR code for the student portal"""
+        # Ensure server is running
+        self.start_student_portal()
+        
+        # Get local IP address
+        try:
+            # Connect to an external server (doesn't send data) to get the preferred local IP
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+        except:
+            local_ip = "127.0.0.1"
+            
+        url = f"http://{local_ip}:{self.portal_port}"
+        
+        # Create dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("📱 Student Mobile Portal")
+        dialog.geometry("500x650")
+        dialog.configure(bg='white')
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center dialog
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 250
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 325
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Header
+        tk.Label(dialog, text="📱 Student Portal", font=('Segoe UI', 22, 'bold'),
+                 bg='white', fg=self.colors['accent']).pack(pady=(40, 5))
+        
+        tk.Label(dialog, text="Scan with mobile phone to access", font=('Segoe UI', 12),
+                 bg='white', fg='#666').pack(pady=(0, 30))
+        
+        # QR Code
+        qr = qrcode.QRCode(box_size=10, border=2)
+        qr.add_data(url)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Convert to PhotoImage
+        img_tk = ImageTk.PhotoImage(img)
+        qr_label = tk.Label(dialog, image=img_tk, bg='white')
+        qr_label.image = img_tk  # Keep reference
+        qr_label.pack(pady=10)
+        
+        # URL Text
+        url_frame = tk.Frame(dialog, bg='#f8f9fa', padx=20, pady=10, relief='solid', bd=1)
+        url_frame.pack(pady=20, fill=tk.X, padx=50)
+        
+        tk.Label(url_frame, text="Local Network URL:", font=('Segoe UI', 10, 'bold'),
+                 bg='#f8f9fa', fg='#666').pack()
+        
+        tk.Label(url_frame, text=url, font=('Segoe UI', 14, 'bold'),
+                 bg='#f8f9fa', fg=self.colors['secondary']).pack(pady=(5, 0))
+        
+        # Instructions
+        tk.Label(dialog, text="Note: Both devices must be on the same Wi-Fi network.",
+                 font=('Segoe UI', 10, 'italic'), bg='white', fg='#999').pack(side=tk.BOTTOM, pady=20)
+
 
 # Main application entry point
 if __name__ == "__main__":

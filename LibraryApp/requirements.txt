@@ -6,3 +6,6 @@ tkcalendar
 matplotlib
 xlsxwriter
 pillow
+Flask
+qrcode
+waitress

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="login-container">
+    <div class="login-card animate-fade-in">
+        <div class="logo-area">
+            📚
+        </div>
+        <h2 style="margin-bottom: 0.5rem;">Welcome Back</h2>
+        <p style="color: var(--text-muted); margin-bottom: 2rem;">Access your library profile</p>
+
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="flash-message">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <form action="{{ url_for('login') }}" method="POST">
+            <div class="input-group">
+                <label for="enrollment_no">Enrollment Number</label>
+                <input type="text" id="enrollment_no" name="enrollment_no" class="input-field" placeholder="e.g. 210101" required autofocus>
+            </div>
+            <button type="submit" class="btn-primary">Access Dashboard</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
