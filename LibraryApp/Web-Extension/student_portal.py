@@ -8,7 +8,9 @@ from datetime import datetime
 def get_db_path():
     if hasattr(sys, '_MEIPASS'):
         return os.path.join(os.path.dirname(sys.executable), 'library.db')
-    return os.path.join(os.path.dirname(__file__), 'library.db')
+    # Database is in the parent directory
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_dir, '..', 'library.db')
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_key_change_this_for_prod'  # Simple key for local session

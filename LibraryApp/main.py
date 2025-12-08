@@ -26,6 +26,9 @@ import time
 import socket
 import qrcode
 from PIL import ImageTk, Image
+
+# Add Web-Extension directory to path to allow import
+sys.path.append(os.path.join(os.path.dirname(__file__), 'Web-Extension'))
 from student_portal import app as flask_app
 from waitress import serve
 
