@@ -1155,7 +1155,7 @@ Government Polytechnic Awasari (Kh)"""
             font=('Segoe UI', 16, 'bold'),  # Decreased from 22 to 16
             bg=self.colors['secondary'],
             fg='#FFD700',  # Gold color for emphasis
-            anchor='w'
+            cursor='hand2'
         )
         self.academic_year_label.grid(row=1, column=0, sticky='w', padx=(0, 0), pady=(5, 0))
 
@@ -1163,9 +1163,25 @@ Government Polytechnic Awasari (Kh)"""
         user_frame = tk.Frame(logo_title_frame, bg=self.colors['secondary'])
         user_frame.grid(row=0, column=2, sticky='e', padx=(25, 0))
         
+        # STUDENT PORTAL BUTTON (NEW)
+        portal_btn = tk.Button(
+            user_frame,
+            text="📱 Student Portal",
+            font=('Segoe UI', 10, 'bold'),
+            bg='white',
+            fg=self.colors['secondary'],
+            padx=15,
+            pady=5,
+            cursor='hand2',
+            relief='flat',
+            command=self.show_qr_code
+        )
+        portal_btn.pack(side=tk.RIGHT, padx=(10, 0))
+        
         # Top-right row: Developer label + inline Promote link
         user_top_row = tk.Frame(user_frame, bg=self.colors['secondary'])
-        user_top_row.pack(anchor='e', pady=(18, 2))
+        user_top_row.pack(side=tk.RIGHT, anchor='e', pady=(18, 2))
+        
         user_label = tk.Label(
             user_top_row,
             text="👨‍💻 Developer",
