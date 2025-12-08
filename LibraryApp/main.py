@@ -7234,6 +7234,26 @@ Note: This is an automated email. Please find the attached formal overdue letter
             fig.patch.set_facecolor('white')
 
             # Outer ring
+            wedges1, _ = ax.pie(outer_sizes, radius=1.0, labels=outer_labels, labeldistance=1.05,
+                                colors=outer_colors, startangle=90, wedgeprops=dict(width=0.3, edgecolor='white'))
+
+            # Inner ring
+            def _autopct(pct, allvals=inner_sizes):
+                total = sum(allvals)
+                if total == 0:
+                    return ""
+                try:
+                    # Handle cases where pct might be NaN
+                    if pct != pct: # Check for NaN
+                        return ""
+                    val = int(round(pct*total/100.0))
+                    return f"{pct:.1f}%\n({val})"
+                except:
+                    return ""
+            wedges2, _, _ = ax.pie(inner_sizes, radius=1.0-0.3, labels=None,
+                                   colors=inner_colors, startangle=90,
+                                   autopct=_autopct,
+                                   wedgeprops=dict(width=0.3, edgecolor='white'))
             # Center text
             ax.text(0, 0, f"Total\n{int(total_copies or 0)}", ha='center', va='center', fontsize=11, fontweight='bold')
             ax.set_title('Inventory & Overdue Breakdown', fontsize=12, fontweight='bold')
