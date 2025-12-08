@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Search, Filter, BookOpen } from 'lucide-react';
+import { Search, Filter, BookOpen, Bell } from 'lucide-react';
+import RequestModal from '../components/RequestModal';
 
 export default function Catalogue() {
   const [books, setBooks] = useState([]);
@@ -8,6 +9,10 @@ export default function Catalogue() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(true);
+
+  // Modal State
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedBook, setSelectedBook] = useState(null);
 
   useEffect(() => {
     fetchBooks();
@@ -27,12 +32,26 @@ export default function Catalogue() {
     }
   };
 
+  const handleNotifyRequest = (book) => {
+    setSelectedBook(book);
+    setModalOpen(true);
+  };
+
   return (
     <div>
+      <RequestModal 
+        isOpen={modalOpen} 
+        onClose={() => setModalOpen(false)} 
+        title={`Request Notification: ${selectedBook?.title}`}
+        type="availability_notification"
+        defaultDetails={`Please notify me when '${selectedBook?.title}' by ${selectedBook?.author} becomes available.`}
+      />
+
+      {/* Header & Search */}
       <div className="glass p-6 rounded-2xl mb-8 flex flex-col md:flex-row gap-4 items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold">Library Catalogue</h2>
-          <p className="text-slate-500">Browse and search available resources</p>
+          <h2 className="text-2xl font-bold text-slate-800">Library Catalogue</h2>
+          <p className="text-slate-500">Browse {books.length} available resources</p>
         </div>
         
         <div className="flex gap-3 w-full md:w-auto">
@@ -50,7 +69,7 @@ export default function Catalogue() {
           <div className="relative">
             <Filter className="absolute left-3 top-3 text-slate-400" size={20} />
             <select 
-              className="pl-10 pr-8 py-2.5 rounded-xl border border-slate-200 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none bg-white appearance-none"
+              className="pl-10 pr-8 py-2.5 rounded-xl border border-slate-200 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none bg-white appearance-none cursor-pointer"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
             >
@@ -61,35 +80,58 @@ export default function Catalogue() {
         </div>
       </div>
 
+      {/* Grid */}
       {loading ? (
-        <div className="text-center py-20">Loading books...</div>
+        <div className="text-center py-20 text-slate-400 animate-pulse">Loading catalogue...</div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {books.map(book => (
-            <div key={book.book_id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-lg hover:-translate-y-1 transition group">
-              <div className="h-40 bg-slate-50 rounded-xl mb-4 flex items-center justify-center text-slate-300 group-hover:text-primary transition-colors">
-                <BookOpen size={48} />
+          {books.map(book => {
+            const isAvailable = book.available_copies > 0;
+            return (
+              <div key={book.book_id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-lg hover:-translate-y-1 transition group flex flex-col h-full">
+                <div className="h-40 bg-slate-50 rounded-xl mb-4 flex items-center justify-center text-slate-300 group-hover:text-primary transition-colors relative overflow-hidden">
+                   <div className="absolute inset-0 bg-gradient-to-tr from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition duration-500"></div>
+                   <BookOpen size={48} className="relative z-10" />
+                </div>
+                
+                <div className="mb-4 flex-1">
+                  <span className="text-xs font-bold text-primary bg-primary/10 px-2 py-1 rounded-md">{book.category || 'General'}</span>
+                  <h3 className="font-bold text-slate-800 mt-2 line-clamp-2">{book.title}</h3>
+                  <p className="text-sm text-slate-500 line-clamp-1">by {book.author}</p>
+                </div>
+                
+                <div className="flex justify-between items-center text-sm pt-4 border-t border-slate-50 mt-auto">
+                  <span className={`font-semibold px-2 py-1 rounded-lg text-xs flex items-center gap-1 ${
+                    isAvailable ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'
+                  }`}>
+                    {isAvailable ? (
+                      <>Available ({book.available_copies})</>
+                    ) : (
+                      <>Out of Stock</>
+                    )}
+                  </span>
+                  
+                  {!isAvailable && (
+                    <button 
+                      onClick={() => handleNotifyRequest(book)}
+                      className="text-primary hover:bg-primary/10 p-1.5 rounded-lg transition"
+                      title="Notify when available"
+                    >
+                      <Bell size={16} />
+                    </button>
+                  )}
+                </div>
               </div>
-              
-              <div className="mb-4">
-                <span className="text-xs font-bold text-primary bg-primary/10 px-2 py-1 rounded-md">{book.category}</span>
-                <h3 className="font-bold text-slate-800 mt-2 line-clamp-1">{book.title}</h3>
-                <p className="text-sm text-slate-500 line-clamp-1">by {book.author}</p>
-              </div>
-              
-              <div className="flex justify-between items-center text-sm pt-4 border-t border-slate-50">
-                <span className="text-slate-400">ID: {book.book_id}</span>
-                <span className={`font-semibold px-2 py-0.5 rounded-full text-xs ${book.total_copies > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-                  {book.total_copies > 0 ? 'Available' : 'Out of Stock'}
-                </span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
       
       {!loading && books.length === 0 && (
-        <div className="text-center py-20 text-slate-400">No books found matching your criteria.</div>
+        <div className="text-center py-20 text-slate-400">
+          <BookOpen size={48} className="mx-auto mb-4 opacity-20" />
+          <p>No books found matching your criteria.</p>
+        </div>
       )}
     </div>
   );

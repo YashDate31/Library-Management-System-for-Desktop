@@ -137,7 +137,7 @@ def api_dashboard():
     
     # History
     cursor.execute("""
-        SELECT b.title, b.author, br.borrow_date, br.return_date, br.status
+        SELECT b.title, b.author, b.category, br.borrow_date, br.return_date, br.status
         FROM borrow_records br
         JOIN books b ON br.book_id = b.book_id
         WHERE br.enrollment_no = ? AND br.status = 'returned'
@@ -192,6 +192,36 @@ def api_dashboard():
     requests = [dict(row) for row in cursor_p.fetchall()]
     conn_portal.close()
 
+    # 4. Analytics & Gamification (Computed on Read-Only Data)
+    stats = {
+        'total_books': len(raw_history) + len(raw_borrows),
+        'total_fines': sum([10 for x in raw_borrows if x.get('status') == 'overdue']), # Mock calculation
+        'fav_category': 'General',
+        'categories': {}
+    }
+    
+    # Category Dist
+    cat_count = {}
+    for book in raw_history:
+        cat = book['category'] or 'Uncategorized'
+        cat_count[cat] = cat_count.get(cat, 0) + 1
+    
+    stats['categories'] = cat_count
+    if cat_count:
+        stats['fav_category'] = max(cat_count, key=cat_count.get)
+        
+    # Badges Logic
+    badges = []
+    if stats['total_books'] >= 5:
+        badges.append({'id': 'bookworm', 'label': 'Bookworm', 'icon': '🐛', 'color': 'bg-emerald-100 text-emerald-700'})
+    if stats['total_books'] >= 10:
+        badges.append({'id': 'scholar', 'label': 'Scholar', 'icon': '🎓', 'color': 'bg-indigo-100 text-indigo-700'})
+    
+    # Check for overdue history
+    has_overdues = any(x['status'] == 'overdue' for x in raw_history) # raw_history needs status mapping
+    if not has_overdues and stats['total_books'] > 2:
+        badges.append({'id': 'clean_sheet', 'label': 'Clean Sheet', 'icon': '🛡️', 'color': 'bg-blue-100 text-blue-700'})
+
     # 4. Library Notices (Mock/Static for now)
     notices = [
         {"id": 1, "title": "Repo Update", "date": "2025-12-09", "content": "System maintenance scheduled for Sunday."},
@@ -203,7 +233,11 @@ def api_dashboard():
         'history': [dict(row) for row in raw_history],
         'notices': notices,
         'notifications': notifications,
-        'recent_requests': requests
+        'recent_requests': requests,
+        'analytics': {
+            'stats': stats,
+            'badges': badges
+        }
     })
 
 # --- Write Endpoints (Sandbox Only) ---

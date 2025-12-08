@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Book, Clock, AlertCircle, CheckCircle, Bell, FileText } from 'lucide-react';
+import RequestModal from '../components/RequestModal';
 
 export default function Dashboard({ user }) {
   const [data, setData] = useState({ 
@@ -11,10 +12,11 @@ export default function Dashboard({ user }) {
     recent_requests: []
   });
   const [loading, setLoading] = useState(true);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [profileModalOpen]); // Refresh data when modal closes to show new request status
 
   const fetchData = async () => {
     try {
@@ -32,6 +34,14 @@ export default function Dashboard({ user }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-12 gap-6 pb-10">
       
+      <RequestModal 
+        isOpen={profileModalOpen} 
+        onClose={() => setProfileModalOpen(false)}
+        title="Request Profile Update"
+        type="profile_update"
+        defaultDetails="Please update my phone number/email to: "
+      />
+
       {/* Notifications Banner */}
       {data.notifications.length > 0 && (
         <div className="md:col-span-12 space-y-2">
@@ -69,7 +79,10 @@ export default function Dashboard({ user }) {
            <ProfileRow label="Enrollment" value={user.enrollment_no} />
            <ProfileRow label="Department" value={user.department} />
         </div>
-        <button className="w-full mt-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50 transition text-sm">
+        <button 
+          onClick={() => setProfileModalOpen(true)}
+          className="w-full mt-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50 transition text-sm"
+        >
           Request Profile Update
         </button>
       </div>
@@ -95,6 +108,35 @@ export default function Dashboard({ user }) {
 
       {/* Side Panel: Notices & Requests */}
       <div className="md:col-span-4 space-y-6">
+        
+        {/* Achievements / Badges */}
+        <div className="glass rounded-3xl p-6 relative overflow-hidden">
+           <div className="absolute top-0 right-0 p-6 opacity-5 rotate-12">
+             <Book size={100} />
+           </div>
+           <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2 relative z-10">
+             <CheckCircle size={18} className="text-emerald-500" /> Achievements
+           </h3>
+           
+           {data.analytics?.badges?.length === 0 ? (
+             <p className="text-sm text-slate-400">Read more books to unlock badges!</p>
+           ) : (
+             <div className="flex flex-wrap gap-2 relative z-10">
+               {data.analytics?.badges?.map((badge) => (
+                 <div key={badge.id} className={`${badge.color} px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-sm`}>
+                   <span>{badge.icon}</span> {badge.label}
+                 </div>
+               ))}
+             </div>
+           )}
+           
+           {/* Mini Stat */}
+           <div className="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center relative z-10">
+             <span className="text-xs text-slate-400 font-medium">Favorite Category</span>
+             <span className="text-sm font-bold text-slate-700">{data.analytics?.stats?.fav_category || '-'}</span>
+           </div>
+        </div>
+
         {/* Notices */}
         <div className="glass rounded-3xl p-6">
           <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
@@ -163,6 +205,11 @@ function LoanCard({ book }) {
     overdue: 'bg-red-50 text-red-600 border-red-100'
   };
 
+  const handleDownloadLetter = () => {
+    // Mock Letter View - would technically open a printable component
+    alert(`Generating Overdue Letter for ${book.title}...\n\n(Feature: Opens print dialogue for official letter)`);
+  };
+
   return (
     <div className="flex items-center justify-between p-4 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition">
       <div className="flex items-center gap-4">
@@ -174,9 +221,20 @@ function LoanCard({ book }) {
           <p className="text-sm text-slate-500">{book.author}</p>
         </div>
       </div>
-      <div className={`text-right px-4 py-2 rounded-xl border ${statusColors[book.status] || statusColors.safe}`}>
-        <p className="text-xs font-bold uppercase tracking-wider">{book.status}</p>
-        <p className="text-sm font-bold">{book.days_msg}</p>
+      <div className="text-right flex flex-col items-end gap-1">
+        <div className={`px-4 py-1 rounded-xl border w-fit ${statusColors[book.status] || statusColors.safe}`}>
+          <p className="text-xs font-bold uppercase tracking-wider">{book.status}</p>
+        </div>
+        <p className="text-sm font-bold text-slate-700">{book.days_msg}</p>
+        
+        {book.status === 'overdue' && (
+          <button 
+            onClick={handleDownloadLetter}
+            className="text-xs text-red-500 underline hover:text-red-700 mt-1 font-medium"
+          >
+            Download Letter
+          </button>
+        )}
       </div>
     </div>
   );
