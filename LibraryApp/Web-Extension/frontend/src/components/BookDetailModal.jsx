@@ -204,7 +204,30 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
                          </span>
                          <div className="flex gap-2">
                             <button onClick={toggleWishlist}><Heart size={20} className={isWishlisted ? 'text-pink-500 fill-current' : 'text-slate-400'} /></button>
-                            <button><Share2 size={20} className="text-slate-400" /></button>
+                            <div className="relative">
+                               <button 
+                                 onClick={() => setShareOpen(!shareOpen)}
+                                 className={`${shareOpen ? 'text-blue-600' : 'text-slate-400'}`}
+                               >
+                                  <Share2 size={20} />
+                               </button>
+
+                               {shareOpen && (
+                                 <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-fade-in-up origin-top-right">
+                                    <div className="p-2 space-y-1">
+                                       <button onClick={() => handleShare('copy')} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 rounded-lg transition-colors">
+                                          <Copy size={16} className="text-slate-400" /> Copy Link
+                                       </button>
+                                       <button onClick={() => handleShare('whatsapp')} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-green-50 hover:text-green-700 rounded-lg transition-colors">
+                                          <MessageCircle size={16} className="text-green-500" /> WhatsApp
+                                       </button>
+                                       <button onClick={() => handleShare('email')} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors">
+                                          <Mail size={16} className="text-blue-500" /> Email
+                                       </button>
+                                    </div>
+                                 </div>
+                               )}
+                            </div>
                          </div>
                       </div>
                       <h2 className="text-2xl font-bold text-slate-900 mb-1">{book.title}</h2>
