@@ -44,18 +44,18 @@ export default function RequestModal({ isOpen, onClose, type, defaultDetails = '
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
+          className="bg-surface border border-border rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transition-colors"
         >
           {/* Header */}
-          <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-            <h3 className="font-bold text-slate-800">{success ? 'Request Sent!' : title}</h3>
-            <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-full transition">
-              <X size={20} className="text-slate-500" />
+          <div className="p-4 border-b border-border flex justify-between items-center bg-background/50">
+            <h3 className="font-bold text-text-primary">{success ? 'Request Sent!' : title}</h3>
+            <button onClick={onClose} className="p-1 hover:bg-background rounded-full transition text-text-secondary hover:text-text-primary">
+              <X size={20} />
             </button>
           </div>
 
@@ -63,19 +63,19 @@ export default function RequestModal({ isOpen, onClose, type, defaultDetails = '
           <div className="p-6">
             {success ? (
               <div className="text-center py-6">
-                <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <div className="w-16 h-16 bg-success/20 text-success rounded-full flex items-center justify-center mx-auto mb-4">
                   <Send size={32} />
                 </div>
-                <p className="text-slate-600">Your request has been submitted successfully to the librarian.</p>
+                <p className="text-text-secondary">Your request has been submitted successfully to the librarian.</p>
               </div>
             ) : (
               <form onSubmit={handleSubmit}>
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                  <label className="block text-sm font-medium text-text-secondary mb-2">
                     Additional Details
                   </label>
                   <textarea
-                    className="w-full p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none min-h-[120px] resize-none text-sm"
+                    className="w-full p-3 rounded-xl bg-background border border-border text-text-primary focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none min-h-[120px] resize-none text-sm placeholder:text-text-secondary transition-colors"
                     placeholder="Describe your request..."
                     value={details}
                     onChange={(e) => setDetails(e.target.value)}
@@ -83,20 +83,20 @@ export default function RequestModal({ isOpen, onClose, type, defaultDetails = '
                   />
                 </div>
                 
-                {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+                {error && <p className="text-danger text-sm mb-4">{error}</p>}
 
                 <div className="flex justify-end gap-3">
                   <button 
                     type="button" 
                     onClick={onClose}
-                    className="px-4 py-2 text-slate-500 font-medium hover:bg-slate-50 rounded-lg transition"
+                    className="px-4 py-2 text-text-secondary font-medium hover:bg-background hover:text-text-primary rounded-lg transition"
                   >
                     Cancel
                   </button>
                   <button 
                     type="submit" 
                     disabled={loading}
-                    className="px-4 py-2 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark transition flex items-center gap-2 disabled:opacity-70"
+                    className="px-4 py-2 bg-primary text-white font-medium rounded-lg hover:bg-blue-600 transition flex items-center gap-2 disabled:opacity-70 shadow-lg shadow-primary/25"
                   >
                     {loading && <Loader2 size={16} className="animate-spin" />}
                     Submit Request

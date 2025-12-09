@@ -5,16 +5,53 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* Light Mode Defaults */
+    --color-background: 248 250 252; /* Slate 50 */
+    --color-surface: 255 255 255;    /* White */
+    --color-primary: 59 130 246;     /* Blue 500 */
+    --color-secondary: 99 102 241;   /* Indigo 500 */
+    --color-success: 34 197 94;      /* Green 500 */
+    --color-danger: 239 68 68;       /* Red 500 */
+    --color-warning: 234 179 8;      /* Yellow 500 */
+    --color-text-primary: 15 23 42;  /* Slate 900 */
+    --color-text-secondary: 100 116 139; /* Slate 500 */
+    --color-border: 226 232 240;     /* Slate 200 */
+  }
+
+  .dark {
+    /* Dark Mode Overrides (Athenaeum) */
+    --color-background: 15 23 42;    /* Slate 900 */
+    --color-surface: 30 41 59;       /* Slate 800 */
+    --color-primary: 59 130 246;     /* Blue 500 */
+    --color-secondary: 99 102 241;   /* Indigo 500 */
+    --color-success: 34 197 94;      /* Green 500 */
+    --color-danger: 239 68 68;       /* Red 500 */
+    --color-warning: 234 179 8;      /* Yellow 500 */
+    --color-text-primary: 248 250 252; /* Slate 50 */
+    --color-text-secondary: 148 163 184; /* Slate 400 */
+    --color-border: 51 65 85;        /* Slate 700 */
+  }
+
   body {
-    @apply bg-slate-100 text-slate-900 font-sans;
-    background-image: 
-        radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
-        radial-gradient(at 100% 0%, rgba(14, 165, 233, 0.15) 0px, transparent 50%),
-        radial-gradient(at 100% 100%, rgba(244, 114, 182, 0.10) 0px, transparent 50%);
-    background-attachment: fixed;
+    @apply bg-background text-text-primary antialiased transition-colors duration-300;
   }
 }
 
-.glass {
-  @apply bg-white/80 backdrop-blur-md border border-white/50 shadow-sm;
+@layer components {
+  .card {
+    @apply bg-surface rounded-xl border border-border shadow-lg p-6 transition-colors duration-300;
+  }
+  
+  .glass {
+    @apply bg-surface/90 backdrop-blur-md border border-border;
+  }
+
+  .btn-primary {
+    @apply bg-primary hover:bg-blue-600 text-white font-medium py-2.5 px-5 rounded-lg transition-colors duration-200 shadow-lg shadow-primary/20;
+  }
+
+  .input-field {
+    @apply w-full bg-background border border-border rounded-lg px-4 py-2.5 text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-all placeholder:text-text-secondary;
+  }
 }

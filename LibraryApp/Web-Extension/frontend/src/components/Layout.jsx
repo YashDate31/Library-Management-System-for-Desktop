@@ -1,49 +1,308 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LogOut, Library } from 'lucide-react';
+import { LogOut, LayoutDashboard, BookOpen, Clock, FileText, Bell, Search, User, Settings, ScanLine, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import axios from 'axios';
+import { useState, useEffect, useRef } from 'react';
 
 export default function Layout({ user, setUser }) {
   const location = useLocation();
+  const [sidebarOpen, setSidebarOpen] = useState(false); // Mobile only
+  const [isExpanded, setIsExpanded] = useState(false); // Desktop hover state
+  
+  // Three modes: 'expanded', 'collapsed', 'hover'
+  const [sidebarMode, setSidebarMode] = useState('hover');
+  const [menuOpen, setMenuOpen] = useState(false);
+  
+  // Refs for debouncing
+  const enterTimeoutRef = useRef(null);
+  const leaveTimeoutRef = useRef(null);
+  const menuRef = useRef(null);
 
   const handleLogout = async () => {
     await axios.post('/api/logout');
     setUser(null);
   };
 
+  const closeSidebar = () => setSidebarOpen(false);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setMenuOpen(false);
+      }
+    };
+
+    if (menuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [menuOpen]);
+
+  // Desktop: Handle pointer enter with debounce
+  const handlePointerEnter = () => {
+    // Clear any pending leave timeout
+    if (leaveTimeoutRef.current) {
+      clearTimeout(leaveTimeoutRef.current);
+      leaveTimeoutRef.current = null;
+    }
+
+    if (sidebarMode === 'hover') {
+      // Debounce expand by 100ms to prevent flicker
+      enterTimeoutRef.current = setTimeout(() => {
+        setIsExpanded(true);
+      }, 100);
+    }
+  };
+
+  // Desktop: Handle pointer leave with debounce
+  const handlePointerLeave = () => {
+    // Clear any pending enter timeout
+    if (enterTimeoutRef.current) {
+      clearTimeout(enterTimeoutRef.current);
+      enterTimeoutRef.current = null;
+    }
+
+    if (sidebarMode === 'hover') {
+      // Debounce collapse by 500ms for natural feel
+      leaveTimeoutRef.current = setTimeout(() => {
+        setIsExpanded(false);
+      }, 500);
+    }
+  };
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (enterTimeoutRef.current) clearTimeout(enterTimeoutRef.current);
+      if (leaveTimeoutRef.current) clearTimeout(leaveTimeoutRef.current);
+    };
+  }, []);
+
+  const handleSidebarModeChange = (mode) => {
+    setSidebarMode(mode);
+    setMenuOpen(false);
+    
+    if (mode === 'expanded') {
+      setIsExpanded(true);
+    } else if (mode === 'collapsed') {
+      setIsExpanded(false);
+    } else {
+      // 'hover' mode
+      setIsExpanded(false);
+    }
+  };
+
+  // Determine if sidebar should be shown as expanded
+  const shouldShowExpanded = sidebarMode === 'expanded' || (sidebarMode === 'hover' && isExpanded);
+
+  const NavItem = ({ to, icon: Icon, label }) => {
+    const isActive = location.pathname === to;
+    const showText = shouldShowExpanded;
+    
+    return (
+      <Link 
+        to={to} 
+        onClick={closeSidebar}
+        className={`flex items-center gap-3 py-3 rounded-xl transition-all duration-200 group relative ${
+          showText ? 'px-4' : 'px-4 md:justify-center'
+        } ${
+          isActive 
+            ? 'bg-blue-50 text-blue-600 font-semibold' 
+            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+        }`}
+      >
+        <Icon size={20} className={`shrink-0 ${isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-blue-500 transition-colors'}`} />
+        <span className={`whitespace-nowrap transition-opacity duration-200 ${showText ? 'opacity-100 md:inline' : 'opacity-0 md:hidden md:w-0'} inline`}>
+          {label}
+        </span>
+      </Link>
+    );
+  };
+
+  const menuOptions = [
+    { id: 'expanded', label: 'Expanded' },
+    { id: 'collapsed', label: 'Collapsed' },
+    { id: 'hover', label: 'Expand on hover' }
+  ];
+
   return (
-    <div className="min-h-screen flex flex-col">
-      <nav className="glass sticky top-0 z-50 px-8 py-4 flex justify-between items-center">
-        <div className="flex items-center gap-2">
-           <div className="p-2 bg-gradient-to-br from-primary to-accent rounded-lg text-white">
-             <Library size={24} />
-           </div>
-           <span className="text-xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-             LibraryConnect
-           </span>
+    <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
+      
+      {/* Mobile backdrop overlay */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={closeSidebar}
+        />
+      )}
+
+      {/* Sidebar - Always fixed position */}
+      <aside 
+        onPointerEnter={handlePointerEnter}
+        onPointerLeave={handlePointerLeave}
+        className={`
+          fixed inset-y-0 left-0 z-50
+          bg-white border-r border-slate-100 flex flex-col
+          transition-all duration-300 ease-in-out
+          shadow-xl md:shadow-lg
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+          ${shouldShowExpanded ? 'w-72' : 'md:w-20 w-72'}
+        `}
+      >
+        {/* Mobile close button */}
+        <button 
+          onClick={closeSidebar}
+          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 md:hidden"
+        >
+          <X size={24} />
+        </button>
+
+        {/* Main sidebar content */}
+        <div className="flex-1 flex flex-col p-6">
+          {/* Brand */}
+          <div className="flex items-center gap-3 mb-12 px-2">
+             <img 
+               src="/logo.png" 
+               alt="Athenaeum Logo" 
+               className="w-10 h-10 shrink-0 object-contain"
+             />
+             <div className={`transition-opacity duration-200 ${shouldShowExpanded ? 'opacity-100 md:block' : 'opacity-0 md:hidden'} block`}>
+               <h1 className="text-xl font-bold tracking-tight text-slate-900 whitespace-nowrap">Athenaeum</h1>
+               <p className="text-xs text-slate-400 font-medium whitespace-nowrap">Library Portal</p>
+             </div>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 space-y-1">
+            <NavItem to="/" icon={LayoutDashboard} label="Dashboard" />
+            <NavItem to="/books" icon={BookOpen} label="Book Catalogue" />
+            <NavItem to="/history" icon={Clock} label="History" />
+            <NavItem to="/services" icon={FileText} label="Requests" />
+          </nav>
+
+          {/* User / Sign Out */}
+          <div className="space-y-2">
+            <NavItem to="/settings" icon={Settings} label="Settings" />
+            
+            <button 
+              onClick={handleLogout} 
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-red-50 hover:text-red-600 transition-all ${
+                shouldShowExpanded ? '' : 'md:justify-center'
+              }`}
+            >
+              <LogOut size={20} className="shrink-0" />
+              <span className={`transition-opacity duration-200 ${shouldShowExpanded ? 'opacity-100 md:inline' : 'opacity-0 md:hidden md:w-0'} inline whitespace-nowrap`}>
+                Logout
+              </span>
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-6">
-          <Link to="/" className={`font-medium transition ${location.pathname === '/' ? 'text-primary' : 'text-slate-500 hover:text-slate-900'}`}>
-            Dashboard
-          </Link>
-          <Link to="/books" className={`font-medium transition ${location.pathname === '/books' ? 'text-primary' : 'text-slate-500 hover:text-slate-900'}`}>
-            Catalogue
-          </Link>
-          <button onClick={handleLogout} className="flex items-center gap-2 text-red-500 hover:text-red-700 font-medium transition">
-            <LogOut size={18} />
-            Sign Out
+        {/* Sidebar Control Menu - Positioned above footer */}
+        {menuOpen && (
+          <div 
+            ref={menuRef}
+            className="hidden md:block absolute bottom-20 left-2 w-44 bg-white border border-slate-200 rounded-md shadow-lg z-[60]"
+            style={{ 
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+            }}
+          >
+            <div className="text-xs font-medium text-slate-500 px-3 py-2 block">
+              Sidebar control
+            </div>
+            <div className="flex flex-col">
+              {menuOptions.map((option) => (
+                <button
+                  key={option.id}
+                  className={`flex items-center gap-2 px-3 py-2 text-sm font-normal transition-colors border-none cursor-pointer w-full text-left ${
+                    sidebarMode === option.id 
+                      ? 'bg-blue-50 text-slate-900' 
+                      : 'bg-transparent text-slate-900 hover:bg-slate-100'
+                  }`}
+                  onClick={() => handleSidebarModeChange(option.id)}
+                  role="menuitemradio"
+                  aria-checked={sidebarMode === option.id}
+                  style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}
+                >
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                    sidebarMode === option.id 
+                      ? 'border-2 border-blue-500 bg-blue-500' 
+                      : 'border border-slate-300 bg-transparent'
+                  }`} />
+                  <span>{option.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Collapse/Expand button - Desktop only - Bottom footer */}
+        <div className="hidden md:flex items-center justify-center h-14 border-t border-slate-100 bg-white">
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            aria-label="Sidebar control"
+            title="Sidebar control"
+            className={`p-2 rounded-lg transition-all duration-150 ${
+              menuOpen ? 'text-blue-500 bg-blue-50' :
+              sidebarMode === 'expanded' ? 'text-blue-500 bg-blue-50' :
+              'text-slate-400 opacity-60'
+            } hover:opacity-100 hover:bg-slate-100`}
+          >
+            {shouldShowExpanded ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
           </button>
         </div>
-      </nav>
+      </aside>
 
-      <main className="flex-1 container mx-auto p-6 max-w-6xl animate-fade-in mb-8">
-        <Outlet />
-      </main>
+      {/* Main Content Area - Fixed left margin for collapsed sidebar */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative ml-0 md:ml-20">
+        {/* Header */}
+        <header className="h-20 flex items-center justify-between px-4 md:px-10 bg-white/80 backdrop-blur-xl sticky top-0 z-30 border-b border-slate-100">
+           {/* Mobile hamburger menu */}
+           <button 
+             onClick={() => setSidebarOpen(true)}
+             className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg md:hidden"
+           >
+             <Menu size={24} />
+           </button>
 
-      {/* Footer */}
-      <footer className="w-full text-center py-6 text-slate-400 text-sm mt-auto border-t border-slate-100 bg-white/50 backdrop-blur-sm">
-        <p>&copy; {new Date().getFullYear()} LibraryConnect. Government Polytechnic Awasari (Kh).</p>
-      </footer>
+           <h2 className="text-xl font-bold text-slate-800">
+             {location.pathname === '/' ? `Hello, ${user?.name || 'Student'}` : 
+              location.pathname === '/settings' ? 'Settings' :
+              location.pathname === '/services' ? 'Services & Notices' :
+              location.pathname === '/history' ? 'My Library Journey' :
+              location.pathname.startsWith('/books') ? 'Book Discovery' : 'Library'}
+           </h2>
+
+           <div className="flex items-center gap-3 md:gap-6">
+              <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-full text-sm text-slate-600 font-medium shadow-sm">
+                 <ScanLine size={16} className="text-slate-400" />
+                 My ID
+              </div>
+              
+              <button className="relative text-slate-400 hover:text-slate-600 transition-colors">
+                <Bell size={22} />
+                <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
+              </button>
+              
+              <Link to="/settings" className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden hover:ring-2 ring-slate-200 transition-all">
+                 <img 
+                   src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=687&q=80" 
+                   alt="Profile" 
+                   className="w-full h-full object-cover" 
+                 />
+              </Link>
+           </div>
+        </header>
+
+        {/* Scrollable Page Content */}
+        <main className="flex-1 overflow-y-auto p-4 md:p-10 scroll-smooth bg-slate-50">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

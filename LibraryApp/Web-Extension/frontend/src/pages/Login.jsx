@@ -28,34 +28,34 @@ export default function Login({ setUser }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-background text-text-primary">
       {/* Animated Background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/20 via-purple-500/20 to-pink-500/20 animate-gradient-xy"></div>
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-secondary/10 to-purple-500/10 animate-gradient-xy"></div>
       
-      <div className="glass w-full max-w-md p-8 rounded-2xl relative z-10">
+      <div className="glass w-full max-w-md p-8 rounded-2xl relative z-10 border border-border bg-surface/50 backdrop-blur-xl">
         <div className="flex justify-center mb-6">
-          <div className="w-20 h-20 bg-gradient-to-tr from-primary to-accent rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
-            <BookOpen size={40} />
-          </div>
+           <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-primary/20">
+             <BookOpen size={40} />
+           </div>
         </div>
 
-        <h2 className="text-2xl font-bold text-center mb-2">Welcome Back</h2>
-        <p className="text-center text-slate-500 mb-8">Access your digital library portal</p>
+        <h2 className="text-2xl font-bold text-center mb-2 text-text-primary">Welcome Back</h2>
+        <p className="text-center text-text-secondary mb-8">Access your digital library portal</p>
 
         {error && (
-          <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm border border-red-100">
+          <div className="bg-danger/10 text-danger p-3 rounded-lg mb-4 text-sm border border-danger/20">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit}>
           <div className="mb-6">
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Enrollment Number</label>
+            <label className="block text-sm font-semibold text-text-primary mb-2">Enrollment Number</label>
             <input 
               type="text" 
               value={enrollment}
               onChange={(e) => setEnrollment(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition bg-white/50"
+              className="w-full px-4 py-3 rounded-xl border border-border focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition bg-background text-text-primary placeholder:text-text-secondary"
               placeholder="e.g. 210101"
               required
             />
@@ -64,7 +64,7 @@ export default function Login({ setUser }) {
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full py-3 bg-primary hover:bg-primary-dark text-white font-bold rounded-xl transition shadow-lg shadow-indigo-500/20 disabled:opacity-70"
+            className="w-full py-3 bg-primary hover:bg-blue-600 text-white font-bold rounded-xl transition shadow-lg shadow-primary/20 disabled:opacity-70"
           >
             {loading ? 'Accessing...' : 'Enter Library'}
           </button>

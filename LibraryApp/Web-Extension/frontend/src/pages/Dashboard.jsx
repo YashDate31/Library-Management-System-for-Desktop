@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Book, Clock, AlertCircle, CheckCircle, Bell, FileText } from 'lucide-react';
+import { Book, Clock, AlertCircle, Award, Bell, User, X, ScanLine } from 'lucide-react';
 import RequestModal from '../components/RequestModal';
+import { Link } from 'react-router-dom';
 
 export default function Dashboard({ user }) {
   const [data, setData] = useState({ 
@@ -9,14 +10,15 @@ export default function Dashboard({ user }) {
     history: [], 
     notices: [], 
     notifications: [],
-    recent_requests: []
+    recent_requests: [],
+    analytics: { badges: [], stats: {} }
   });
   const [loading, setLoading] = useState(true);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
 
   useEffect(() => {
     fetchData();
-  }, [profileModalOpen]); // Refresh data when modal closes to show new request status
+  }, [profileModalOpen]);
 
   const fetchData = async () => {
     try {
@@ -29,11 +31,12 @@ export default function Dashboard({ user }) {
     }
   };
 
-  if (loading) return <div className="p-10 text-center animate-pulse">Loading your dashboard...</div>;
+  if (loading) return <div className="p-10 text-center text-text-secondary animate-pulse">Loading Athenaeum...</div>;
+
+  const overdueBooks = data.borrows.filter(b => b.status === 'overdue');
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-12 gap-6 pb-10">
-      
+    <div className="space-y-8 pb-10">
       <RequestModal 
         isOpen={profileModalOpen} 
         onClose={() => setProfileModalOpen(false)}
@@ -42,200 +45,137 @@ export default function Dashboard({ user }) {
         defaultDetails="Please update my phone number/email to: "
       />
 
-      {/* Notifications Banner */}
-      {data.notifications.length > 0 && (
-        <div className="md:col-span-12 space-y-2">
-          {data.notifications.map((notif, i) => (
-            <div key={i} className={`p-4 rounded-xl border flex items-center gap-3 ${
-              notif.type === 'danger' ? 'bg-red-50 border-red-100 text-red-700' : 'bg-orange-50 border-orange-100 text-orange-700'
-            }`}>
-              <Bell size={18} />
-              <span className="font-semibold">{notif.msg}</span>
-            </div>
-          ))}
+      {/* 1. Alert Banner */}
+      {overdueBooks.length > 0 && (
+        <div className="w-full bg-red-100 border border-red-200 rounded-xl p-4 flex items-center justify-between text-red-800 shadow-sm animate-fade-in">
+           <div className="flex items-center gap-4">
+             <div className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center text-white shrink-0">
+                <AlertCircle size={18} fill="currentColor" className="text-white" />
+             </div>
+             <span className="font-medium text-lg">Alert: '{overdueBooks[0].title}' is overdue by {overdueBooks[0].days_msg.replace('Overdue by ', '')}!</span>
+           </div>
+           <button className="hover:bg-red-200 p-2 rounded-lg transition text-red-800"><X size={20} /></button>
         </div>
       )}
 
-      {/* Welcome Area */}
-      <div className="md:col-span-8 relative overflow-hidden rounded-3xl bg-gradient-to-r from-primary to-primary-dark text-white p-8 shadow-xl shadow-primary/20">
-        <div className="absolute top-0 right-0 p-10 opacity-10 transform translate-x-10 -translate-y-10">
-          <Book size={200} />
-        </div>
-        <div className="relative z-10">
-          <h1 className="text-3xl font-bold mb-2">Hello, {user.name.split(' ')[0]}!</h1>
-          <p className="opacity-90">Are you ready to learn something new today?</p>
-          
-          <div className="flex flex-wrap gap-4 mt-8">
-            <StatsChip icon={<Book size={16} />} label={`${data.borrows.length} Active Loans`} />
-            <StatsChip icon={<Clock size={16} />} label={user.year} />
-          </div>
-        </div>
+      {/* 2. Profile Card */}
+      <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-100 flex flex-col md:flex-row gap-10 items-center md:items-start">
+         {/* Avatar Section */}
+         <div className="shrink-0">
+            <div className="w-40 h-40 rounded-full border-[6px] border-white shadow-xl overflow-hidden bg-slate-100 relative">
+               {/* Placeholder for realistic avatar or user image */}
+               <img 
+                 src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=687&q=80" 
+                 alt="Profile" 
+                 className="w-full h-full object-cover"
+               />
+            </div>
+         </div>
+
+         {/* Info Grid */}
+         <div className="flex-1 w-full pt-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-20 gap-y-8">
+               <div className="space-y-1">
+                  <p className="text-sm text-slate-400 font-medium">Name</p>
+                  <p className="text-xl font-semibold text-slate-800">{user.name}</p>
+               </div>
+               <div className="space-y-1">
+                  <p className="text-sm text-slate-400 font-medium">Enrollment No.</p>
+                  <p className="text-xl font-semibold text-slate-800">{user.enrollment_no}</p>
+               </div>
+               <div className="space-y-1">
+                  <p className="text-sm text-slate-400 font-medium">Department</p>
+                  <p className="text-xl font-semibold text-slate-800">{user.department}</p>
+               </div>
+               <div className="space-y-1">
+                  <p className="text-sm text-slate-400 font-medium">Year</p>
+                  <p className="text-xl font-semibold text-slate-800">{user.year}</p>
+               </div>
+               <div className="col-span-2 space-y-1">
+                  <p className="text-sm text-slate-400 font-medium">Email</p>
+                  <p className="text-xl font-semibold text-slate-800">{user.email || 'john.doe@university.edu'}</p>
+               </div>
+            </div>
+         </div>
       </div>
 
-      {/* Profile / Quick Actions */}
-      <div className="md:col-span-4 glass rounded-3xl p-6 flex flex-col justify-between">
-        <div>
-           <h3 className="text-lg font-bold text-slate-800 mb-4">Student Profile</h3>
-           <ProfileRow label="Enrollment" value={user.enrollment_no} />
-           <ProfileRow label="Department" value={user.department} />
-        </div>
-        <button 
-          onClick={() => setProfileModalOpen(true)}
-          className="w-full mt-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50 transition text-sm"
-        >
-          Request Profile Update
-        </button>
-      </div>
+      {/* 3. Section Title */}
+      <div>
+        <h3 className="text-3xl font-bold text-slate-900 mb-8">
+          Currently Borrowed
+        </h3>
 
-      {/* Active Loans */}
-      <div className="md:col-span-8 glass rounded-3xl p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-lg font-bold text-slate-800">Current Loans</h3>
-        </div>
-        
+        {/* 4. Book Grid */}
         {data.borrows.length === 0 ? (
-          <div className="text-center py-10 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-            <p className="text-slate-400">No books currently borrowed.</p>
+          <div className="bg-slate-50 border border-dashed border-slate-200 rounded-xl p-16 text-center text-slate-400">
+             <Book size={48} className="mx-auto mb-4 opacity-20" />
+             <p className="text-lg">No active loans.</p>
+             <Link to="/books" className="text-blue-500 hover:underline mt-2 inline-block font-medium">Browse Catalogue</Link>
           </div>
         ) : (
-          <div className="grid gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {data.borrows.map((book, i) => (
-              <LoanCard key={i} book={book} />
+              <Book3DCard key={i} book={book} />
             ))}
           </div>
         )}
       </div>
 
-      {/* Side Panel: Notices & Requests */}
-      <div className="md:col-span-4 space-y-6">
-        
-        {/* Achievements / Badges */}
-        <div className="glass rounded-3xl p-6 relative overflow-hidden">
-           <div className="absolute top-0 right-0 p-6 opacity-5 rotate-12">
-             <Book size={100} />
-           </div>
-           <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2 relative z-10">
-             <CheckCircle size={18} className="text-emerald-500" /> Achievements
-           </h3>
+      {/* 5. Lower Section (Trophies/Notices - optional keeping for functionality but styling to match) */}
+      
+    </div>
+  );
+}
+
+// --- Sub Components ---
+
+function Book3DCard({ book }) {
+  const isOverdue = book.status === 'overdue';
+  
+  // Using specific teal color from mockup for normal books, white/minimal for others if needed.
+  // Mockup shows teal backgrounds.
+  
+  return (
+    <div className="flex flex-col bg-white rounded-3xl p-6 shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+        {/* Book Cover Representation */}
+        <div className={`relative aspect-[3/4] rounded-lg shadow-2xl mb-6 overflow-hidden group transform transition-transform duration-500 hover:scale-[1.02] ${isOverdue ? 'bg-white' : 'bg-[#2A9D8F]'}`}>
+           {/* Spine Highlight */}
+           <div className="absolute left-0 top-0 bottom-0 w-3 bg-black/10 z-10"></div>
            
-           {data.analytics?.badges?.length === 0 ? (
-             <p className="text-sm text-slate-400">Read more books to unlock badges!</p>
-           ) : (
-             <div className="flex flex-wrap gap-2 relative z-10">
-               {data.analytics?.badges?.map((badge) => (
-                 <div key={badge.id} className={`${badge.color} px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-sm`}>
-                   <span>{badge.icon}</span> {badge.label}
-                 </div>
-               ))}
-             </div>
-           )}
+           <div className="absolute inset-0 p-8 flex flex-col items-center justify-center text-center">
+              {/* Mockup styles - if it's the specific book 'JAVA PROGRAMMING' or generic */}
+              <h3 className={`font-sans text-2xl font-bold tracking-wider uppercase leading-tight ${isOverdue ? 'text-slate-800' : 'text-white'}`}>
+                {book.title}
+              </h3>
+              <div className={`w-12 h-0.5 my-6 ${isOverdue ? 'bg-slate-300' : 'bg-white/40'}`}></div>
+              <p className={`text-xs uppercase tracking-widest font-medium ${isOverdue ? 'text-slate-500' : 'text-white/80'}`}>
+                {book.author}
+              </p>
+           </div>
            
-           {/* Mini Stat */}
-           <div className="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center relative z-10">
-             <span className="text-xs text-slate-400 font-medium">Favorite Category</span>
-             <span className="text-sm font-bold text-slate-700">{data.analytics?.stats?.fav_category || '-'}</span>
+           {/* Texture/Sheen */}
+           <div className="absolute inset-0 bg-gradient-to-tr from-black/5 to-white/10 pointer-events-none"></div>
+        </div>
+
+        {/* Info below card */}
+        <div className="space-y-3">
+           <div className="flex justify-between items-start">
+              <h4 className="font-bold text-lg text-slate-900 leading-tight w-3/4">{book.title}</h4>
+              {isOverdue && (
+                  <span className="bg-red-100 text-red-600 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wide">Overdue</span>
+              )}
+           </div>
+           
+           <div className="flex justify-between items-center text-sm">
+             <span className="text-slate-500">Due: {book.due_date}</span>
+             {isOverdue ? (
+                <span className="font-bold text-red-500">Fine: ₹50</span>
+             ) : (
+                <span className="bg-amber-100 text-amber-700 text-xs font-bold px-3 py-1 rounded-full">Due in {book.days_msg.replace('Due in ', '').replace(' days', '')} days</span>
+             )}
            </div>
         </div>
-
-        {/* Notices */}
-        <div className="glass rounded-3xl p-6">
-          <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-            <AlertCircle size={18} className="text-accent" /> Notices
-          </h3>
-          <div className="space-y-4">
-            {data.notices.map((notice, i) => (
-              <div key={i} className="pb-3 border-b border-slate-50 last:border-0 last:pb-0">
-                <p className="text-xs font-bold text-accent mb-0.5">{notice.date}</p>
-                <p className="text-sm font-medium text-slate-700">{notice.title}</p>
-                <p className="text-xs text-slate-500 mt-1 line-clamp-2">{notice.content}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Recent Requests */}
-        <div className="glass rounded-3xl p-6">
-          <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-            <FileText size={18} className="text-secondary" /> My Requests
-          </h3>
-           {data.recent_requests.length === 0 ? (
-             <p className="text-xs text-slate-400">No active requests.</p>
-           ) : (
-             <div className="space-y-3">
-               {data.recent_requests.map((req, i) => (
-                 <div key={i} className="flex justify-between items-center text-sm">
-                   <span className="text-slate-600 capitalize">{req.request_type.replace('_', ' ')}</span>
-                   <span className={`px-2 py-0.5 rounded-full text-xs font-bold capitalize ${
-                     req.status === 'pending' ? 'bg-yellow-100 text-yellow-700' : 
-                     req.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                   }`}>{req.status}</span>
-                 </div>
-               ))}
-             </div>
-           )}
-        </div>
-      </div>
-
     </div>
   );
 }
 
-// Sub-components
-function StatsChip({ icon, label }) {
-  return (
-    <div className="bg-white/20 backdrop-blur-md px-4 py-2 rounded-full text-sm font-semibold flex items-center gap-2 border border-white/10">
-      {icon} {label}
-    </div>
-  );
-}
-
-function ProfileRow({ label, value }) {
-  return (
-    <div className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
-      <span className="text-slate-400 text-sm">{label}</span>
-      <span className="font-semibold text-slate-700">{value}</span>
-    </div>
-  );
-}
-
-function LoanCard({ book }) {
-  const statusColors = {
-    safe: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-    warning: 'bg-amber-50 text-amber-600 border-amber-100',
-    overdue: 'bg-red-50 text-red-600 border-red-100'
-  };
-
-  const handleDownloadLetter = () => {
-    // Mock Letter View - would technically open a printable component
-    alert(`Generating Overdue Letter for ${book.title}...\n\n(Feature: Opens print dialogue for official letter)`);
-  };
-
-  return (
-    <div className="flex items-center justify-between p-4 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition">
-      <div className="flex items-center gap-4">
-        <div className="w-12 h-16 bg-slate-100 rounded-lg flex items-center justify-center text-slate-300">
-          <Book size={24} />
-        </div>
-        <div>
-          <h4 className="font-bold text-slate-800">{book.title}</h4>
-          <p className="text-sm text-slate-500">{book.author}</p>
-        </div>
-      </div>
-      <div className="text-right flex flex-col items-end gap-1">
-        <div className={`px-4 py-1 rounded-xl border w-fit ${statusColors[book.status] || statusColors.safe}`}>
-          <p className="text-xs font-bold uppercase tracking-wider">{book.status}</p>
-        </div>
-        <p className="text-sm font-bold text-slate-700">{book.days_msg}</p>
-        
-        {book.status === 'overdue' && (
-          <button 
-            onClick={handleDownloadLetter}
-            className="text-xs text-red-500 underline hover:text-red-700 mt-1 font-medium"
-          >
-            Download Letter
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
