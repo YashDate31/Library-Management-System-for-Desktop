@@ -185,6 +185,7 @@ export default function Layout({ user, setUser }) {
 
           {/* User / Sign Out */}
           <div className="space-y-2">
+            <NavItem to="/profile" icon={User} label="Profile" />
             <NavItem to="/settings" icon={Settings} label="Settings" />
             
             <button 
