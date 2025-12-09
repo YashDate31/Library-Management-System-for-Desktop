@@ -7,7 +7,8 @@ from datetime import datetime
 # --- Configuration ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Serve React Build
-app = Flask(__name__, static_folder='frontend/dist', static_url_path='/')
+# Serve React Build
+app = Flask(__name__, static_folder='frontend/dist')
 app.secret_key = 'LIBRARY_PORTAL_SECRET_KEY_YASH_MVP'
 
 def get_library_db():
