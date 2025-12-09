@@ -175,7 +175,7 @@ export default function Layout({ user, setUser }) {
                alt="Athenaeum Logo" 
                className="w-10 h-10 shrink-0 object-contain"
              />
-             <div className={`transition-opacity duration-200 ${shouldShowExpanded ? 'opacity-100 md:block' : 'opacity-0 md:hidden'} block`}>
+             <div className={`transition-opacity duration-200 ${shouldShowExpanded || sidebarOpen ? 'opacity-100 md:block' : 'opacity-0 md:hidden'} block`}>
                <h1 className="text-lg font-bold tracking-tight text-brand-dark whitespace-nowrap">GPA's</h1>
                <p className="text-xs text-slate-500 font-medium whitespace-nowrap">Library Management System</p>
              </div>
@@ -201,7 +201,7 @@ export default function Layout({ user, setUser }) {
               }`}
             >
               <LogOut size={20} className="shrink-0" />
-              <span className={`transition-opacity duration-200 ${shouldShowExpanded ? 'opacity-100 md:inline' : 'opacity-0 md:hidden md:w-0'} inline whitespace-nowrap`}>
+              <span className={`transition-opacity duration-200 ${shouldShowExpanded || sidebarOpen ? 'opacity-100 md:inline' : 'opacity-0 md:hidden md:w-0'} inline whitespace-nowrap`}>
                 Logout
               </span>
             </button>
