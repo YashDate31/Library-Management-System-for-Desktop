@@ -52,6 +52,18 @@ def init_portal_db():
         )
     """)
     
+    # Create Deletion Requests Table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS deletion_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id TEXT NOT NULL,
+            reason TEXT,
+            status TEXT DEFAULT 'pending', -- pending, approved, rejected
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(student_id) REFERENCES students(enrollment_no)
+        )
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -59,6 +71,59 @@ def init_portal_db():
 init_portal_db()
 
 # --- Auth Endpoints ---
+
+@app.route('/api/request-deletion', methods=['POST'])
+def request_deletion():
+    data = request.json
+    password = data.get('password')
+    reason = data.get('reason', 'User requested deletion via Student Portal')
+    
+    # 1. Verify Session
+    if 'student_id' not in session:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        
+    student_id = session['student_id']
+    
+    conn = get_portal_db()
+    c = conn.cursor()
+    
+    # 2. Verify Password (Re-authentication)
+    # Check student_auth first
+    c.execute("SELECT password FROM student_auth WHERE enrollment_no = ?", (student_id,))
+    auth_record = c.fetchone()
+    
+    is_valid = False
+    if auth_record:
+        # Check against stored password
+        if auth_record['password'] == password:
+            is_valid = True
+    else:
+        # Fallback to legacy (enrollment_no itself) for very old accounts not yet migrated?
+        # But our login flow forces migration. We'll assume if they are logged in, they might have an auth record.
+        # If not, strictly check against enrollment_no if that was the "password"
+        if password == student_id:
+            is_valid = True
+            
+    if not is_valid:
+        conn.close()
+        return jsonify({"status": "error", "message": "Incorrect password"}), 403
+        
+    # 3. Check for existing pending request
+    c.execute("SELECT id FROM deletion_requests WHERE student_id = ? AND status = 'pending'", (student_id,))
+    existing = c.fetchone()
+    if existing:
+        conn.close()
+        return jsonify({"status": "error", "message": "A deletion request is already pending."}), 400
+        
+    # 4. Create Request
+    try:
+        c.execute("INSERT INTO deletion_requests (student_id, reason) VALUES (?, ?)", (student_id, reason))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": "Deletion request submitted for librarian approval."})
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/api/login', methods=['POST'])
 def api_login():

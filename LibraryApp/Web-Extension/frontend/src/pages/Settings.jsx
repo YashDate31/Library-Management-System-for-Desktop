@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import axios from 'axios';
+import DangerValidationModal from '../components/DangerValidationModal';
 
 export default function Settings({ user, setUser }) {
   // Local state for settings form
@@ -16,6 +17,9 @@ export default function Settings({ user, setUser }) {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [isSavingPassword, setIsSavingPassword] = useState(false);
   const [passwordMsg, setPasswordMsg] = useState('');
+
+  // Deletion Modal State
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   const handleChangePassword = async () => {
     if (newPassword.length < 4) {
@@ -264,9 +268,9 @@ export default function Settings({ user, setUser }) {
                 <label className="block font-bold text-slate-900 mb-1">Delete Account</label>
                 <p className="text-sm text-slate-500">Permanently delete your account and all associated data.</p>
               </div>
-              <div>
+              <div className="md:col-span-2">
                 <button 
-                  onClick={() => alert('Account deletion requested. Admin will be notified.')}
+                  onClick={() => setIsDeleteModalOpen(true)}
                   className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition-colors shadow-sm"
                 >
                   Request Data Deletion
@@ -281,7 +285,7 @@ export default function Settings({ user, setUser }) {
 
       {/* Footer Actions - Only show if changes made */}
       {isDirty && (
-        <div className="mt-8 flex items-center justify-end gap-3 bg-slate-50 p-4 rounded-xl animate-fade-in fixed bottom-6 right-6 md:static md:bg-transparent md:p-0">
+        <div className="mt-8 flex items-center justify-end gap-3 bg-slate-50 p-4 rounded-xl animate-fade-in fixed bottom-6 right-6 md:static md:bg-transparent md:p-0 z-40">
             <button 
             className="px-6 py-2.5 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-lg border border-slate-200 transition-colors shadow-sm md:shadow-none"
             onClick={() => {
@@ -304,6 +308,17 @@ export default function Settings({ user, setUser }) {
             </button>
         </div>
       )}
+
+      {/* Danger Modal */}
+      <DangerValidationModal 
+        isOpen={isDeleteModalOpen} 
+        onClose={() => setIsDeleteModalOpen(false)}
+        user={user}
+        onSuccess={() => {
+            alert("Deletion request sent to Librarian successfully.");
+            // Ideally show a toast or change UI state
+        }}
+      />
     </div>
   );
 }
