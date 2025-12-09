@@ -100,7 +100,7 @@ export default function Layout({ user, setUser }) {
 
   const NavItem = ({ to, icon: Icon, label }) => {
     const isActive = location.pathname === to;
-    const showText = shouldShowExpanded;
+    const showText = shouldShowExpanded || sidebarOpen;
     
     return (
       <Link 
