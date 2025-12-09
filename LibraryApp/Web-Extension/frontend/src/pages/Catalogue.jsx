@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import RequestModal from '../components/RequestModal';
 import BookDetailModal from '../components/BookDetailModal';
 import EmptyState from '../components/ui/EmptyState';
+import Skeleton, { SkeletonCard } from '../components/ui/Skeleton';
+import ErrorMessage from '../components/ui/ErrorMessage';
 
 const CATEGORY_ICONS = {
   'Core CS': Monitor,
@@ -23,6 +25,7 @@ export default function Catalogue() {
   const [books, setBooks] = useState([]);
   const [categories, setCategories] = useState([{ name: 'All', icon: LayoutGrid }]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Filter States
@@ -67,6 +70,7 @@ export default function Catalogue() {
       }
     } catch (e) {
       console.error(e);
+      setError("Failed to load books. Please check your connection.");
       setBooks([]);
     } finally {
       setLoading(false);
@@ -95,7 +99,29 @@ export default function Catalogue() {
     return matchesSearch && matchesCategory && matchesAvailability;
   });
 
-  if (loading) return <div className="p-10 text-center text-text-secondary animate-pulse">Loading Library...</div>;
+  if (loading) {
+    return (
+      <div className="space-y-10 pb-20">
+        <div>
+          <h1 className="text-4xl font-black text-slate-900 mb-2 tracking-tight">Book Discovery</h1>
+          <Skeleton className="h-6 w-96 max-w-full" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
+          {Array(8).fill(0).map((_, i) => (
+             <SkeletonCard key={i} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-10">
+        <ErrorMessage message={error} onRetry={fetchBooks} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-10 pb-20" onClick={() => setActiveDropdown(null)}>
