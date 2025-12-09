@@ -1,234 +1,126 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Download, RefreshCw, Calendar, Bell, FileText } from 'lucide-react';
+import { FileText, Globe, Book, Archive, Download, ExternalLink, Clock } from 'lucide-react';
 import RequestModal from '../components/RequestModal';
+import Skeleton, { SkeletonCard } from '../components/ui/Skeleton';
+import ErrorMessage from '../components/ui/ErrorMessage';
 
 export default function Services() {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalConfig, setModalConfig] = useState({ title: '', type: '', defaultDetails: '' });
+  const [requestType, setRequestType] = useState('');
+  const [resources, setResources] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetchData();
+    fetchServices();
   }, []);
 
-  const fetchData = async () => {
+  const fetchServices = async () => {
     try {
-      const { data } = await axios.get('/api/dashboard');
-      setData(data);
+      const { data } = await axios.get('/api/services');
+      setResources(data.resources);
     } catch (e) {
-      console.error(e);
+      console.error("Failed to load services", e);
+      setError("Could not load digital resources.");
     } finally {
       setLoading(false);
     }
   };
 
-  const openModal = (title, type, defaultDetails) => {
-    setModalConfig({ title, type, defaultDetails });
+  const openRequest = (type) => {
+    setRequestType(type);
     setModalOpen(true);
   };
 
-  if (loading) return <div className="p-10 text-center text-text-secondary animate-pulse">Loading Services...</div>;
-
-  const notices = data?.notices || [];
-  const requests = data?.recent_requests || [];
+  const getIcon = (iconName) => {
+    switch (iconName) {
+      case 'Globe': return <Globe className="text-blue-500" size={24} />;
+      case 'Book': return <Book className="text-purple-500" size={24} />;
+      case 'Archive': return <Archive className="text-amber-500" size={24} />;
+      default: return <FileText className="text-slate-500" size={24} />;
+    }
+  };
 
   return (
-    <div className="space-y-8 pb-20">
-      
+    <div className="max-w-6xl mx-auto space-y-8 pb-10 font-sans">
       <RequestModal 
         isOpen={modalOpen} 
         onClose={() => setModalOpen(false)}
-        title={modalConfig.title}
-        type={modalConfig.type}
-        defaultDetails={modalConfig.defaultDetails}
+        title={`Request: ${requestType}`}
+        type={requestType}
       />
-
-      {/* Page Header */}
+      
+      {/* Header */}
       <div>
-        <h1 className="text-4xl font-black text-slate-900 mb-2 tracking-tight">Services & Notices</h1>
+        <h1 className="text-2xl font-bold text-slate-900 mb-2">Services & Notices</h1>
+        <p className="text-slate-500">Access digital resources or request library services.</p>
       </div>
 
-      {/* Two Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        
-        {/* Left Column - Library Announcements */}
-        <div className="space-y-6">
-          <h2 className="text-2xl font-bold text-slate-900">Library Announcements</h2>
-          
-          <div className="space-y-4">
-            {/* Announcement 1 */}
-            <div className="bg-white rounded-xl p-6 border border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 mb-1">Library Closed on Friday</h3>
-              <p className="text-sm text-slate-500 mb-3">Oct 26, 2023</p>
-              <p className="text-slate-700 leading-relaxed">
-                Please note that the library will be closed this Friday for maintenance. We apologize for any inconvenience.
-              </p>
-            </div>
+      {/* Digital Resources Section */}
+      <section>
+        <div className="flex items-center justify-between mb-6">
+           <h2 className="text-lg font-bold text-slate-800">Digital Library</h2>
+        </div>
 
-            {/* Announcement 2 */}
-            <div className="bg-white rounded-xl p-6 border border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 mb-1">New Arrivals in Physics</h3>
-              <p className="text-sm text-slate-500 mb-3">Oct 24, 2023</p>
-              <p className="text-slate-700 leading-relaxed">
-                Explore the latest additions to our physics collection, now available on the 3rd floor.
-              </p>
-            </div>
+        {loading ? (
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+             <SkeletonCard />
+             <SkeletonCard />
+             <SkeletonCard />
+           </div>
+        ) : error ? (
+           <ErrorMessage message={error} onRetry={fetchServices} />
+        ) : (
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+             {resources.map((resource) => (
+               <div key={resource.id} className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow group">
+                 <div className="flex items-start justify-between mb-4">
+                   <div className="p-3 bg-slate-50 rounded-xl group-hover:scale-110 transition-transform">
+                      {getIcon(resource.icon)}
+                   </div>
+                   <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2 py-1 rounded-lg">{resource.type}</span>
+                 </div>
+                 
+                 <h3 className="font-bold text-slate-900 mb-2">{resource.title}</h3>
+                 <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+                   {resource.description}
+                 </p>
+                 
+                 <a href={resource.link} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-brand-blue/5 text-brand-blue font-semibold hover:bg-brand-blue/10 transition-colors">
+                   Access Now <ExternalLink size={16} />
+                 </a>
+               </div>
+             ))}
+           </div>
+        )}
+      </section>
 
-            {/* Announcement 3 */}
-            <div className="bg-white rounded-xl p-6 border border-slate-100">
-              <h3 className="text-lg font-bold text-slate-900 mb-1">Extended Hours for Exams</h3>
-              <p className="text-sm text-slate-500 mb-3">Oct 22, 2023</p>
-              <p className="text-slate-700 leading-relaxed">
-                The library will be open 24/7 during the final exam period, starting next week.
-              </p>
-            </div>
-
-            {/* Dynamic notices from backend */}
-            {notices.map((notice) => (
-              <div key={notice.id} className="bg-white rounded-xl p-6 border border-slate-100">
-                <h3 className="text-lg font-bold text-slate-900 mb-1">{notice.title}</h3>
-                <p className="text-sm text-slate-500 mb-3">{notice.date}</p>
-                <p className="text-slate-700 leading-relaxed">{notice.content}</p>
+      {/* Request Services Section */}
+      <section className="pt-8 border-t border-slate-100">
+        <h2 className="text-lg font-bold text-slate-800 mb-6">Request Services</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+           <button onClick={() => openRequest('Inter-library Loan')} className="flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-xl hover:border-brand-blue hover:shadow-sm transition-all text-left group">
+              <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                 <Book size={20} />
               </div>
-            ))}
-          </div>
+              <div>
+                 <span className="block font-bold text-slate-800">Inter-library Loan</span>
+                 <span className="text-xs text-slate-500">Request books from other universities</span>
+              </div>
+           </button>
+
+           <button onClick={() => openRequest('Study Room Booking')} className="flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-xl hover:border-brand-blue hover:shadow-sm transition-all text-left group">
+              <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                 <Clock size={20} />
+              </div>
+              <div>
+                 <span className="block font-bold text-slate-800">Study Room Booking</span>
+                 <span className="text-xs text-slate-500">Reserve a quiet space for 2 hours</span>
+              </div>
+           </button>
         </div>
-
-        {/* Right Column */}
-        <div className="space-y-8">
-          
-          {/* Self-Service Requests */}
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900 mb-4">Self-Service Requests</h2>
-            
-            <div className="flex flex-wrap gap-3">
-              <button 
-                onClick={() => openModal('Request Renewal', 'renewal', 'I would like to request a renewal for...')}
-                className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-lg transition-all active:scale-[0.98] shadow-md shadow-blue-500/20"
-              >
-                Request Renewal
-              </button>
-              <button 
-                onClick={() => openModal('Request Issue Extension', 'extension', 'I would like to request an extension for...')}
-                className="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-colors"
-              >
-                Request Issue Extension
-              </button>
-              <button 
-                onClick={() => openModal('Notify When Available', 'availability_notification', 'Please notify me when the following book becomes available...')}
-                className="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-colors"
-              >
-                Notify When Available
-              </button>
-            </div>
-          </div>
-
-          {/* Request Status */}
-          <div className="bg-white rounded-xl p-6 border border-slate-100">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold text-slate-900">Request Status</h2>
-              <button 
-                onClick={fetchData}
-                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-                title="Refresh"
-              >
-                <RefreshCw size={20} className="text-slate-600" />
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-100">
-                    <th className="text-left py-3 px-2 text-sm font-bold text-slate-600 uppercase tracking-wider">Request</th>
-                    <th className="text-left py-3 px-2 text-sm font-bold text-slate-600 uppercase tracking-wider">Status</th>
-                    <th className="text-left py-3 px-2 text-sm font-bold text-slate-600 uppercase tracking-wider">Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Sample requests */}
-                  <tr className="border-b border-slate-50">
-                    <td className="py-4 px-2 text-slate-900">Renewal: "The Great Gatsby"</td>
-                    <td className="py-4 px-2">
-                      <span className="inline-block px-3 py-1 bg-yellow-50 text-yellow-700 text-xs font-bold rounded-full">
-                        Pending Approval
-                      </span>
-                    </td>
-                    <td className="py-4 px-2 text-slate-600">Oct 25, 2023</td>
-                  </tr>
-                  <tr className="border-b border-slate-50">
-                    <td className="py-4 px-2 text-slate-900">Extension: "Cosmos"</td>
-                    <td className="py-4 px-2">
-                      <span className="inline-block px-3 py-1 bg-green-50 text-green-700 text-xs font-bold rounded-full">
-                        Approved
-                      </span>
-                    </td>
-                    <td className="py-4 px-2 text-slate-600">Oct 23, 2023</td>
-                  </tr>
-                  <tr className="border-b border-slate-50">
-                    <td className="py-4 px-2 text-slate-900">Notify: "Dune Messiah"</td>
-                    <td className="py-4 px-2">
-                      <span className="inline-block px-3 py-1 bg-red-50 text-red-700 text-xs font-bold rounded-full">
-                        Rejected
-                      </span>
-                    </td>
-                    <td className="py-4 px-2 text-slate-600">Oct 20, 2023</td>
-                  </tr>
-
-                  {/* Dynamic requests from backend */}
-                  {requests.slice(0, 3).map((req, index) => (
-                    <tr key={index} className="border-b border-slate-50">
-                      <td className="py-4 px-2 text-slate-900">{req.request_type}: {req.details}</td>
-                      <td className="py-4 px-2">
-                        <span className={`inline-block px-3 py-1 text-xs font-bold rounded-full ${
-                          req.status === 'pending' ? 'bg-yellow-50 text-yellow-700' :
-                          req.status === 'approved' ? 'bg-green-50 text-green-700' :
-                          'bg-red-50 text-red-700'
-                        }`}>
-                          {req.status.charAt(0).toUpperCase() + req.status.slice(1)}
-                        </span>
-                      </td>
-                      <td className="py-4 px-2 text-slate-600">{new Date(req.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Digital Documents */}
-          <div className="bg-white rounded-xl p-6 border border-slate-100">
-            <h2 className="text-2xl font-bold text-slate-900 mb-6">Digital Documents</h2>
-            
-            <div className="space-y-3">
-              <DocumentRow title="Overdue Warning Letter.pdf" />
-              <DocumentRow title="No Dues Certificate.pdf" />
-              <DocumentRow title="Library Membership Card.pdf" />
-            </div>
-          </div>
-
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DocumentRow({ title }) {
-  return (
-    <div className="flex items-center justify-between py-3 px-4 hover:bg-slate-50 rounded-lg transition-colors group">
-      <div className="flex items-center gap-3">
-        <FileText className="text-slate-400" size={20} />
-        <span className="text-slate-900 font-medium">{title}</span>
-      </div>
-      <button 
-        onClick={() => alert(`Downloading ${title}...`)}
-        className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-        title="Download"
-      >
-        <Download size={18} />
-      </button>
+      </section>
     </div>
   );
 }
