@@ -255,7 +255,7 @@ def api_dashboard():
 def get_book_details(book_id):
     """Fetch details for a specific book."""
     try:
-        conn = get_db_connection()
+        conn = get_library_db()
         cursor = conn.cursor()
         
         # Fetch book details

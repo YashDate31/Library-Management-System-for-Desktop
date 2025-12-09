@@ -1,16 +1,41 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowLeft, BookOpen, Calendar, Shield, Info, Bell, Copy } from 'lucide-react';
+import { ArrowLeft, BookOpen, Calendar, Shield, Info, Bell, Copy, Heart } from 'lucide-react';
 import RequestModal from '../components/RequestModal';
+import { useToast } from '../context/ToastContext';
 
 export default function BookDetails() {
   const { bookId } = useParams();
   const navigate = useNavigate();
+  const { success, info } = useToast();
   const [book, setBook] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [isWishlisted, setIsWishlisted] = useState(false);
+
+  useEffect(() => {
+    // Check local storage for wishlist status
+    const wishlist = JSON.parse(localStorage.getItem('wishlist') || '[]');
+    setIsWishlisted(wishlist.includes(bookId));
+  }, [bookId]);
+
+  const toggleWishlist = () => {
+    const wishlist = JSON.parse(localStorage.getItem('wishlist') || '[]');
+    let newWishlist;
+    
+    if (isWishlisted) {
+      newWishlist = wishlist.filter(id => id !== bookId);
+      info("Removed from Wishlist");
+    } else {
+      newWishlist = [...wishlist, bookId];
+      success("Added to Wishlist");
+    }
+    
+    localStorage.setItem('wishlist', JSON.stringify(newWishlist));
+    setIsWishlisted(!isWishlisted);
+  };
 
   useEffect(() => {
     fetchBookDetails();
@@ -113,6 +138,13 @@ export default function BookDetails() {
 
             {/* Action Bar */}
             <div className="pt-8 mt-4 border-t border-border flex gap-4">
+               <button 
+                  onClick={toggleWishlist}
+                  className={`p-4 rounded-xl border flex items-center justify-center transition-all ${isWishlisted ? 'bg-red-50 border-red-200 text-red-500' : 'border-slate-200 text-slate-400 hover:text-slate-600'}`}
+               >
+                  <Heart size={24} fill={isWishlisted ? "currentColor" : "none"} />
+               </button>
+
                {isAvailable ? (
                  <button disabled className="flex-1 bg-success/10 text-success font-bold py-3.5 px-6 rounded-xl cursor-default flex items-center justify-center gap-2 border border-success/20">
                     <Shield size={18} />
