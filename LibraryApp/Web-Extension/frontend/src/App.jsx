@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import Catalogue from './pages/Catalogue';
 import BookDetails from './pages/BookDetails';
 import Settings from './pages/Settings';
+import Profile from './pages/Profile';
 import History from './pages/History';
 import Services from './pages/Services';
 import Layout from './components/Layout';
@@ -51,6 +52,7 @@ function App() {
           <Route path="/books/:bookId" element={user ? <BookDetails /> : <Navigate to="/login" />} />
           <Route path="/history" element={user ? <History /> : <Navigate to="/login" />} />
           <Route path="/services" element={user ? <Services /> : <Navigate to="/login" />} />
+          <Route path="/profile" element={user ? <Profile user={user} /> : <Navigate to="/login" />} />
           <Route path="/settings" element={user ? <Settings user={user} setUser={setUser} /> : <Navigate to="/login" />} />
         </Route>
       </Routes>
