@@ -1,14 +1,13 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { Book, Clock, AlertCircle, Calendar, ChevronRight } from 'lucide-react';
-import AppBar from '../components/ui/AppBar';
+import { Book, AlertCircle } from 'lucide-react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
-import Badge from '../components/ui/Badge';
-import Skeleton, { SkeletonCard } from '../components/ui/Skeleton';
+import Skeleton from '../components/ui/Skeleton';
 import ErrorMessage from '../components/ui/ErrorMessage';
 import EmptyState from '../components/ui/EmptyState';
+import BookLoanCard from '../components/BookLoanCard';
 
 export default function Dashboard({ user }) {
   const navigate = useNavigate();
@@ -40,7 +39,6 @@ export default function Dashboard({ user }) {
       setData(data);
     } catch (e) {
       console.error("Failed to fetch dashboard, using fallback state if needed", e);
-      // In a real app we might want to keep the error state, but for this redesign let's show data if available or empty
     } finally {
       setLoading(false);
     }
@@ -54,12 +52,18 @@ export default function Dashboard({ user }) {
   );
 
   const overdueBooks = data.borrows.filter(b => b.status === 'overdue');
-  const activeBorrows = data.borrows; // In a real app filtering might be needed, but 'borrows' usually implies active.
+  const activeBorrows = data.borrows;
+
+  const getLoanStatus = (book) => {
+    if (book.status === 'overdue') return 'overdue';
+    // Parser for "5 days left" logic
+    const days = parseInt(book.days_msg?.replace(/\D/g, '') || '10', 10);
+    if (days <= 3) return 'due_soon';
+    return 'normal';
+  };
 
   return (
     <div className="min-h-screen bg-background pb-24 md:pb-10">
-      {/* 1. Mobile App Bar */}
-      {/* 1. Mobile App Bar removed - using Layout header */}
 
       <div className="px-4 py-6 space-y-6 max-w-3xl mx-auto">
         
@@ -107,7 +111,7 @@ export default function Dashboard({ user }) {
                    <Button 
                       variant="danger" 
                       size="sm" 
-                      onClick={() => navigate('/settings')} // Assuming settings has the change password form
+                      onClick={() => navigate('/settings')} 
                     >
                       Change Now
                     </Button>
@@ -117,7 +121,7 @@ export default function Dashboard({ user }) {
           </div>
         )}
 
-        {/* 3. Overdue Alert Card */}
+        {/* 3. Overdue Alert Card - Keeping this as a high priority alert, separate from the list */}
         {overdueBooks.length > 0 && (
           <div className="space-y-4 animate-fade-in">
              {overdueBooks.map((book, idx) => (
@@ -173,8 +177,16 @@ export default function Dashboard({ user }) {
              // Horizontal Scroll Container
              <div className="flex overflow-x-auto pb-6 -mx-4 px-4 gap-4 snap-x hide-scrollbar">
                 {activeBorrows.map((book, i) => (
-                  <div key={i} className="snap-center shrink-0 w-[240px]">
-                    <BorrowedBookCard book={book} />
+                  <div key={i} className="snap-center shrink-0 w-[260px]">
+                    <BookLoanCard 
+                      title={book.title}
+                      author={book.author || "Unknown Author"}
+                      dueDate={book.due_date}
+                      status={getLoanStatus(book)}
+                      fine="₹50" // Assuming fixed fine for now or book.fine if available
+                      onViewDetails={() => navigate(`/books/${book.book_id}`)}
+                      // onRenew logic could be added here
+                    />
                   </div>
                 ))}
              </div>
@@ -183,44 +195,6 @@ export default function Dashboard({ user }) {
 
       </div>
     </div>
-  );
-}
-
-// Compact, Mobile-Friendly Book Card
-function BorrowedBookCard({ book }) {
-  const isOverdue = book.status === 'overdue';
-  const daysLeft = book.days_msg?.replace(/\D/g, '') || '0'; 
-
-  return (
-    <Card className="h-full flex flex-col p-0 overflow-hidden hover:shadow-md transition-all group border-slate-200">
-       <div className="h-32 bg-slate-100 relative group-hover:scale-105 transition-transform duration-500">
-          {/* Subtle pattern or image placeholder */}
-          <div className="absolute inset-0 flex items-center justify-center text-slate-300">
-             <Book size={48} strokeWidth={1} />
-          </div>
-          {/* Status Badge overlay */}
-          <div className="absolute top-2 right-2">
-             <Badge variant={isOverdue ? 'danger' : 'primary'} className="shadow-sm">
-                {isOverdue ? 'Overdue' : `${daysLeft} days left`}
-             </Badge>
-          </div>
-       </div>
-       
-       <div className="p-4 flex flex-col flex-1">
-          <h4 className="font-bold text-slate-800 line-clamp-2 mb-1 leading-snug min-h-[2.5rem]">
-            {book.title}
-          </h4>
-          <p className="text-xs text-slate-500 font-medium mb-4 line-clamp-1">{book.author}</p>
-          
-          <div className="mt-auto pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-             <span className="text-slate-400 flex items-center gap-1">
-               <Calendar size={12} />
-               {book.due_date}
-             </span>
-             <ChevronRight size={14} className="text-slate-300 group-hover:translate-x-1 transition-transform" />
-          </div>
-       </div>
-    </Card>
   );
 }
 
