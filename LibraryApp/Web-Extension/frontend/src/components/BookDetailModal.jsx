@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { X, BookOpen, Clock, AlertCircle, CheckCircle, Calendar, User, Tag, Hash, Heart, Share2, Star } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
+import { X, BookOpen, Clock, AlertCircle, CheckCircle, Calendar, User, Tag, Hash, Heart, Share2, Star, Copy, Mail, MessageCircle } from 'lucide-react';
 
 export default function BookDetailModal({ isOpen, onClose, bookId }) {
   const [book, setBook] = useState(null);
@@ -8,12 +9,15 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
   const [error, setError] = useState(null);
   const [requestStatus, setRequestStatus] = useState('idle'); // 'idle', 'loading', 'success', 'error'
   const [isWishlisted, setIsWishlisted] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const { addToast } = useToast();
 
   useEffect(() => {
     if (isOpen && bookId) {
       fetchBookDetails();
       setRequestStatus('idle');
       setIsWishlisted(false); // Reset/Mock
+      setShareOpen(false);
     } else {
       setBook(null); 
     }
@@ -50,6 +54,23 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
   const toggleWishlist = () => {
     setIsWishlisted(!isWishlisted);
     // Future: API call to sync wishlist
+  };
+
+  const handleShare = (method) => {
+    const text = `Check out "${book.title}" by ${book.author} at the library!`;
+    const url = window.location.origin + `/books/${bookId}`;
+    
+    if (method === 'copy') {
+      navigator.clipboard.writeText(`${text} ${url}`);
+      addToast('Link copied to clipboard', 'success');
+      setShareOpen(false);
+    } else if (method === 'whatsapp') {
+      window.open(`https://wa.me/?text=${encodeURIComponent(text + ' ' + url)}`, '_blank');
+      setShareOpen(false);
+    } else if (method === 'email') {
+      window.open(`mailto:?subject=${encodeURIComponent(`Check out: ${book.title}`)}&body=${encodeURIComponent(text + '\n\n' + url)}`);
+      setShareOpen(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -136,13 +157,37 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
                         </span>
                       )}
                    </div>
-                   <div className="flex items-center gap-2">
+                   <div className="flex items-center gap-2 relative">
                       <button onClick={toggleWishlist} className={`p-2 rounded-full transition-colors ${isWishlisted ? 'bg-pink-50 text-pink-500' : 'hover:bg-slate-100 text-slate-400'}`}>
                          <Heart size={20} fill={isWishlisted ? "currentColor" : "none"} />
                       </button>
-                      <button className="p-2 hover:bg-slate-100 text-slate-400 rounded-full transition-colors">
-                         <Share2 size={20} />
-                      </button>
+                      
+                      {/* Share Menu */}
+                      <div className="relative">
+                        <button 
+                          onClick={() => setShareOpen(!shareOpen)}
+                          className={`p-2 rounded-full transition-colors ${shareOpen ? 'bg-blue-50 text-blue-600' : 'hover:bg-slate-100 text-slate-400'}`}
+                        >
+                           <Share2 size={20} />
+                        </button>
+                        
+                        {shareOpen && (
+                          <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-fade-in-up origin-top-right">
+                             <div className="p-2 space-y-1">
+                                <button onClick={() => handleShare('copy')} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 rounded-lg transition-colors">
+                                   <Copy size={16} className="text-slate-400" /> Copy Link
+                                </button>
+                                <button onClick={() => handleShare('whatsapp')} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-green-50 hover:text-green-700 rounded-lg transition-colors">
+                                   <MessageCircle size={16} className="text-green-500" /> WhatsApp
+                                </button>
+                                <button onClick={() => handleShare('email')} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors">
+                                   <Mail size={16} className="text-blue-500" /> Email
+                                </button>
+                             </div>
+                          </div>
+                        )}
+                      </div>
+
                       <button onClick={onClose} className="p-2 hover:bg-slate-100 text-slate-400 rounded-full transition-colors ml-2">
                          <X size={24} />
                       </button>
