@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import axios from 'axios';
 
 export default function Settings({ user, setUser }) {
   // Local state for settings form
@@ -8,6 +9,42 @@ export default function Settings({ user, setUser }) {
   const [darkMode, setDarkMode] = useState(false);
   const [language, setLanguage] = useState('English');
   const [dataConsent, setDataConsent] = useState(true);
+
+  // Password Change State
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [passwordMsg, setPasswordMsg] = useState('');
+
+  const handleChangePassword = async () => {
+    if (newPassword.length < 4) {
+        setPasswordMsg('Password must be at least 4 characters');
+        return;
+    }
+    if (newPassword !== confirmPassword) {
+        setPasswordMsg('Passwords do not match');
+        return;
+    }
+
+    setIsSavingPassword(true);
+    setPasswordMsg('');
+
+    try {
+        const { data } = await axios.post('/api/change-password', { new_password: newPassword });
+        if (data.status === 'success') {
+            setPasswordMsg('Success! Password updated.');
+            // Refresh to update auth state and clear alerts
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            setPasswordMsg(data.message || 'Failed to update');
+        }
+    } catch (e) {
+        setPasswordMsg(e.response?.data?.message || 'Server error');
+    } finally {
+        setIsSavingPassword(false);
+    }
+  };
 
   const handleSave = () => {
     // Determine the user's name to use in the alert
@@ -49,15 +86,68 @@ export default function Settings({ user, setUser }) {
             </div>
 
             {/* Password */}
-            <div className="grid md:grid-cols-3 gap-4 items-center">
+            <div className="grid md:grid-cols-3 gap-4 items-start">
               <div className="md:col-span-1">
                 <label className="block font-bold text-slate-900 mb-1">Password</label>
                 <p className="text-sm text-slate-500">Set a new password for your account.</p>
               </div>
-              <div className="md:col-span-2">
-                <button className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-900 font-bold rounded-lg transition-colors border border-slate-200">
-                  Change Password
-                </button>
+              <div className="md:col-span-2 space-y-3">
+                {!isChangingPassword ? (
+                   <button 
+                     onClick={() => setIsChangingPassword(true)}
+                     className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-900 font-bold rounded-lg transition-colors border border-slate-200"
+                   >
+                     Change Password
+                   </button>
+                ) : (
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4 animate-fade-in">
+                     <div>
+                       <label className="block text-sm font-semibold text-slate-700 mb-1">New Password</label>
+                       <input 
+                         type="password"
+                         value={newPassword}
+                         onChange={(e) => setNewPassword(e.target.value)}
+                         className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                         placeholder="Min 4 characters"
+                       />
+                     </div>
+                     <div>
+                       <label className="block text-sm font-semibold text-slate-700 mb-1">Confirm Password</label>
+                       <input 
+                         type="password"
+                         value={confirmPassword}
+                         onChange={(e) => setConfirmPassword(e.target.value)}
+                         className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                         placeholder="Re-enter password"
+                       />
+                     </div>
+                     <div className="flex items-center gap-2 pt-2">
+                        <button 
+                          onClick={handleChangePassword}
+                          disabled={isSavingPassword}
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-sm transition-colors"
+                        >
+                          {isSavingPassword ? 'Updating...' : 'Update Password'}
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setIsChangingPassword(false);
+                            setNewPassword('');
+                            setConfirmPassword('');
+                            setPasswordMsg('');
+                          }}
+                          className="px-4 py-2 text-slate-600 hover:bg-slate-200 font-bold rounded-lg text-sm transition-colors"
+                        >
+                          Cancel
+                        </button>
+                     </div>
+                     {passwordMsg && (
+                       <p className={`text-sm font-medium ${passwordMsg.includes('Success') ? 'text-green-600' : 'text-red-500'}`}>
+                         {passwordMsg}
+                       </p>
+                     )}
+                  </div>
+                )}
               </div>
             </div>
 
