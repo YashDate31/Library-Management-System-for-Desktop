@@ -184,6 +184,11 @@ export default function Layout({ user, setUser }) {
       <div className="fixed top-0 left-0 right-0 z-[60]">
          <AlertBanner />
       </div>
+      
+      {/* Accessibility: Skip to Content */}
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-24 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-blue-600 focus:text-white focus:rounded-md focus:shadow-lg focus:outline-none">
+        Skip to main content
+      </a>
 
       {/* Desktop Sidebar */}
       <aside 
@@ -219,12 +224,12 @@ export default function Layout({ user, setUser }) {
         </div>
 
         {/* Navigation Config Render */}
-        <div className="flex-1 flex flex-col py-6 px-3 gap-1 overflow-y-auto scrollbar-hide">
+        <nav className="flex-1 flex flex-col py-6 px-3 gap-1 overflow-y-auto scrollbar-hide" aria-label="Main Navigation">
            {NAV_ITEMS.map((section, idx) => (
-             <div key={section.section || idx} className="mb-2">
+             <div key={section.section || idx} className="mb-2" role="group" aria-label={section.section}>
                 {/* Section Header */}
                 <div className={`px-3 mb-2 transition-all duration-150 overflow-hidden ${isExpanded ? 'opacity-100 max-h-6' : 'opacity-0 max-h-0'}`}>
-                   {section.section && <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{section.section}</p>}
+                   {section.section && <p className="text-xs font-bold text-slate-400 uppercase tracking-wider" id={`heading-${section.section}`}>{section.section}</p>}
                 </div>
                 
                 {/* Items */}
@@ -235,10 +240,10 @@ export default function Layout({ user, setUser }) {
                 </div>
                 
                 {/* Visual Separator if not last */}
-                {idx < NAV_ITEMS.length - 1 && isExpanded && <div className="my-4 border-t border-slate-50 mx-3"></div>}
+                {idx < NAV_ITEMS.length - 1 && isExpanded && <div className="my-4 border-t border-slate-50 mx-3" role="separator"></div>}
              </div>
            ))}
-        </div>
+        </nav>
 
         {/* Sidebar Footer */}
         <div className="p-3 border-t border-slate-100 shrink-0">
@@ -307,7 +312,8 @@ export default function Layout({ user, setUser }) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-10 pb-24 md:pb-10 scroll-smooth bg-slate-50">
+        {/* Page Content */}
+        <main id="main-content" className="flex-1 overflow-y-auto p-4 md:p-10 pb-24 md:pb-10 scroll-smooth bg-slate-50" tabIndex="-1">
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}

@@ -3,11 +3,13 @@ import axios from 'axios';
 import { Book, Clock, AlertCircle, Award, Bell, User, X, ScanLine } from 'lucide-react';
 import RequestModal from '../components/RequestModal';
 import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import Skeleton, { SkeletonCard } from '../components/ui/Skeleton';
 import ErrorMessage from '../components/ui/ErrorMessage';
 import EmptyState from '../components/ui/EmptyState';
 
 export default function Dashboard({ user }) {
+  const navigate = useNavigate();
   const [data, setData] = useState({ 
     borrows: [], 
     history: [], 
@@ -146,7 +148,7 @@ export default function Dashboard({ user }) {
               title="No active loans"
               description="You haven't borrowed any books yet. Explore our collection to find your next read."
               actionLabel="Browse Catalogue"
-              onAction={() => window.location.href = '/books'} // Using href since navigate isn't imported, or I can import navigate
+              onAction={() => navigate('/books')}
             />
           </div>
         ) : (

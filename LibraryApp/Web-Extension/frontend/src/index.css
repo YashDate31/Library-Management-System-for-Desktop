@@ -15,7 +15,7 @@
     --color-danger: 239 68 68;       /* Red 500 */
     --color-warning: 234 179 8;      /* Yellow 500 */
     --color-text-primary: 15 23 42;  /* Slate 900 */
-    --color-text-secondary: 100 116 139; /* Slate 500 */
+    --color-text-secondary: 71 85 105; /* Slate 600 - WCAG Compliant */
     --color-border: 226 232 240;     /* Slate 200 */
   }
 
@@ -36,7 +36,14 @@
   body {
     @apply bg-background text-text-primary antialiased transition-colors duration-300;
   }
+
+  /* Accessibility: Focus Indicators */
+  :focus-visible {
+    outline: 2px solid theme('colors.blue.500');
+    outline-offset: 2px;
+  }
 }
+
 
 @layer components {
   .card {

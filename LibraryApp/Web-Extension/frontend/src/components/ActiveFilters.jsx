@@ -24,7 +24,7 @@ export default function ActiveFilters({ activeFilters, onRemove, onClear }) {
     <div className="flex flex-col sm:flex-row sm:items-center gap-3 animate-fade-in-up">
       
       <div className="flex items-center gap-2 text-slate-500 font-bold text-sm uppercase tracking-wide shrink-0">
-         <Filter size={14} /> Active Filters:
+         <Filter size={14} /> {filterParams.length} Active {filterParams.length === 1 ? 'Filter' : 'Filters'}:
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Search, Filter, BookOpen, Clock, LayoutGrid, Monitor, FlaskConical, History, ChevronDown, Calendar, Copy, Bell, ArrowRight, Code, Globe, Database, Network, Cpu, Book, Layers, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from '../context/ToastContext';
+import { Search, Filter, BookOpen, Clock, LayoutGrid, Monitor, FlaskConical, History, ChevronDown, Calendar, Copy, Bell, ArrowRight, Code, Globe, Database, Network, Cpu, Book, Layers, X } from 'lucide-react';
 import RequestModal from '../components/RequestModal';
 import BookDetailModal from '../components/BookDetailModal';
 import EmptyState from '../components/ui/EmptyState';
@@ -43,6 +44,7 @@ const CATEGORY_ICONS = {
 
 export default function Catalogue() {
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [books, setBooks] = useState([]);
   const [categories, setCategories] = useState([{ name: 'All', icon: LayoutGrid }]);
   const [loading, setLoading] = useState(true);
@@ -156,14 +158,17 @@ export default function Catalogue() {
       {/* Search & Toolbar */}
       <div className="flex flex-col md:flex-row gap-4 relative z-20">
          {/* Search Bar */}
-         <div className="flex-1 bg-slate-100 rounded-lg flex items-center px-4 py-3">
-            <Search className="text-slate-400 mr-3" size={20} />
+         <div className="flex-1 bg-slate-100 rounded-lg flex items-center px-4 py-3 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
+            <label htmlFor="search-books" className="sr-only">Search Books</label>
+            <Search className="text-slate-400 mr-3" size={20} aria-hidden="true" />
             <input 
+              id="search-books"
               type="text" 
               placeholder="Search by title, author, category..." 
               className="bg-transparent border-none outline-none text-slate-700 w-full placeholder:text-slate-400 font-medium"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              aria-label="Search by title, author, or category"
             />
          </div>
 
@@ -173,15 +178,18 @@ export default function Catalogue() {
             <div className="relative" onClick={e => e.stopPropagation()}>
                 <button 
                   onClick={() => setActiveDropdown(activeDropdown === 'category' ? null : 'category')}
+                  aria-expanded={activeDropdown === 'category'}
+                  aria-haspopup="true"
+                  aria-label="Filter by Category"
                   className={`flex items-center gap-2 px-5 py-3 rounded-lg font-semibold transition-colors border ${
                     activeDropdown === 'category' || selectedCategory !== 'All' 
                       ? 'bg-blue-50 text-blue-600 border-blue-200' 
                       : 'bg-slate-100 text-slate-700 border-transparent hover:bg-slate-200'
                   }`}
                 >
-                   <Filter size={18} /> 
+                   <Filter size={18} aria-hidden="true" /> 
                    <span className="max-w-[100px] truncate">{selectedCategory === 'All' ? 'Category' : selectedCategory}</span>
-                   <ChevronDown size={16} className={`transition-transform ${activeDropdown === 'category' ? 'rotate-180' : ''}`} />
+                   <ChevronDown size={16} className={`transition-transform ${activeDropdown === 'category' ? 'rotate-180' : ''}`} aria-hidden="true" />
                 </button>
                 
                 {activeDropdown === 'category' && (
@@ -210,15 +218,18 @@ export default function Catalogue() {
             <div className="relative" onClick={e => e.stopPropagation()}>
                 <button 
                   onClick={() => setActiveDropdown(activeDropdown === 'availability' ? null : 'availability')}
+                  aria-expanded={activeDropdown === 'availability'}
+                  aria-haspopup="true"
+                  aria-label="Filter by Availability"
                   className={`flex items-center gap-2 px-5 py-3 rounded-lg font-semibold transition-colors border ${
                     activeDropdown === 'availability' || availabilityFilter !== 'all'
                       ? 'bg-blue-50 text-blue-600 border-blue-200' 
                       : 'bg-slate-100 text-slate-700 border-transparent hover:bg-slate-200'
                   }`}
                 >
-                   <Calendar size={18} /> 
+                   <Calendar size={18} aria-hidden="true" /> 
                    {availabilityOptions.find(o => o.id === availabilityFilter)?.label || 'Availability'}
-                   <ChevronDown size={16} className={`transition-transform ${activeDropdown === 'availability' ? 'rotate-180' : ''}`} />
+                   <ChevronDown size={16} className={`transition-transform ${activeDropdown === 'availability' ? 'rotate-180' : ''}`} aria-hidden="true" />
                 </button>
 
                 {activeDropdown === 'availability' && (
@@ -283,6 +294,7 @@ export default function Catalogue() {
           setSearchTerm('');
           setSelectedCategory('All');
           setAvailabilityFilter('all');
+          addToast('All filters cleared', 'info');
         }}
       />
 
@@ -310,7 +322,12 @@ export default function Catalogue() {
                 title="No books found"
                 description="We couldn't find any books matching your current filters. Try adjusting your search terms or category."
                 actionLabel="Clear all filters"
-                onAction={() => { setSearchTerm(''); setSelectedCategory('All'); setAvailabilityFilter('all'); }}
+                onAction={() => { 
+                   setSearchTerm(''); 
+                   setSelectedCategory('All'); 
+                   setAvailabilityFilter('all'); 
+                   addToast('All filters cleared', 'info');
+                }}
              />
           </div>
         )}
@@ -347,7 +364,10 @@ function BookCard({ book, onClick }) {
   };
 
   return (
-    <div className="flex flex-col bg-white rounded-none md:rounded-xl overflow-hidden group">
+    <div 
+      className="flex flex-col bg-white rounded-none md:rounded-xl overflow-hidden group cursor-pointer"
+      onClick={onClick}
+    >
        {/* Cover Image Area */}
        <div className="bg-slate-100 aspect-[4/5] relative p-8 flex items-center justify-center mb-4 rounded-xl overflow-hidden">
           {/* Mockup spine/cover look */}

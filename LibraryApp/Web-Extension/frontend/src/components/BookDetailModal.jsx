@@ -46,6 +46,7 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
         details: `Request for book: ${book.title} (ID: ${book.book_id})`
       });
       setRequestStatus('success');
+      addToast('Book requested successfully!', 'success');
     } catch (err) {
       console.error("Request failed:", err);
       setRequestStatus('error');
@@ -54,6 +55,11 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
 
   const toggleWishlist = () => {
     setIsWishlisted(!isWishlisted);
+    if (!isWishlisted) {
+       addToast('Added to wishlist', 'success');
+    } else {
+       addToast('Removed from wishlist', 'info');
+    }
     // Future: API call to sync wishlist
   };
 
@@ -123,9 +129,10 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
              {/* Close Button Mobile (Absolute) */}
              <button 
                onClick={onClose}
-               className="md:hidden absolute top-4 right-4 z-20 p-2 bg-black/20 hover:bg-black/30 text-white rounded-full backdrop-blur-md transition-colors"
+               aria-label="Close modal"
+               className="md:hidden absolute top-4 right-4 z-20 p-2 bg-black/20 hover:bg-black/30 text-white rounded-full backdrop-blur-md transition-colors btn-interaction"
              >
-               <X size={20} />
+               <X size={20} aria-hidden="true" />
              </button>
 
              {/* LEFT COLUMN: Visual & Meta */}
@@ -174,17 +181,20 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
                       )}
                    </div>
                    <div className="flex items-center gap-2 relative">
-                      <button onClick={toggleWishlist} className={`p-2 rounded-full transition-colors ${isWishlisted ? 'bg-pink-50 text-pink-500' : 'hover:bg-slate-100 text-slate-400'}`}>
-                         <Heart size={20} fill={isWishlisted ? "currentColor" : "none"} />
+                      <button onClick={toggleWishlist} aria-label={isWishlisted ? "Remove from Wishlist" : "Add to Wishlist"} className={`p-2 rounded-full transition-colors btn-interaction ${isWishlisted ? 'bg-pink-50 text-pink-500' : 'hover:bg-slate-100 text-slate-400'}`}>
+                         <Heart size={20} fill={isWishlisted ? "currentColor" : "none"} aria-hidden="true" />
                       </button>
                       
                       {/* Share Menu */}
                       <div className="relative">
                         <button 
                           onClick={() => setShareOpen(!shareOpen)}
-                          className={`p-2 rounded-full transition-colors ${shareOpen ? 'bg-blue-50 text-blue-600' : 'hover:bg-slate-100 text-slate-400'}`}
+                          aria-label="Share this book"
+                          aria-haspopup="true"
+                          aria-expanded={shareOpen}
+                          className={`p-2 rounded-full transition-colors btn-interaction ${shareOpen ? 'bg-blue-50 text-blue-600' : 'hover:bg-slate-100 text-slate-400'}`}
                         >
-                           <Share2 size={20} />
+                           <Share2 size={20} aria-hidden="true" />
                         </button>
                         
                         {shareOpen && (
@@ -204,8 +214,8 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
                         )}
                       </div>
 
-                      <button onClick={onClose} className="p-2 hover:bg-slate-100 text-slate-400 rounded-full transition-colors ml-2">
-                         <X size={24} />
+                      <button onClick={onClose} aria-label="Close modal" className="p-2 hover:bg-slate-100 text-slate-400 rounded-full transition-colors ml-2 btn-interaction">
+                         <X size={24} aria-hidden="true" />
                       </button>
                    </div>
                 </div>
@@ -219,13 +229,16 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
                            {book.category || 'General'}
                          </span>
                          <div className="flex gap-2">
-                            <button onClick={toggleWishlist}><Heart size={20} className={isWishlisted ? 'text-pink-500 fill-current' : 'text-slate-400'} /></button>
+                            <button onClick={toggleWishlist} aria-label={isWishlisted ? "Remove from Wishlist" : "Add to Wishlist"}><Heart size={20} className={isWishlisted ? 'text-pink-500 fill-current' : 'text-slate-400'} aria-hidden="true" /></button>
                             <div className="relative">
                                <button 
                                  onClick={() => setShareOpen(!shareOpen)}
+                                 aria-label="Share this book"
+                                 aria-haspopup="true"
+                                 aria-expanded={shareOpen}
                                  className={`${shareOpen ? 'text-blue-600' : 'text-slate-400'}`}
                                >
-                                  <Share2 size={20} />
+                                  <Share2 size={20} aria-hidden="true" />
                                </button>
 
                                {shareOpen && (
@@ -319,7 +332,7 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
                          <button 
                            onClick={handleRequestBook}
                            disabled={requestStatus === 'loading' || book.available_copies <= 0}
-                           className={`flex-1 py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all shadow-lg active:scale-[0.98] ${
+                           className={`flex-1 py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all shadow-lg active:scale-[0.98] btn-interaction ${
                               book.available_copies > 0 
                                 ? 'bg-brand-blue hover:bg-blue-600 shadow-blue-500/25' 
                                 : 'bg-slate-300 cursor-not-allowed text-slate-500'
