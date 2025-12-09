@@ -272,6 +272,7 @@ export default function Layout({ user, setUser }) {
            <h2 className="text-xl font-bold text-slate-800">
              {location.pathname === '/' ? `Hello, ${user?.name || 'Student'}` : 
               location.pathname === '/settings' ? 'Settings' :
+              location.pathname === '/profile' ? 'My Profile' :
               location.pathname === '/services' ? 'Services & Notices' :
               location.pathname === '/history' ? 'My Library Journey' :
               location.pathname.startsWith('/books') ? 'Book Discovery' : 'Library'}
