@@ -4,6 +4,7 @@ import { Search, Filter, BookOpen, Clock, LayoutGrid, Monitor, FlaskConical, His
 import { useNavigate } from 'react-router-dom';
 import RequestModal from '../components/RequestModal';
 import BookDetailModal from '../components/BookDetailModal';
+import EmptyState from '../components/ui/EmptyState';
 
 const CATEGORY_ICONS = {
   'Core CS': Monitor,
@@ -261,15 +262,15 @@ export default function Catalogue() {
             />
           ))
         ) : (
-          <div className="col-span-full py-20 text-center text-slate-400">
-             <BookOpen size={48} className="mx-auto mb-4 opacity-20" />
-             <p className="text-lg font-medium">No books match your filters.</p>
-             <button 
-                onClick={() => { setSearchTerm(''); setSelectedCategory('All'); setAvailabilityFilter('all'); }}
-                className="mt-4 text-blue-500 hover:underline"
-             >
-               Clear all filters
-             </button>
+
+          <div className="col-span-full">
+             <EmptyState
+                icon={BookOpen}
+                title="No books found"
+                description="We couldn't find any books matching your current filters. Try adjusting your search terms or category."
+                actionLabel="Clear all filters"
+                onAction={() => { setSearchTerm(''); setSelectedCategory('All'); setAvailabilityFilter('all'); }}
+             />
           </div>
         )}
       </div>

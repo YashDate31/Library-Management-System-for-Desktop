@@ -4,6 +4,7 @@ import { FileText, Globe, Book, Archive, Download, ExternalLink, Clock } from 'l
 import RequestModal from '../components/RequestModal';
 import Skeleton, { SkeletonCard } from '../components/ui/Skeleton';
 import ErrorMessage from '../components/ui/ErrorMessage';
+import EmptyState from '../components/ui/EmptyState';
 
 export default function Services() {
   const [modalOpen, setModalOpen] = useState(false);
@@ -72,27 +73,35 @@ export default function Services() {
         ) : error ? (
            <ErrorMessage message={error} onRetry={fetchServices} />
         ) : (
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-             {resources.map((resource) => (
-               <div key={resource.id} className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow group">
-                 <div className="flex items-start justify-between mb-4">
-                   <div className="p-3 bg-slate-50 rounded-xl group-hover:scale-110 transition-transform">
-                      {getIcon(resource.icon)}
+           resources.length === 0 ? (
+             <EmptyState
+                icon={Archive}
+                title="No resources available"
+                description="There are currently no digital resources to display. Please check back later."
+             />
+           ) : (
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+               {resources.map((resource) => (
+                 <div key={resource.id} className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow group">
+                   <div className="flex items-start justify-between mb-4">
+                     <div className="p-3 bg-slate-50 rounded-xl group-hover:scale-110 transition-transform">
+                        {getIcon(resource.icon)}
+                     </div>
+                     <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2 py-1 rounded-lg">{resource.type}</span>
                    </div>
-                   <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2 py-1 rounded-lg">{resource.type}</span>
+                   
+                   <h3 className="font-bold text-slate-900 mb-2">{resource.title}</h3>
+                   <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+                     {resource.description}
+                   </p>
+                   
+                   <a href={resource.link} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-brand-blue/5 text-brand-blue font-semibold hover:bg-brand-blue/10 transition-colors">
+                     Access Now <ExternalLink size={16} />
+                   </a>
                  </div>
-                 
-                 <h3 className="font-bold text-slate-900 mb-2">{resource.title}</h3>
-                 <p className="text-sm text-slate-500 mb-6 leading-relaxed">
-                   {resource.description}
-                 </p>
-                 
-                 <a href={resource.link} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-brand-blue/5 text-brand-blue font-semibold hover:bg-brand-blue/10 transition-colors">
-                   Access Now <ExternalLink size={16} />
-                 </a>
-               </div>
-             ))}
-           </div>
+               ))}
+             </div>
+           )
         )}
       </section>
 

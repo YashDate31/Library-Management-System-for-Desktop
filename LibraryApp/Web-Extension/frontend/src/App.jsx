@@ -54,6 +54,7 @@ function App() {
             <Route path="/books/:bookId" element={user ? <BookDetails /> : <Navigate to="/login" />} />
             <Route path="/history" element={user ? <History /> : <Navigate to="/login" />} />
             <Route path="/services" element={user ? <Services /> : <Navigate to="/login" />} />
+            <Route path="/requests" element={user ? <Services /> : <Navigate to="/login" />} />
             <Route path="/profile" element={user ? <Profile user={user} /> : <Navigate to="/login" />} />
             <Route path="/settings" element={user ? <Settings user={user} setUser={setUser} /> : <Navigate to="/login" />} />
           </Route>

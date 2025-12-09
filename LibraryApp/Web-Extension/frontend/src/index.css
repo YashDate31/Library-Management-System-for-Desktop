@@ -55,3 +55,46 @@
     @apply w-full bg-background border border-border rounded-lg px-4 py-2.5 text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-all placeholder:text-text-secondary;
   }
 }
+  .sidebar-transition {
+    transition: width 0.15s ease, padding 0.15s ease, background-color 0.15s ease;
+  }
+  
+  /* Sidebar Expanded/Collapsed utility classes */
+  .sidebar-expanded {
+    @apply w-[260px];
+  }
+  
+  .sidebar-collapsed {
+    @apply w-[70px];
+  }
+
+  /* Nav Label Transitions */
+  .nav-label {
+    @apply whitespace-nowrap overflow-hidden;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }
+
+  .sidebar-collapsed .nav-label {
+    opacity: 0;
+    transform: translateX(-10px);
+    pointer-events: none;
+    position: absolute; /* Take out of flow to prevent width issues if needed, but flex handles it usually */
+    left: 48px; /* Push it away or just hide it */
+    display: none; /* Display none is saftest for layout, but opacity requested. Let's try opacity */
+    display: block; /* Overrule if needed. Actually simpler: */
+  }
+  
+  /* Refined Opacity Only Approach for smoothness */
+  .sidebar-collapsed .nav-label-container {
+    opacity: 0;
+    width: 0;
+    transform: translateX(-10px);
+    pointer-events: none;
+  }
+  
+  .sidebar-expanded .nav-label-container {
+    opacity: 1;
+    width: auto;
+    transform: translateX(0);
+  }
+

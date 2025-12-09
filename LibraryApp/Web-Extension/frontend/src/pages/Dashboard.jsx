@@ -5,6 +5,7 @@ import RequestModal from '../components/RequestModal';
 import { Link } from 'react-router-dom';
 import Skeleton, { SkeletonCard } from '../components/ui/Skeleton';
 import ErrorMessage from '../components/ui/ErrorMessage';
+import EmptyState from '../components/ui/EmptyState';
 
 export default function Dashboard({ user }) {
   const [data, setData] = useState({ 
@@ -139,10 +140,14 @@ export default function Dashboard({ user }) {
 
         {/* 4. Book Grid */}
         {data.borrows.length === 0 ? (
-          <div className="bg-slate-50 border border-dashed border-slate-200 rounded-xl p-16 text-center text-slate-400">
-             <Book size={48} className="mx-auto mb-4 opacity-20" />
-             <p className="text-lg">No active loans.</p>
-             <Link to="/books" className="text-blue-500 hover:underline mt-2 inline-block font-medium">Browse Catalogue</Link>
+          <div className="col-span-full">
+            <EmptyState
+              icon={Book}
+              title="No active loans"
+              description="You haven't borrowed any books yet. Explore our collection to find your next read."
+              actionLabel="Browse Catalogue"
+              onAction={() => window.location.href = '/books'} // Using href since navigate isn't imported, or I can import navigate
+            />
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
