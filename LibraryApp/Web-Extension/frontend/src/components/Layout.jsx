@@ -16,6 +16,9 @@ export default function Layout({ user, setUser }) {
   const enterTimeoutRef = useRef(null);
   const leaveTimeoutRef = useRef(null);
   const menuRef = useRef(null);
+  const profileMenuRef = useRef(null);
+
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
   const handleLogout = async () => {
     await axios.post('/api/logout');
@@ -29,6 +32,9 @@ export default function Layout({ user, setUser }) {
     const handleClickOutside = (event) => {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
         setMenuOpen(false);
+      }
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
+        setProfileMenuOpen(false);
       }
     };
 
@@ -290,13 +296,80 @@ export default function Layout({ user, setUser }) {
                 <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
               </button>
               
-              <Link to="/profile" className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden hover:ring-2 ring-slate-200 transition-all">
-                 <img 
-                   src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=687&q=80" 
-                   alt="Profile" 
-                   className="w-full h-full object-cover" 
-                 />
-              </Link>
+              
+              <div className="relative" ref={profileMenuRef}>
+                 <button 
+                   onClick={() => setProfileMenuOpen(!profileMenuOpen)}
+                   className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden hover:ring-2 ring-slate-200 transition-all focus:outline-none"
+                 >
+                    <img 
+                      src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=687&q=80" 
+                      alt="Profile" 
+                      className="w-full h-full object-cover" 
+                    />
+                 </button>
+
+                 {/* Profile Dropdown */}
+                 {profileMenuOpen && (
+                   <div className="absolute right-0 top-12 w-64 bg-white rounded-xl shadow-xl border border-slate-100 py-2 z-50 animate-fade-in origin-top-right">
+                     {/* User Info */}
+                     <div className="px-4 py-3 border-b border-slate-100">
+                       <p className="text-sm font-bold text-brand-dark truncate">{user?.name || 'Alex Thompson'}</p>
+                       <p className="text-xs text-slate-500 truncate">{user?.email || 'alex.thompson@university.edu'}</p>
+                     </div>
+
+                     {/* Menu Items */}
+                     <div className="py-2">
+                       <Link 
+                         to="/" 
+                         onClick={() => setProfileMenuOpen(false)}
+                         className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-brand-blue transition-colors"
+                       >
+                         <LayoutDashboard size={16} />
+                         Dashboard
+                       </Link>
+                       <Link 
+                         to="/books" 
+                         onClick={() => setProfileMenuOpen(false)}
+                         className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-brand-blue transition-colors"
+                       >
+                         <BookOpen size={16} />
+                         Book Catalogue
+                       </Link>
+                       <Link 
+                         to="/profile" 
+                         onClick={() => setProfileMenuOpen(false)}
+                         className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-brand-blue transition-colors"
+                       >
+                         <User size={16} />
+                         Profile
+                       </Link>
+                       <Link 
+                         to="/settings" 
+                         onClick={() => setProfileMenuOpen(false)}
+                         className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-brand-blue transition-colors"
+                       >
+                         <Settings size={16} />
+                         Settings
+                       </Link>
+                     </div>
+
+                     {/* Logout */}
+                     <div className="pt-1 border-t border-slate-100">
+                       <button 
+                         onClick={() => {
+                           setProfileMenuOpen(false);
+                           handleLogout();
+                         }}
+                         className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50 transition-colors text-left"
+                       >
+                         <LogOut size={16} />
+                         Logout
+                       </button>
+                     </div>
+                   </div>
+                 )}
+              </div>
            </div>
         </header>
 
