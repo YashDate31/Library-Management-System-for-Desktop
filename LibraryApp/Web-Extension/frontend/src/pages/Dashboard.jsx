@@ -3,6 +3,8 @@ import axios from 'axios';
 import { Book, Clock, AlertCircle, Award, Bell, User, X, ScanLine } from 'lucide-react';
 import RequestModal from '../components/RequestModal';
 import { Link } from 'react-router-dom';
+import Skeleton, { SkeletonCard } from '../components/ui/Skeleton';
+import ErrorMessage from '../components/ui/ErrorMessage';
 
 export default function Dashboard({ user }) {
   const [data, setData] = useState({ 
@@ -31,7 +33,37 @@ export default function Dashboard({ user }) {
     }
   };
 
-  if (loading) return <div className="p-10 text-center text-text-secondary animate-pulse">Loading Athenaeum...</div>;
+  if (loading) return (
+    <div className="space-y-8 pb-10">
+       {/* Skeleton Profile */}
+       <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-100 flex gap-10">
+          <Skeleton className="w-40 h-40 rounded-full shrink-0" />
+          <div className="flex-1 pt-4 space-y-4">
+            <Skeleton className="h-8 w-1/3" />
+            <Skeleton className="h-4 w-1/4" />
+            <div className="grid grid-cols-2 gap-8 mt-8">
+               <Skeleton className="h-12 w-full" />
+               <Skeleton className="h-12 w-full" />
+            </div>
+          </div>
+       </div>
+       {/* Skeleton Grid */}
+       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+       </div>
+    </div>
+  );
+
+  if (!data && !loading) return (
+    <div className="p-10">
+      <ErrorMessage 
+        message="Failed to load your dashboard. Please check your connection."
+        onRetry={fetchData}
+      />
+    </div>
+  );
 
   const overdueBooks = data.borrows.filter(b => b.status === 'overdue');
 

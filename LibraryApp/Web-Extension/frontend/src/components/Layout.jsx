@@ -113,15 +113,15 @@ export default function Layout({ user, setUser }) {
     return (
       <Link 
         to={to} 
-        className={`flex items-center gap-3 py-3 rounded-xl transition-all duration-200 group relative ${
+        className={`flex items-center gap-3 py-3 rounded-lg transition-all duration-200 group relative ${
           showText ? 'px-4' : 'px-4 md:justify-center'
         } ${
           isActive 
-            ? 'bg-brand-blue/10 text-brand-blue font-semibold shadow-sm border-l-4 border-brand-blue' 
-            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900 border-l-4 border-transparent'
+            ? 'bg-brand-blue/15 text-brand-blue font-bold shadow-sm border-l-4 border-brand-blue' 
+            : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 border-l-4 border-transparent'
         }`}
       >
-        <Icon size={20} className={`shrink-0 ${isActive ? 'text-brand-blue' : 'text-slate-400 group-hover:text-brand-blue transition-colors'}`} />
+        <Icon size={20} className={`shrink-0 ${isActive ? 'text-brand-blue' : 'text-slate-400 group-hover:text-brand-blue transition-colors'}`} strokeWidth={isActive ? 2.5 : 2} />
         <span className={`whitespace-nowrap transition-opacity duration-200 ${showText ? 'opacity-100 md:inline' : 'opacity-0 md:hidden md:w-0'} inline`}>
           {label}
         </span>
@@ -135,12 +135,15 @@ export default function Layout({ user, setUser }) {
     return (
       <Link 
         to={to}
-        className={`flex flex-col items-center justify-center w-full py-2 transition-colors ${
-          isActive ? 'text-brand-blue' : 'text-slate-400 hover:text-slate-600'
+        className={`flex flex-col items-center justify-center w-full py-2 transition-colors relative ${
+          isActive ? 'text-brand-blue font-bold' : 'text-slate-400 hover:text-slate-600 font-medium'
         }`}
       >
+        {isActive && (
+           <span className="absolute top-0 w-12 h-0.5 bg-brand-blue rounded-full" />
+        )}
         <Icon size={24} className={isActive ? 'fill-current opacity-20' : ''} strokeWidth={isActive ? 2.5 : 2} />
-        <span className="text-[10px] font-medium mt-1">{label}</span>
+        <span className="text-[10px] mt-1">{label}</span>
       </Link>
     );
   };
