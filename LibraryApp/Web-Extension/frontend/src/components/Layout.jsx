@@ -1,11 +1,12 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LogOut, LayoutDashboard, BookOpen, Clock, FileText, Bell, Search, User, Settings, ScanLine, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LogOut, LayoutDashboard, BookOpen, Clock, FileText, Bell, Search, User, Settings, ScanLine, Menu, X, ChevronLeft, ChevronRight, Home } from 'lucide-react';
 import axios from 'axios';
 import { useState, useEffect, useRef } from 'react';
+import Breadcrumbs from './Breadcrumbs';
 
 export default function Layout({ user, setUser }) {
   const location = useLocation();
-  const [sidebarOpen, setSidebarOpen] = useState(false); // Mobile only
+  const [sidebarOpen, setSidebarOpen] = useState(false); // Mobile only (Legacy state, keeping for safety, but main nav is now bottom tabs)
   const [isExpanded, setIsExpanded] = useState(false); // Desktop hover state
   
   // Three modes: 'expanded', 'collapsed', 'hover'
@@ -104,26 +105,42 @@ export default function Layout({ user, setUser }) {
   // Determine if sidebar should be shown as expanded
   const shouldShowExpanded = sidebarMode === 'expanded' || (sidebarMode === 'hover' && isExpanded);
 
+  // Desktop Nav Item
   const NavItem = ({ to, icon: Icon, label }) => {
-    const isActive = location.pathname === to;
-    const showText = shouldShowExpanded || sidebarOpen;
+    const isActive = location.pathname === to || (to !== '/' && location.pathname.startsWith(to));
+    const showText = shouldShowExpanded;
     
     return (
       <Link 
         to={to} 
-        onClick={closeSidebar}
         className={`flex items-center gap-3 py-3 rounded-xl transition-all duration-200 group relative ${
           showText ? 'px-4' : 'px-4 md:justify-center'
         } ${
           isActive 
-            ? 'bg-brand-blue/10 text-brand-blue font-semibold' 
-            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+            ? 'bg-brand-blue/10 text-brand-blue font-semibold shadow-sm border-l-4 border-brand-blue' 
+            : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900 border-l-4 border-transparent'
         }`}
       >
         <Icon size={20} className={`shrink-0 ${isActive ? 'text-brand-blue' : 'text-slate-400 group-hover:text-brand-blue transition-colors'}`} />
         <span className={`whitespace-nowrap transition-opacity duration-200 ${showText ? 'opacity-100 md:inline' : 'opacity-0 md:hidden md:w-0'} inline`}>
           {label}
         </span>
+      </Link>
+    );
+  };
+
+  // Mobile Bottom Tab Item
+  const MobileTabItem = ({ to, icon: Icon, label }) => {
+    const isActive = location.pathname === to || (to !== '/' && location.pathname.startsWith(to));
+    return (
+      <Link 
+        to={to}
+        className={`flex flex-col items-center justify-center w-full py-2 transition-colors ${
+          isActive ? 'text-brand-blue' : 'text-slate-400 hover:text-slate-600'
+        }`}
+      >
+        <Icon size={24} className={isActive ? 'fill-current opacity-20' : ''} strokeWidth={isActive ? 2.5 : 2} />
+        <span className="text-[10px] font-medium mt-1">{label}</span>
       </Link>
     );
   };
@@ -137,71 +154,62 @@ export default function Layout({ user, setUser }) {
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
       
-      {/* Mobile backdrop overlay */}
-      {sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
-          onClick={closeSidebar}
-        />
-      )}
-
-      {/* Sidebar - Always fixed position */}
+      {/* Desktop Sidebar - Hidden on Mobile */}
       <aside 
         onPointerEnter={handlePointerEnter}
         onPointerLeave={handlePointerLeave}
         className={`
+          hidden md:flex 
           fixed inset-y-0 left-0 z-50
-          bg-white border-r border-slate-100 flex flex-col
+          bg-white border-r border-slate-100 flex-col
           transition-all duration-300 ease-in-out
           shadow-xl md:shadow-lg
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-          ${shouldShowExpanded ? 'w-72' : 'md:w-20 w-72'}
+          ${shouldShowExpanded ? 'w-72' : 'w-20'}
         `}
       >
-        {/* Mobile close button */}
-        <button 
-          onClick={closeSidebar}
-          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 md:hidden"
-        >
-          <X size={24} />
-        </button>
-
         {/* Main sidebar content */}
         <div className={`flex-1 flex flex-col ${shouldShowExpanded ? 'p-6' : 'p-3'} transition-all duration-300`}>
           {/* Brand */}
-          <div className="flex items-center gap-3 mb-12">
+          <div className={`flex items-center gap-3 mb-10 ${shouldShowExpanded ? '' : 'justify-center'}`}>
              <img 
                src="/logo.png" 
                alt="Athenaeum Logo" 
-               className="w-14 h-14 shrink-0 object-contain"
+               className="w-10 h-10 shrink-0 object-contain"
              />
-             <div className={`transition-opacity duration-200 ${shouldShowExpanded || sidebarOpen ? 'opacity-100 md:block' : 'opacity-0 md:hidden'} block`}>
-               <h1 className="text-lg font-bold tracking-tight text-brand-dark whitespace-nowrap">GPA's</h1>
-               <p className="text-xs text-slate-500 font-medium whitespace-nowrap">Library Management System</p>
-             </div>
+             {shouldShowExpanded && (
+               <div className="transition-opacity duration-200 animate-fade-in block">
+                 <h1 className="text-lg font-bold tracking-tight text-brand-dark whitespace-nowrap">GPA's</h1>
+                 <p className="text-xs text-slate-500 font-medium whitespace-nowrap">Library Management System</p>
+               </div>
+             )}
           </div>
 
-          {/* Navigation */}
-          <nav className="flex-1 space-y-1">
+          {/* Primary Navigation */}
+          <div className="space-y-1">
+            <p className={`text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 px-4 ${shouldShowExpanded ? 'opacity-100' : 'opacity-0 hidden'}`}>Menu</p>
             <NavItem to="/" icon={LayoutDashboard} label="Dashboard" />
             <NavItem to="/books" icon={BookOpen} label="Book Catalogue" />
             <NavItem to="/history" icon={Clock} label="History" />
             <NavItem to="/services" icon={FileText} label="Requests" />
-          </nav>
+          </div>
 
-          {/* User / Sign Out */}
-          <div className="space-y-2">
+          {/* Spacer */}
+          <div className="flex-1"></div>
+
+          {/* Secondary Navigation (Account) */}
+          <div className="space-y-1 border-t border-slate-100 pt-4">
+            <p className={`text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 px-4 ${shouldShowExpanded ? 'opacity-100' : 'opacity-0 hidden'}`}>Account</p>
             <NavItem to="/profile" icon={User} label="Profile" />
             <NavItem to="/settings" icon={Settings} label="Settings" />
             
             <button 
               onClick={handleLogout} 
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-red-50 hover:text-red-600 transition-all ${
-                shouldShowExpanded ? '' : 'md:justify-center'
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-red-50 hover:text-red-600 transition-all border-l-4 border-transparent ${
+                shouldShowExpanded ? '' : 'justify-center'
               }`}
             >
               <LogOut size={20} className="shrink-0" />
-              <span className={`transition-opacity duration-200 ${shouldShowExpanded || sidebarOpen ? 'opacity-100 md:inline' : 'opacity-0 md:hidden md:w-0'} inline whitespace-nowrap`}>
+              <span className={`transition-opacity duration-200 ${shouldShowExpanded ? 'opacity-100 inline' : 'opacity-0 hidden w-0'} whitespace-nowrap`}>
                 Logout
               </span>
             </button>
@@ -231,9 +239,6 @@ export default function Layout({ user, setUser }) {
                       : 'bg-transparent text-slate-900 hover:bg-slate-100'
                   }`}
                   onClick={() => handleSidebarModeChange(option.id)}
-                  role="menuitemradio"
-                  aria-checked={sidebarMode === option.id}
-                  style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}
                 >
                   <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
                     sidebarMode === option.id 
@@ -251,8 +256,6 @@ export default function Layout({ user, setUser }) {
         <div className="hidden md:flex items-center justify-center h-14 border-t border-slate-100 bg-white">
           <button
             onClick={() => setMenuOpen(!menuOpen)}
-            aria-label="Sidebar control"
-            title="Sidebar control"
             className={`p-2 rounded-lg transition-all duration-150 ${
               menuOpen ? 'text-brand-blue bg-brand-blue/10' :
               sidebarMode === 'expanded' ? 'text-brand-blue bg-brand-blue/10' :
@@ -264,38 +267,60 @@ export default function Layout({ user, setUser }) {
         </div>
       </aside>
 
-      {/* Main Content Area - Fixed left margin for collapsed sidebar */}
+      {/* Main Content Area - Fixed left margin for collapsed sidebar (0 margin for Mobile) */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative ml-0 md:ml-20">
+        
         {/* Header */}
-        <header className="h-20 flex items-center justify-between px-4 md:px-10 bg-white/80 backdrop-blur-xl sticky top-0 z-30 border-b border-slate-100">
-           {/* Mobile hamburger menu */}
-           <button 
-             onClick={() => setSidebarOpen(true)}
-             className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg md:hidden"
-           >
-             <Menu size={24} />
-           </button>
+        <header className="h-auto md:h-20 flex flex-col md:flex-row md:items-center justify-between px-4 py-4 md:py-0 md:px-10 bg-white/80 backdrop-blur-xl sticky top-0 z-30 border-b border-slate-100">
+           
+           {/* Top Row: Title & ID (Desktop) */}
+           <div className="flex items-center justify-between w-full md:w-auto">
+             <div>
+                {/* Breadcrumbs - Integrated into header flow */}
+                <div className="md:hidden mb-1">
+                  <Breadcrumbs />
+                </div>
+                
+                <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                  {location.pathname === '/' ? `Hello, ${user?.name || 'Student'}` : 
+                   location.pathname === '/settings' ? 'Settings' :
+                   location.pathname === '/profile' ? 'My Profile' :
+                   location.pathname === '/services' ? 'Services & Notices' :
+                   location.pathname === '/history' ? 'My Library Journey' :
+                   location.pathname.startsWith('/books') ? 'Book Discovery' : 'Library'}
+                </h2>
+                
+                <div className="hidden md:block mt-1">
+                   <Breadcrumbs />
+                </div>
+             </div>
 
-           <h2 className="text-xl font-bold text-slate-800">
-             {location.pathname === '/' ? `Hello, ${user?.name || 'Student'}` : 
-              location.pathname === '/settings' ? 'Settings' :
-              location.pathname === '/profile' ? 'My Profile' :
-              location.pathname === '/services' ? 'Services & Notices' :
-              location.pathname === '/history' ? 'My Library Journey' :
-              location.pathname.startsWith('/books') ? 'Book Discovery' : 'Library'}
-           </h2>
+             {/* Mobile Profile Icon (for dropdown) */}
+             <div className="md:hidden">
+                <button 
+                   onClick={() => setProfileMenuOpen(!profileMenuOpen)}
+                   className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 overflow-hidden"
+                >
+                   <img 
+                     src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=687&q=80" 
+                     alt="Profile" 
+                     className="w-full h-full object-cover" 
+                   />
+                </button>
+             </div>
+           </div>
 
-           <div className="flex items-center gap-3 md:gap-6">
+           {/* Desktop Right Side Controls */}
+           <div className="hidden md:flex items-center gap-3 md:gap-6">
               <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-full text-sm text-slate-600 font-medium shadow-sm">
                  <ScanLine size={16} className="text-slate-400" />
-                 My ID
+                 {user?.enrollment_no || 'My ID'}
               </div>
               
               <button className="relative text-slate-400 hover:text-slate-600 transition-colors">
                 <Bell size={22} />
                 <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
               </button>
-              
               
               <div className="relative" ref={profileMenuRef}>
                  <button 
@@ -312,60 +337,17 @@ export default function Layout({ user, setUser }) {
                  {/* Profile Dropdown */}
                  {profileMenuOpen && (
                    <div className="absolute right-0 top-12 w-64 bg-white rounded-xl shadow-xl border border-slate-100 py-2 z-50 animate-fade-in origin-top-right">
-                     {/* User Info */}
                      <div className="px-4 py-3 border-b border-slate-100">
-                       <p className="text-sm font-bold text-brand-dark truncate">{user?.name || 'Alex Thompson'}</p>
-                       <p className="text-xs text-slate-500 truncate">{user?.email || 'alex.thompson@university.edu'}</p>
+                       <p className="text-sm font-bold text-brand-dark truncate">{user?.name || 'Student'}</p>
+                       <p className="text-xs text-slate-500 truncate">{user?.email || 'student@university.edu'}</p>
                      </div>
-
-                     {/* Menu Items */}
                      <div className="py-2">
-                       <Link 
-                         to="/" 
-                         onClick={() => setProfileMenuOpen(false)}
-                         className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-brand-blue transition-colors"
-                       >
-                         <LayoutDashboard size={16} />
-                         Dashboard
-                       </Link>
-                       <Link 
-                         to="/books" 
-                         onClick={() => setProfileMenuOpen(false)}
-                         className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-brand-blue transition-colors"
-                       >
-                         <BookOpen size={16} />
-                         Book Catalogue
-                       </Link>
-                       <Link 
-                         to="/profile" 
-                         onClick={() => setProfileMenuOpen(false)}
-                         className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-brand-blue transition-colors"
-                       >
-                         <User size={16} />
-                         Profile
-                       </Link>
-                       <Link 
-                         to="/settings" 
-                         onClick={() => setProfileMenuOpen(false)}
-                         className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-brand-blue transition-colors"
-                       >
-                         <Settings size={16} />
-                         Settings
-                       </Link>
+                       <Link to="/" onClick={() => setProfileMenuOpen(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-brand-blue transition-colors"><LayoutDashboard size={16} />Dashboard</Link>
+                       <Link to="/profile" onClick={() => setProfileMenuOpen(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-brand-blue transition-colors"><User size={16} />Profile</Link>
+                       <Link to="/settings" onClick={() => setProfileMenuOpen(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-brand-blue transition-colors"><Settings size={16} />Settings</Link>
                      </div>
-
-                     {/* Logout */}
                      <div className="pt-1 border-t border-slate-100">
-                       <button 
-                         onClick={() => {
-                           setProfileMenuOpen(false);
-                           handleLogout();
-                         }}
-                         className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50 transition-colors text-left"
-                       >
-                         <LogOut size={16} />
-                         Logout
-                       </button>
+                       <button onClick={() => { setProfileMenuOpen(false); handleLogout(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50 transition-colors text-left"><LogOut size={16} />Logout</button>
                      </div>
                    </div>
                  )}
@@ -373,11 +355,21 @@ export default function Layout({ user, setUser }) {
            </div>
         </header>
 
-        {/* Scrollable Page Content */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-10 scroll-smooth bg-slate-50">
+        {/* Scrollable Page Content - Padding bottom for mobile tabs */}
+        <main className="flex-1 overflow-y-auto p-4 md:p-10 pb-24 md:pb-10 scroll-smooth bg-slate-50">
           <Outlet />
         </main>
+
+        {/* Mobile Bottom Tab Bar */}
+        <div className="md:hidden fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 px-2 py-1 safe-area-pb z-50 flex justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+            <MobileTabItem to="/" icon={Home} label="Home" />
+            <MobileTabItem to="/books" icon={BookOpen} label="Books" />
+            <MobileTabItem to="/services" icon={FileText} label="Requests" />
+            <MobileTabItem to="/history" icon={Clock} label="History" />
+            <MobileTabItem to="/profile" icon={User} label="Profile" />
+        </div>
       </div>
     </div>
   );
 }
+
