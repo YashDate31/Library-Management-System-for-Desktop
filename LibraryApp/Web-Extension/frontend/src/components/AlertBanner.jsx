@@ -38,10 +38,16 @@ export default function AlertBanner() {
             <AlertCircle size={20} className="text-white" />
           </div>
           <div className="font-medium text-sm md:text-base">
-            <span className="font-bold hidden sm:inline">Attention Needed:</span>
-            <span className="sm:hidden font-bold">{alert.count} Overdue Book{alert.count > 1 ? 's' : ''}</span>
-            <span className="hidden sm:inline"> You have {alert.count} overdue book{alert.count > 1 ? 's' : ''}.</span>
-            <span className="opacity-90 hidden md:inline"> Estimated fine: ₹{alert.fine_estimate}.</span>
+            <span className="font-bold hidden sm:inline">Attention Needed: </span>
+            {alert.type === 'security' ? (
+                <span>{alert.message}</span>
+            ) : (
+                <>
+                    <span className="sm:hidden font-bold">{alert.count} Overdue Book{alert.count > 1 ? 's' : ''}</span>
+                    <span className="hidden sm:inline"> You have {alert.count} overdue book{alert.count > 1 ? 's' : ''}.</span>
+                    <span className="opacity-90 hidden md:inline"> Estimated fine: ₹{alert.fine_estimate}.</span>
+                </>
+            )}
           </div>
         </div>
 

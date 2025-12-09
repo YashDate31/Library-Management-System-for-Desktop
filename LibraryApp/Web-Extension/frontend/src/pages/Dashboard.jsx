@@ -83,6 +83,40 @@ export default function Dashboard({ user }) {
           </div>
         </Card>
 
+        {/* 2.5 Security Alert Card */}
+        {data.notifications.some(n => n.type === 'danger' && n.title === 'Security Alert') && (
+          <div className="animate-fade-in">
+             <Card className="bg-red-50 border-red-100 shadow-sm relative overflow-hidden">
+               <div className="absolute top-0 right-0 w-20 h-20 bg-red-100 rounded-bl-full -mr-10 -mt-10 opacity-50"></div>
+               
+               <div className="relative z-10">
+                 <div className="flex items-start gap-3 mb-3">
+                   <div className="bg-red-100 p-2 rounded-full shrink-0">
+                     <AlertCircle className="w-6 h-6 text-red-600" />
+                   </div>
+                   <div>
+                     <h3 className="font-bold text-red-900 leading-tight text-lg">Action Required</h3>
+                     <p className="text-red-600 text-sm font-medium mt-1">Change Default Password</p>
+                   </div>
+                 </div>
+                 
+                 <div className="flex items-center justify-between mt-4 pl-1">
+                   <p className="text-xs text-red-500 font-medium max-w-[60%]">
+                     You are using the default enrollment number as password.
+                   </p>
+                   <Button 
+                      variant="danger" 
+                      size="sm" 
+                      onClick={() => navigate('/settings')} // Assuming settings has the change password form
+                    >
+                      Change Now
+                    </Button>
+                 </div>
+               </div>
+             </Card>
+          </div>
+        )}
+
         {/* 3. Overdue Alert Card */}
         {overdueBooks.length > 0 && (
           <div className="space-y-4 animate-fade-in">

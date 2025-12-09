@@ -204,11 +204,29 @@ def api_user_policies():
 
 @app.route('/api/alerts')
 def api_alerts():
-    """Lightweight check for overdue items"""
+    """Lightweight check for overdue items and security alerts"""
     if 'student_id' not in session:
         return jsonify({'error': 'Unauthorized'}), 401
     
     enrollment = session['student_id']
+    
+    # 1. Check Security Alert (Highest Priority)
+    conn_portal = get_portal_db()
+    cursor_p = conn_portal.cursor()
+    cursor_p.execute("SELECT is_first_login FROM student_auth WHERE enrollment_no = ?", (enrollment,))
+    auth_record = cursor_p.fetchone()
+    conn_portal.close()
+    
+    if auth_record and auth_record['is_first_login']:
+        return jsonify({
+            'has_alert': True,
+            'type': 'security',
+            'message': 'Action Required: Change Default Password',
+            'action_link': '/settings', # Or prompt modal
+            'count': 1
+        })
+    
+    # 2. Check Overdue Items
     conn = get_library_db()
     cursor = conn.cursor()
     
@@ -243,6 +261,7 @@ def api_alerts():
                 
     return jsonify({
         'has_alert': overdue_count > 0,
+        'type': 'overdue',
         'count': overdue_count,
         'fine_estimate': total_fine,
         'items': overdue_titles
@@ -323,6 +342,21 @@ def api_dashboard():
     # 2. Process Business Logic (Fines/Alerts)
     borrows = []
     notifications = []
+    
+    # High Priority Auth Alert
+    conn_portal = get_portal_db()
+    cursor_p = conn_portal.cursor()
+    cursor_p.execute("SELECT is_first_login FROM student_auth WHERE enrollment_no = ?", (enrollment,))
+    auth_record = cursor_p.fetchone()
+    conn_portal.close()
+    
+    if auth_record and auth_record['is_first_login']:
+         notifications.append({
+            'type': 'danger',
+            'title': 'Security Alert',
+            'msg': "You are using the default password. Please change it immediately."
+        })
+
     today = datetime.now()
     
     for row in raw_borrows:

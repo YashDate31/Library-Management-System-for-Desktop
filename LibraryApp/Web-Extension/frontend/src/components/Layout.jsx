@@ -272,11 +272,9 @@ export default function Layout({ user, setUser }) {
       {/* Main Content */}
       <div className={`flex-1 flex flex-col min-w-0 overflow-hidden relative sidebar-transition ${mainMargin}`}>
         {/* Mobile Header */}
-        <header className="h-auto md:h-20 flex flex-col md:flex-row md:items-center justify-between px-4 py-4 md:py-0 md:px-10 bg-white/80 backdrop-blur-xl sticky top-0 z-30 border-b border-slate-100">
-           <div className="flex items-center justify-between w-full md:w-auto">
-             <div>
+        <header className="h-20 flex items-center justify-between px-4 md:px-10 bg-white/80 backdrop-blur-xl sticky top-0 z-30 border-b border-slate-100">
              <div className="flex items-center gap-4">
-                 <div className="w-12 h-12 flex items-center justify-center bg-white rounded-xl shadow-sm border border-slate-100 p-1">
+                 <div className="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center bg-white rounded-xl shadow-sm border border-slate-100 p-1">
                     <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
                  </div>
                  <h1 className="text-lg font-heading font-bold text-slate-900 leading-tight">
@@ -284,62 +282,68 @@ export default function Layout({ user, setUser }) {
                    <span className="text-xs font-medium text-slate-500 font-sans">Student Portal</span>
                  </h1>
              </div>
-             </div>
 
-             <div className="md:hidden relative" ref={profileMenuRef}>
-                <button 
-                   onClick={() => setProfileMenuOpen(!profileMenuOpen)}
-                   className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 overflow-hidden"
-                >
-                   <div className="w-full h-full flex items-center justify-center text-slate-500 font-bold">
-                     {user?.name?.charAt(0)}
-                   </div>
-                </button>
-                {/* Mobile Dropdown */}
-                <AnimatePresence>
-                  {profileMenuOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                      transition={{ duration: 0.2, ease: "easeOut" }}
-                      className="absolute right-0 top-12 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-1 z-50 origin-top-right"
-                    >
-                      <Link 
-                        to="/profile" 
-                        onClick={() => setProfileMenuOpen(false)}
-                        className="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                      >
-                        <User size={14}/> Profile
-                      </Link>
-                      <Link 
-                        to="/settings" 
-                        onClick={() => setProfileMenuOpen(false)}
-                        className="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                      >
-                        <Settings size={14}/> Settings
-                      </Link>
-                      <button 
-                        onClick={() => {
-                          setProfileMenuOpen(false);
-                          handleLogout();
-                        }} 
-                        className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
-                      >
-                        <LogOut size={14}/> Logout
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-             </div>
-           </div>
+             <div className="flex items-center gap-4">
+                {/* Desktop Enrollment Pill */}
+                <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm font-mono text-slate-600 shadow-sm">
+                   <ScanLine size={14} className="text-slate-400" />
+                   {user?.enrollment_no || '0000'}
+                </div>
 
-           <div className="hidden md:flex items-center gap-4">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm font-mono text-slate-600 shadow-sm">
-                 <ScanLine size={14} className="text-slate-400" />
-                 {user?.enrollment_no || '0000'}
-              </div>
-           </div>
+                {/* Unified Profile Dropdown */}
+                <div className="relative" ref={profileMenuRef}>
+                  <button 
+                     onClick={() => setProfileMenuOpen(!profileMenuOpen)}
+                     className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-slate-100 border border-slate-200 overflow-hidden hover:ring-2 hover:ring-blue-100 transition-all"
+                  >
+                     <div className="w-full h-full flex items-center justify-center text-slate-500 font-bold text-sm">
+                       {user?.name?.charAt(0)}
+                     </div>
+                  </button>
+                  
+                  <AnimatePresence>
+                    {profileMenuOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                        transition={{ duration: 0.2, ease: "easeOut" }}
+                        className="absolute right-0 top-12 w-48 bg-white rounded-xl shadow-xl shadow-slate-200/50 border border-slate-100 py-1.5 z-50 origin-top-right"
+                      >
+                        <div className="px-4 py-2 border-b border-slate-50 md:hidden">
+                          <p className="text-sm font-bold text-slate-900 truncate">{user?.name}</p>
+                          <p className="text-xs text-slate-500 truncate">{user?.enrollment_no}</p>
+                        </div>
+                        
+                        <Link 
+                          to="/profile" 
+                          onClick={() => setProfileMenuOpen(false)}
+                          className="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                        >
+                          <User size={16} className="text-slate-400"/> Profile
+                        </Link>
+                        <Link 
+                          to="/settings" 
+                          onClick={() => setProfileMenuOpen(false)}
+                          className="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                        >
+                          <Settings size={16} className="text-slate-400"/> Settings
+                        </Link>
+                        <div className="h-px bg-slate-50 my-1"></div>
+                        <button 
+                          onClick={() => {
+                            setProfileMenuOpen(false);
+                            handleLogout();
+                          }} 
+                          className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 text-left transition-colors"
+                        >
+                          <LogOut size={16}/> Logout
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+               </div>
+             </div>
         </header>
 
         {/* Page Content */}

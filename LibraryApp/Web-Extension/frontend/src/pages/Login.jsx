@@ -11,7 +11,7 @@ const CustomInput = ({ label, type, value, onChange, placeholder, required = tru
         type={type} 
         value={value}
         onChange={onChange}
-        className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all bg-white text-slate-800 placeholder:text-slate-400"
+        className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 outline-none transition-all bg-white text-slate-800 placeholder:text-slate-400"
         placeholder={placeholder}
         required={required}
       />
@@ -41,46 +41,22 @@ export default function Login({ setUser }) {
       });
       
       if (data.status === 'success') {
-        if (data.require_change) {
-          setRequireChange(true);
-        } else {
-          setUser(data.user);
-        }
+        // Updated Logic: Always allow login, dashboard will show alert if password change is needed
+        setUser(data.user);
+        // We ignore data.require_change for blocking now
       } else {
         setError(data.message);
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed');
     } finally {
-      if (!requireChange) setLoading(false); 
-      else setLoading(false);
+      setLoading(false);
     }
   };
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
-    if (newPassword !== confirmPassword) {
-      setError("Passwords do not match");
-      return;
-    }
-    if (newPassword.length < 4) {
-      setError("Password must be at least 4 characters");
-      return;
-    }
-    
-    setLoading(true);
-    try {
-      const { data } = await axios.post('/api/change-password', { new_password: newPassword });
-      if (data.status === 'success') {
-        window.location.reload(); 
-      } else {
-        setError(data.message);
-      }
-    } catch (err) {
-      setError(err.response?.data?.message || 'Password change failed');
-    } finally {
-      setLoading(false);
-    }
+    // Logic preserved for Settings page or future use, but not for login blocking
   };
 
   return (
