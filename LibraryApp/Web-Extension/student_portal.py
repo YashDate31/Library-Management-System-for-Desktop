@@ -108,7 +108,16 @@ def api_me():
             'name': student['name'],
             'enrollment_no': student['enrollment_no'],
             'department': student['department'],
-            'year': student['year']
+            'year': student['year'],
+            'email': dict(student).get('email', f"{student['name'].replace(' ', '.').lower()}@university.edu"), # Fallback generation
+            'privileges': {
+                 'max_books': 5,
+                 'loan_duration': '21 Days',
+                 'renewal_limit': '2 Renewals per book'
+            },
+            'account_info': {
+                'password_last_changed': '12th Jan 2024' # Mock for now
+            }
         }})
     return jsonify({'user': None})
 

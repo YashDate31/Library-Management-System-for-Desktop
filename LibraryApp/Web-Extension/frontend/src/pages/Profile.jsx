@@ -7,15 +7,15 @@ export default function Profile({ user }) {
   // We use the 'user' prop where possible, but fallback to the mockup's static strings for fidelity if needed.
   
   const profile = {
-    name: user?.name || "Alex Thompson",
-    id: "ENR-2024-12345", // Placeholder as per mockup
-    department: "Computer Science",
-    year: "3rd Year",
-    email: user?.email || "alex.thompson@university.edu",
-    maxBooks: "5 Books",
-    loanDuration: "21 Days",
-    renewals: "2 Renewals per book",
-    passwordLastChanged: "12th Jan 2024"
+    name: user?.name || "Student",
+    id: user?.enrollment_no || "N/A",
+    department: user?.department || "General",
+    year: user?.year ? `${user.year}` : "N/A",
+    email: user?.email || "N/A",
+    maxBooks: user?.privileges?.max_books ? `${user.privileges.max_books} Books` : "5 Books",
+    loanDuration: user?.privileges?.loan_duration || "21 Days",
+    renewals: user?.privileges?.renewal_limit || "2 Renewals per book",
+    passwordLastChanged: user?.account_info?.password_last_changed || "N/A"
   };
 
   return (
