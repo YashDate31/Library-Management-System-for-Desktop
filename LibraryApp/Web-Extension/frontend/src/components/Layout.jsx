@@ -3,6 +3,7 @@ import { LogOut, LayoutDashboard, BookOpen, Clock, FileText, Bell, Search, User,
 import axios from 'axios';
 import { useState, useEffect, useRef } from 'react';
 import Breadcrumbs from './Breadcrumbs';
+import AlertBanner from './AlertBanner';
 
 export default function Layout({ user, setUser }) {
   const location = useLocation();
@@ -155,9 +156,13 @@ export default function Layout({ user, setUser }) {
   ];
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
-      
-      {/* Desktop Sidebar - Hidden on Mobile */}
+    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden isolate relative">
+      {/* Global Alert */}
+      <div className="fixed top-0 left-0 right-0 z-[60]">
+         <AlertBanner />
+      </div>
+
+      {/* Mobile Sidebar Overlay */}* Desktop Sidebar - Hidden on Mobile */}
       <aside 
         onPointerEnter={handlePointerEnter}
         onPointerLeave={handlePointerLeave}

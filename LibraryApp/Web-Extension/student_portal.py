@@ -136,6 +136,52 @@ def api_user_policies():
         }
     })
 
+@app.route('/api/alerts')
+def api_alerts():
+    """Lightweight check for overdue items"""
+    if 'student_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    enrollment = session['student_id']
+    conn = get_library_db()
+    cursor = conn.cursor()
+    
+    # Check for active borrows only - fast query
+    cursor.execute("""
+        SELECT b.title, br.due_date
+        FROM borrow_records br
+        JOIN books b ON br.book_id = b.book_id
+        WHERE br.enrollment_no = ? AND br.status = 'borrowed'
+    """, (enrollment,))
+    
+    borrows = cursor.fetchall()
+    conn.close()
+    
+    today = datetime.now()
+    overdue_count = 0
+    total_fine = 0
+    overdue_titles = []
+    
+    for row in borrows:
+        if row['due_date']:
+            try:
+                due_dt = datetime.strptime(row['due_date'], '%Y-%m-%d')
+                delta = (due_dt - today).days
+                if delta < 0:
+                    overdue_count += 1
+                    days_late = abs(delta)
+                    total_fine += days_late * 10 # 10 INR per day
+                    overdue_titles.append(row['title'])
+            except:
+                pass
+                
+    return jsonify({
+        'has_alert': overdue_count > 0,
+        'count': overdue_count,
+        'fine_estimate': total_fine,
+        'items': overdue_titles
+    })
+
 # --- Dashboard Data Aggregation ---
 
 @app.route('/api/dashboard')
