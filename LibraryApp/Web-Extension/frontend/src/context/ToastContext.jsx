@@ -39,7 +39,7 @@ export function ToastProvider({ children }) {
           <div
             key={toast.id}
             className={`
-              pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border animate-slide-in
+              pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border toast-enter
               ${toast.type === 'success' ? 'bg-white border-green-100 text-green-800' : ''}
               ${toast.type === 'error' ? 'bg-white border-red-100 text-red-800' : ''}
               ${toast.type === 'info' ? 'bg-white border-blue-100 text-slate-800' : ''}

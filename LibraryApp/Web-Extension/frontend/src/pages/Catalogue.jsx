@@ -356,7 +356,7 @@ function BookCard({ book, onClick }) {
              {/* Action Button */}
              <button 
                 onClick={onClick}
-                className="w-full py-2.5 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg transition-all active:scale-[0.98] shadow-md shadow-blue-500/20"
+                className="w-full py-2.5 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg shadow-md shadow-blue-500/20 btn-interaction"
              >
                 View Details
              </button>
