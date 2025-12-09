@@ -182,6 +182,42 @@ def api_alerts():
         'items': overdue_titles
     })
 
+@app.route('/api/services')
+def api_services():
+    """Fetch available digital resources and services"""
+    if 'student_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    # In a real app, these would be in a 'resources' table
+    resources = [
+        {
+            'id': 1,
+            'title': "IEEE Xplore Access",
+            'type': "Research Database",
+            'description': "Full access to IEEE journals, conferences, and standards.",
+            'link': "#",
+            'icon': "Globe"
+        },
+        {
+            'id': 2,
+            'title': "ProQuest E-Books",
+            'type': "E-Book Platform",
+            'description': "Access to over 150,000 academic e-books.",
+            'link': "#",
+            'icon': "Book"
+        },
+        {
+            'id': 3,
+            'title': "JSTOR Archive",
+            'type': "Journal Archive",
+            'description': "Academic journal archive for humanities and sciences.",
+            'link': "#",
+            'icon': "Archive"
+        }
+    ]
+    
+    return jsonify({'resources': resources})
+
 # --- Dashboard Data Aggregation ---
 
 @app.route('/api/dashboard')
