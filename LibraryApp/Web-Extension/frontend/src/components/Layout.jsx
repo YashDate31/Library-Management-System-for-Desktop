@@ -275,9 +275,14 @@ export default function Layout({ user, setUser }) {
         <header className="h-auto md:h-20 flex flex-col md:flex-row md:items-center justify-between px-4 py-4 md:py-0 md:px-10 bg-white/80 backdrop-blur-xl sticky top-0 z-30 border-b border-slate-100">
            <div className="flex items-center justify-between w-full md:w-auto">
              <div>
-             <div className="flex items-center gap-3">
-                 <img src="/logo.png" alt="Logo" className="w-8 h-8 object-contain" />
-                 <h1 className="text-xl font-heading font-bold text-slate-900 tracking-tight">GPA's Library</h1>
+             <div className="flex items-center gap-4">
+                 <div className="w-12 h-12 flex items-center justify-center bg-white rounded-xl shadow-sm border border-slate-100 p-1">
+                    <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
+                 </div>
+                 <h1 className="text-lg font-heading font-bold text-slate-900 leading-tight">
+                   GPA's Library <br/>
+                   <span className="text-xs font-medium text-slate-500 font-sans">Student Portal</span>
+                 </h1>
              </div>
              </div>
 
