@@ -52,6 +52,24 @@ export default function Settings({ user, setUser }) {
     alert(`Changes saved successfully for ${userName}!`);
   };
 
+  // Initial State Tracking
+  const initialSettings = {
+    email: user?.email || 'alex.thompson@university.edu',
+    libraryAlerts: false,
+    loanReminders: true,
+    darkMode: false,
+    language: 'English',
+    dataConsent: true
+  };
+
+  const isDirty = 
+    email !== initialSettings.email ||
+    libraryAlerts !== initialSettings.libraryAlerts ||
+    loanReminders !== initialSettings.loanReminders ||
+    darkMode !== initialSettings.darkMode ||
+    language !== initialSettings.language ||
+    dataConsent !== initialSettings.dataConsent;
+
   return (
     <div className="max-w-4xl mx-auto pb-20">
       
@@ -261,22 +279,31 @@ export default function Settings({ user, setUser }) {
 
       </div>
 
-      {/* Footer Actions */}
-      <div className="mt-8 flex items-center justify-end gap-3 bg-slate-50 p-4 rounded-xl">
-        <button 
-          className="px-6 py-2.5 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-lg border border-slate-200 transition-colors"
-          onClick={() => alert('Changes discarded')}
-        >
-          Cancel
-        </button>
-        <button 
-          className="px-6 py-2.5 bg-brand-blue hover:bg-blue-600 text-white font-bold rounded-lg shadow-sm transition-all active:scale-[0.98]"
-          onClick={handleSave}
-        >
-          Save Changes
-        </button>
-      </div>
-
+      {/* Footer Actions - Only show if changes made */}
+      {isDirty && (
+        <div className="mt-8 flex items-center justify-end gap-3 bg-slate-50 p-4 rounded-xl animate-fade-in fixed bottom-6 right-6 md:static md:bg-transparent md:p-0">
+            <button 
+            className="px-6 py-2.5 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-lg border border-slate-200 transition-colors shadow-sm md:shadow-none"
+            onClick={() => {
+                // Reset state
+                setEmail(initialSettings.email);
+                setLibraryAlerts(initialSettings.libraryAlerts);
+                setLoanReminders(initialSettings.loanReminders);
+                setDarkMode(initialSettings.darkMode);
+                setLanguage(initialSettings.language);
+                setDataConsent(initialSettings.dataConsent);
+            }}
+            >
+            Cancel
+            </button>
+            <button 
+            className="px-6 py-2.5 bg-brand-blue hover:bg-blue-600 text-white font-bold rounded-lg shadow-sm transition-all active:scale-[0.98]"
+            onClick={handleSave}
+            >
+            Save Changes
+            </button>
+        </div>
+      )}
     </div>
   );
 }
