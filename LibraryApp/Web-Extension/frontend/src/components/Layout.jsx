@@ -110,11 +110,11 @@ export default function Layout({ user, setUser }) {
           showText ? 'px-4' : 'px-4 md:justify-center'
         } ${
           isActive 
-            ? 'bg-blue-50 text-blue-600 font-semibold' 
+            ? 'bg-brand-blue/10 text-brand-blue font-semibold' 
             : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
         }`}
       >
-        <Icon size={20} className={`shrink-0 ${isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-blue-500 transition-colors'}`} />
+        <Icon size={20} className={`shrink-0 ${isActive ? 'text-brand-blue' : 'text-slate-400 group-hover:text-brand-blue transition-colors'}`} />
         <span className={`whitespace-nowrap transition-opacity duration-200 ${showText ? 'opacity-100 md:inline' : 'opacity-0 md:hidden md:w-0'} inline`}>
           {label}
         </span>
@@ -170,8 +170,8 @@ export default function Layout({ user, setUser }) {
                className="w-10 h-10 shrink-0 object-contain"
              />
              <div className={`transition-opacity duration-200 ${shouldShowExpanded ? 'opacity-100 md:block' : 'opacity-0 md:hidden'} block`}>
-               <h1 className="text-xl font-bold tracking-tight text-slate-900 whitespace-nowrap">Athenaeum</h1>
-               <p className="text-xs text-slate-400 font-medium whitespace-nowrap">Library Portal</p>
+               <h1 className="text-lg font-bold tracking-tight text-brand-dark whitespace-nowrap">GPA's</h1>
+               <p className="text-xs text-slate-500 font-medium whitespace-nowrap">Library Management System</p>
              </div>
           </div>
 
@@ -220,7 +220,7 @@ export default function Layout({ user, setUser }) {
                   key={option.id}
                   className={`flex items-center gap-2 px-3 py-2 text-sm font-normal transition-colors border-none cursor-pointer w-full text-left ${
                     sidebarMode === option.id 
-                      ? 'bg-blue-50 text-slate-900' 
+                      ? 'bg-brand-blue/10 text-brand-dark' 
                       : 'bg-transparent text-slate-900 hover:bg-slate-100'
                   }`}
                   onClick={() => handleSidebarModeChange(option.id)}
@@ -230,7 +230,7 @@ export default function Layout({ user, setUser }) {
                 >
                   <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
                     sidebarMode === option.id 
-                      ? 'border-2 border-blue-500 bg-blue-500' 
+                      ? 'border-2 border-brand-blue bg-brand-blue' 
                       : 'border border-slate-300 bg-transparent'
                   }`} />
                   <span>{option.label}</span>
@@ -247,8 +247,8 @@ export default function Layout({ user, setUser }) {
             aria-label="Sidebar control"
             title="Sidebar control"
             className={`p-2 rounded-lg transition-all duration-150 ${
-              menuOpen ? 'text-blue-500 bg-blue-50' :
-              sidebarMode === 'expanded' ? 'text-blue-500 bg-blue-50' :
+              menuOpen ? 'text-brand-blue bg-brand-blue/10' :
+              sidebarMode === 'expanded' ? 'text-brand-blue bg-brand-blue/10' :
               'text-slate-400 opacity-60'
             } hover:opacity-100 hover:bg-slate-100`}
           >

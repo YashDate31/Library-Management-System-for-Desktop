@@ -1,128 +1,219 @@
 import { useState } from 'react';
-import { User, CheckCircle, Info } from 'lucide-react';
-import RequestModal from '../components/RequestModal';
 
 export default function Settings({ user, setUser }) {
-  const [modalOpen, setModalOpen] = useState(false);
+  // Local state for settings form
+  const [email, setEmail] = useState(user?.email || 'alex.thompson@university.edu');
+  const [libraryAlerts, setLibraryAlerts] = useState(false);
+  const [loanReminders, setLoanReminders] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
+  const [language, setLanguage] = useState('English');
+  const [dataConsent, setDataConsent] = useState(true);
+
+  const handleSave = () => {
+    // Determine the user's name to use in the alert
+    const userName = user?.name ? user.name.split(' ')[0] : 'User';
+    alert(`Changes saved successfully for ${userName}!`);
+  };
 
   return (
-    <div className="space-y-8 pb-20">
+    <div className="max-w-4xl mx-auto pb-20">
       
-      <RequestModal 
-        isOpen={modalOpen} 
-        onClose={() => setModalOpen(false)}
-        title="Request Profile Update"
-        type="profile_update"
-        defaultDetails="I would like to update my profile information..."
-      />
-
-      {/* Two Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Left Sidebar */}
-        <div className="space-y-6">
-          
-          {/* Avatar & Name Card */}
-          <div className="bg-white rounded-xl p-8 border border-slate-100 text-center">
-            {/* Avatar */}
-            <div className="w-32 h-32 mx-auto mb-6 rounded-full bg-gradient-to-br from-orange-200 to-orange-300 flex items-center justify-center overflow-hidden">
-              <div className="w-full h-full bg-gradient-to-b from-transparent to-orange-400/20 flex items-center justify-center">
-                <User size={48} className="text-slate-700" />
-              </div>
-            </div>
-
-            {/* Name & Enrollment */}
-            <h2 className="text-2xl font-black text-slate-900 mb-1">{user.name || 'Alex Thompson'}</h2>
-            <p className="text-slate-500 font-medium mb-6">ENR-{user.enrollment_no || '2024-12345'}</p>
-
-            {/* Edit Profile Button */}
-            <button 
-              onClick={() => setModalOpen(true)}
-              className="w-full py-3 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-lg transition-all active:scale-[0.98] shadow-md shadow-blue-500/20"
-            >
-              Edit Profile
-            </button>
-          </div>
-
-          {/* Library Status Card */}
-          <div className="bg-white rounded-xl p-6 border border-slate-100">
-            <h3 className="text-lg font-bold text-slate-900 mb-4">Library Status</h3>
-            
-            <div className="space-y-3">
-              {/* Active Membership Badge */}
-              <div className="flex items-center gap-3 px-4 py-3 bg-green-50 rounded-lg border border-green-100">
-                <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center shrink-0">
-                  <CheckCircle className="text-green-600" size={18} />
-                </div>
-                <span className="text-sm font-bold text-green-700">Active Membership</span>
-              </div>
-
-              {/* No Outstanding Fines Badge */}
-              <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 rounded-lg border border-blue-100">
-                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-                  <Info className="text-blue-600" size={18} />
-                </div>
-                <span className="text-sm font-bold text-blue-700">No Outstanding Fines</span>
-              </div>
-            </div>
-          </div>
-
-        </div>
-
-        {/* Right Column - Main Content */}
-        <div className="lg:col-span-2 space-y-6">
-
-          {/* Academic Information */}
-          <div className="bg-white rounded-xl p-8 border border-slate-100">
-            <h2 className="text-2xl font-bold text-slate-900 mb-6">Academic Information</h2>
-            
-            <div className="space-y-6">
-              <InfoRow label="Department" value={user.department || 'Computer Science'} />
-              <InfoRow label="Year of Study" value={`${user.year || '3rd'} Year`} />
-              <InfoRow label="Email Address" value={user.email || `${user.name?.toLowerCase().replace(' ', '.')}@university.edu`} />
-            </div>
-          </div>
-
-          {/* Borrowing Privileges */}
-          <div className="bg-white rounded-xl p-8 border border-slate-100">
-            <h2 className="text-2xl font-bold text-slate-900 mb-6">Borrowing Privileges</h2>
-            
-            <div className="space-y-6">
-              <InfoRow label="Max Books Allowed" value="5 Books" />
-              <InfoRow label="Loan Duration" value="21 Days" />
-              <InfoRow label="Renewal Limits" value="2 Renewals per book" />
-            </div>
-          </div>
-
-          {/* Account & Security */}
-          <div className="bg-white rounded-xl p-8 border border-slate-100">
-            <h2 className="text-2xl font-bold text-slate-900 mb-6">Account & Security</h2>
-            
-            <div className="flex items-center justify-between py-4 border-b border-slate-100">
-              <div>
-                <p className="font-bold text-slate-900 mb-1">Password</p>
-                <p className="text-sm text-slate-500">Last changed on 12th Jan 2024</p>
-              </div>
-              <button 
-                onClick={() => alert('Password change coming soon! Please contact admin.')}
-                className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-colors"
-              >
-                Change Password
-              </button>
-            </div>
-          </div>
-
-        </div>
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-slate-900">Settings</h1>
+        <p className="text-slate-500 mt-1">Manage your account, application, and privacy settings.</p>
       </div>
+
+      <div className="space-y-6">
+        
+        {/* Account Settings Card */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 md:p-8">
+          <h2 className="text-xl font-bold text-slate-900 mb-6">Account Settings</h2>
+          
+          <div className="space-y-8">
+            
+            {/* Email Address */}
+            <div className="grid md:grid-cols-3 gap-4 items-start">
+              <div className="md:col-span-1">
+                <label className="block font-bold text-slate-900 mb-1">Email Address</label>
+                <p className="text-sm text-slate-500">Update the email address associated with your account.</p>
+              </div>
+              <div className="md:col-span-2">
+                <input 
+                  type="email" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-slate-900"
+                />
+              </div>
+            </div>
+
+            {/* Password */}
+            <div className="grid md:grid-cols-3 gap-4 items-center">
+              <div className="md:col-span-1">
+                <label className="block font-bold text-slate-900 mb-1">Password</label>
+                <p className="text-sm text-slate-500">Set a new password for your account.</p>
+              </div>
+              <div className="md:col-span-2">
+                <button className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-900 font-bold rounded-lg transition-colors border border-slate-200">
+                  Change Password
+                </button>
+              </div>
+            </div>
+
+            {/* Notification Preferences */}
+            <div className="grid md:grid-cols-3 gap-4 items-start border-t border-slate-100 pt-8">
+              <div className="md:col-span-1">
+                <label className="block font-bold text-slate-900 mb-1">Notification Preferences</label>
+                <p className="text-sm text-slate-500">Choose which notifications you want to receive.</p>
+              </div>
+              <div className="md:col-span-2 space-y-4">
+                
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-700 font-medium">Library Alerts</span>
+                  <Switch checked={libraryAlerts} onChange={setLibraryAlerts} />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-700 font-medium">Loan Reminders</span>
+                  <Switch checked={loanReminders} onChange={setLoanReminders} />
+                </div>
+
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        {/* Application Preferences Card */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 md:p-8">
+          <h2 className="text-xl font-bold text-slate-900 mb-6">Application Preferences</h2>
+          
+          <div className="space-y-8">
+            
+            {/* Theme */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <label className="block font-bold text-slate-900 mb-1">Theme</label>
+                <p className="text-sm text-slate-500">Switch between light and dark mode.</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-slate-700 font-medium">{darkMode ? 'Dark Mode' : 'Light Mode'}</span>
+                <Switch checked={darkMode} onChange={setDarkMode} />
+              </div>
+            </div>
+
+            {/* Light separator */}
+            <div className="border-t border-slate-100"></div>
+
+            {/* Language */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <label className="block font-bold text-slate-900 mb-1">Language</label>
+                <p className="text-sm text-slate-500">Select your preferred language.</p>
+              </div>
+              <div className="w-full md:w-64">
+                <select 
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-slate-900 bg-white cursor-pointer"
+                >
+                  <option>English</option>
+                  <option>Spanish</option>
+                  <option>French</option>
+                  <option>German</option>
+                </select>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        {/* Privacy Settings Card */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 md:p-8">
+          <h2 className="text-xl font-bold text-slate-900 mb-6">Privacy Settings</h2>
+          
+          <div className="space-y-8">
+            
+            {/* Data Usage */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex-1">
+                <label className="block font-bold text-slate-900 mb-1">Data Usage Consent</label>
+                <p className="text-sm text-slate-500 mb-1">Allow us to use your data to improve our services.</p>
+                <a href="#" className="text-brand-blue hover:text-blue-700 text-sm font-medium">Learn more</a>
+              </div>
+              <div>
+                <Switch checked={dataConsent} onChange={setDataConsent} />
+              </div>
+            </div>
+
+            {/* Light separator */}
+            <div className="border-t border-slate-100"></div>
+
+            {/* Delete Account */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <label className="block font-bold text-slate-900 mb-1">Delete Account</label>
+                <p className="text-sm text-slate-500">Permanently delete your account and all associated data.</p>
+              </div>
+              <div>
+                <button 
+                  onClick={() => alert('Account deletion requested. Admin will be notified.')}
+                  className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition-colors shadow-sm"
+                >
+                  Request Data Deletion
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+      {/* Footer Actions */}
+      <div className="mt-8 flex items-center justify-end gap-3 bg-slate-50 p-4 rounded-xl">
+        <button 
+          className="px-6 py-2.5 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-lg border border-slate-200 transition-colors"
+          onClick={() => alert('Changes discarded')}
+        >
+          Cancel
+        </button>
+        <button 
+          className="px-6 py-2.5 bg-brand-blue hover:bg-blue-600 text-white font-bold rounded-lg shadow-sm transition-all active:scale-[0.98]"
+          onClick={handleSave}
+        >
+          Save Changes
+        </button>
+      </div>
+
     </div>
   );
 }
 
-function InfoRow({ label, value }) {
+// Custom Switch Component
+function Switch({ checked, onChange }) {
   return (
-    <div className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0">
-      <span className="text-slate-600 font-medium">{label}</span>
-      <span className="text-slate-900 font-bold">{value}</span>
-    </div>
+    <button 
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={`
+        relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent 
+        transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 
+        focus-visible:ring-brand-blue focus-visible:ring-offset-2
+        ${checked ? 'bg-brand-blue' : 'bg-slate-200'}
+      `}
+    >
+      <span className="sr-only">Use setting</span>
+      <span
+        aria-hidden="true"
+        className={`
+          pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 
+          transition duration-200 ease-in-out
+          ${checked ? 'translate-x-5' : 'translate-x-0'}
+        `}
+      />
+    </button>
   );
 }

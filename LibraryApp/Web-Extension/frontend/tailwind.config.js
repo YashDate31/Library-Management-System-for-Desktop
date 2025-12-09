@@ -8,6 +8,10 @@ export default {
   theme: {
     extend: {
       colors: {
+        brand: {
+          blue: '#2E86AB',
+          dark: '#0F3460',
+        },
         background: 'rgb(var(--color-background) / <alpha-value>)',
         surface: 'rgb(var(--color-surface) / <alpha-value>)',
         primary: 'rgb(var(--color-primary) / <alpha-value>)',
