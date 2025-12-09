@@ -121,6 +121,21 @@ def api_me():
         }})
     return jsonify({'user': None})
 
+@app.route('/api/user-policies')
+def api_user_policies():
+    """Fetch user specific policies and account info"""
+    if 'student_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+        
+    return jsonify({
+        'policies': {
+            'max_books': 5,
+            'loan_duration': '21 Days',
+            'renewal_limit': '2 Renewals per book',
+            'password_last_changed': '12th Jan 2024'
+        }
+    })
+
 # --- Dashboard Data Aggregation ---
 
 @app.route('/api/dashboard')

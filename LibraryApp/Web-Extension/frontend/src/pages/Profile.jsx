@@ -1,21 +1,38 @@
 
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import axios from 'axios';
+import Skeleton, { SkeletonText } from '../components/ui/Skeleton';
+import ErrorMessage from '../components/ui/ErrorMessage';
 
 export default function Profile({ user }) {
-  // Mock data to match the visual requirement exactly if user data is missing specific fields
-  // In a real app, we would derive these from the 'user' prop or a fetch.
-  // We use the 'user' prop where possible, but fallback to the mockup's static strings for fidelity if needed.
-  
+  const [policies, setPolicies] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchPolicies = async () => {
+      try {
+        const { data } = await axios.get('/api/user-policies');
+        setPolicies(data.policies);
+      } catch (e) {
+        console.error("Failed to fetch policies", e);
+        setError("Could not load details");
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchPolicies();
+  }, []);
+
+  // Base profile uses props for immediate display
   const profile = {
     name: user?.name || "Student",
     id: user?.enrollment_no || "N/A",
     department: user?.department || "General",
     year: user?.year ? `${user.year}` : "N/A",
     email: user?.email || "N/A",
-    maxBooks: user?.privileges?.max_books ? `${user.privileges.max_books} Books` : "5 Books",
-    loanDuration: user?.privileges?.loan_duration || "21 Days",
-    renewals: user?.privileges?.renewal_limit || "2 Renewals per book",
-    passwordLastChanged: user?.account_info?.password_last_changed || "N/A"
   };
 
   return (
@@ -95,17 +112,23 @@ export default function Profile({ user }) {
             <div className="space-y-0">
               <div className="flex flex-col sm:flex-row sm:items-center py-4 border-b border-slate-100 last:border-0 last:pb-0 font-medium">
                 <span className="text-slate-400 w-48 shrink-0">Max Books Allowed</span>
-                <span className="text-slate-800">{profile.maxBooks}</span>
+                <span className="text-slate-800">
+                   {loading ? <Skeleton className="h-5 w-24" /> : error ? <span className="text-red-400 text-sm">Error</span> : `${policies?.max_books} Books`}
+                </span>
               </div>
               
               <div className="flex flex-col sm:flex-row sm:items-center py-4 border-b border-slate-100 last:border-0 last:pb-0 font-medium">
                 <span className="text-slate-400 w-48 shrink-0">Loan Duration</span>
-                <span className="text-slate-800">{profile.loanDuration}</span>
+                <span className="text-slate-800">
+                   {loading ? <Skeleton className="h-5 w-20" /> : error ? <span className="text-red-400 text-sm">Error</span> : policies?.loan_duration}
+                </span>
               </div>
               
               <div className="flex flex-col sm:flex-row sm:items-center py-4 border-b border-slate-100 last:border-0 last:pb-0 font-medium">
                 <span className="text-slate-400 w-48 shrink-0">Renewal Limits</span>
-                <span className="text-slate-800">{profile.renewals}</span>
+                <span className="text-slate-800">
+                   {loading ? <Skeleton className="h-5 w-40" /> : error ? <span className="text-red-400 text-sm">Error</span> : policies?.renewal_limit}
+                </span>
               </div>
             </div>
           </div>
@@ -117,7 +140,10 @@ export default function Profile({ user }) {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-2">
               <div>
                 <span className="text-slate-800 font-medium block mb-1">Password</span>
-                <span className="text-slate-400 text-sm">Last changed on {profile.passwordLastChanged}</span>
+                <span className="text-slate-400 text-sm flex items-center gap-2">
+                   Last changed on 
+                   {loading ? <Skeleton className="h-4 w-24 translate-y-0.5" /> : error ? 'Unknown' : policies?.password_last_changed}
+                </span>
               </div>
               <Link to="/settings" className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-colors text-sm">
                 Change Password
