@@ -167,13 +167,13 @@ export default function Layout({ user, setUser }) {
         </button>
 
         {/* Main sidebar content */}
-        <div className="flex-1 flex flex-col p-6">
+        <div className={`flex-1 flex flex-col ${shouldShowExpanded ? 'p-6' : 'p-3'} transition-all duration-300`}>
           {/* Brand */}
-          <div className="flex items-center gap-3 mb-12 px-2">
+          <div className="flex items-center gap-3 mb-12">
              <img 
                src="/logo.png" 
                alt="Athenaeum Logo" 
-               className="w-10 h-10 shrink-0 object-contain"
+               className="w-14 h-14 shrink-0 object-contain"
              />
              <div className={`transition-opacity duration-200 ${shouldShowExpanded || sidebarOpen ? 'opacity-100 md:block' : 'opacity-0 md:hidden'} block`}>
                <h1 className="text-lg font-bold tracking-tight text-brand-dark whitespace-nowrap">GPA's</h1>
