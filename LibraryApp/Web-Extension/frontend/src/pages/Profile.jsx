@@ -1,4 +1,8 @@
-
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import axios from 'axios';
+import Skeleton from '../components/ui/Skeleton';
+import ErrorMessage from '../components/ui/ErrorMessage';
 import ImageWithSkeleton from '../components/ui/ImageWithSkeleton';
 
 export default function Profile({ user }) {
