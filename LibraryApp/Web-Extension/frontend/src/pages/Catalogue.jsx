@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Search, Filter, BookOpen, Clock, LayoutGrid, Monitor, FlaskConical, History, ChevronDown, Calendar, Copy, Bell, ArrowRight, Code, Globe, Database, Network, Cpu, Book, Layers, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import RequestModal from '../components/RequestModal';
+import BookDetailModal from '../components/BookDetailModal';
 
 const CATEGORY_ICONS = {
   'Core CS': Monitor,
@@ -29,7 +30,8 @@ export default function Catalogue() {
   
   // UI States
   const [activeDropdown, setActiveDropdown] = useState(null); // 'category', 'availability', or null
-  const [modalOpen, setModalOpen] = useState(false);
+  const [requestModalOpen, setRequestModalOpen] = useState(false);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedBook, setSelectedBook] = useState(null);
 
   const availabilityOptions = [
@@ -70,10 +72,9 @@ export default function Catalogue() {
     }
   };
 
-  const handleNotifyRequest = (e, book) => {
-    e.stopPropagation();
+  const handleBookClick = (book) => {
     setSelectedBook(book);
-    setModalOpen(true);
+    setDetailModalOpen(true);
   };
 
   const filteredBooks = books.filter(book => {
@@ -256,7 +257,7 @@ export default function Catalogue() {
             <BookCard 
               key={book.book_id} 
               book={book} 
-              onClick={() => navigate(`/books/${book.book_id}`)} 
+              onClick={() => handleBookClick(book)} 
             />
           ))
         ) : (
@@ -273,12 +274,19 @@ export default function Catalogue() {
         )}
       </div>
 
+      {/* Modals */}
       <RequestModal 
-        isOpen={modalOpen} 
-        onClose={() => setModalOpen(false)} 
+        isOpen={requestModalOpen} 
+        onClose={() => setRequestModalOpen(false)} 
         title={`Request Notification: ${selectedBook?.title}`}
         type="availability_notification"
         defaultDetails={`Please notify me when '${selectedBook?.title}' becomes available.`}
+      />
+      
+      <BookDetailModal
+        isOpen={detailModalOpen}
+        onClose={() => setDetailModalOpen(false)}
+        bookId={selectedBook?.book_id}
       />
     </div>
   );
