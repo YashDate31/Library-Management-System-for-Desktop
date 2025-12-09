@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { CheckCircle, AlertTriangle, Award, BookOpen, DollarSign, Calendar } from 'lucide-react';
+import { CheckCircle, AlertTriangle, Award, BookOpen, DollarSign, Calendar, History as HistoryIcon } from 'lucide-react';
+import EmptyState from '../components/ui/EmptyState';
+import { Link } from 'react-router-dom';
 
 export default function History() {
   const [data, setData] = useState(null);
@@ -22,7 +24,18 @@ export default function History() {
   };
 
   if (loading) return <div className="p-10 text-center text-text-secondary animate-pulse">Loading History...</div>;
-  if (!data) return <div className="p-10 text-center text-text-secondary">No data available</div>;
+  if (loading) return <div className="p-10 text-center text-text-secondary animate-pulse">Loading History...</div>;
+  if (!data || !data.history || data.history.length === 0) return (
+     <div className="p-10">
+        <EmptyState 
+           icon={HistoryIcon}
+           title="No reading history yet"
+           description="You haven't borrowed any books yet. Once you start reading, your history and stats will appear here."
+           actionLabel="Start Reading"
+           onAction={() => window.location.href = '/books'}
+        />
+     </div>
+  );
 
   const { history = [], analytics } = data;
   const { stats = {}, badges = [] } = analytics || {};

@@ -7,6 +7,7 @@ import BookDetailModal from '../components/BookDetailModal';
 import EmptyState from '../components/ui/EmptyState';
 import Skeleton, { SkeletonCard } from '../components/ui/Skeleton';
 import ErrorMessage from '../components/ui/ErrorMessage';
+import ActiveFilters from '../components/ActiveFilters';
 
 const CATEGORY_ICONS = {
   'Core CS': Monitor,
@@ -246,36 +247,24 @@ export default function Catalogue() {
       </div>
 
       {/* Active Filters Display */}
-      {(searchTerm || selectedCategory !== 'All' || availabilityFilter !== 'all') && (
-        <div className="flex items-center gap-2 flex-wrap animate-fade-in">
-           <span className="text-sm font-bold text-slate-500 mr-2">Active Filters:</span>
-           
-           {searchTerm && (
-             <button onClick={() => setSearchTerm('')} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-bold rounded-full hover:bg-slate-200 transition-colors">
-               Search: "{searchTerm}" <X size={14} />
-             </button>
-           )}
-
-           {selectedCategory !== 'All' && (
-             <button onClick={() => setSelectedCategory('All')} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 text-xs font-bold rounded-full hover:bg-blue-100 transition-colors">
-               {selectedCategory} <X size={14} />
-             </button>
-           )}
-
-           {availabilityFilter !== 'all' && (
-             <button onClick={() => setAvailabilityFilter('all')} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 text-xs font-bold rounded-full hover:bg-green-100 transition-colors">
-               {availabilityOptions.find(o => o.id === availabilityFilter)?.label} <X size={14} />
-             </button>
-           )}
-
-           <button 
-             onClick={() => { setSearchTerm(''); setSelectedCategory('All'); setAvailabilityFilter('all'); }}
-             className="text-xs font-bold text-red-500 hover:text-red-700 hover:underline ml-2"
-           >
-             Clear All
-           </button>
-        </div>
-      )}
+      {/* Active Filters Display */}
+      <ActiveFilters 
+        activeFilters={{
+          searchTerm,
+          category: selectedCategory,
+          availability: availabilityFilter
+        }}
+        onRemove={(key) => {
+          if (key === 'searchTerm') setSearchTerm('');
+          if (key === 'category') setSelectedCategory('All');
+          if (key === 'availability') setAvailabilityFilter('all');
+        }}
+        onClear={() => {
+          setSearchTerm('');
+          setSelectedCategory('All');
+          setAvailabilityFilter('all');
+        }}
+      />
 
       {/* Book Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
