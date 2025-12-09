@@ -1,9 +1,5 @@
 
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import axios from 'axios';
-import Skeleton, { SkeletonText } from '../components/ui/Skeleton';
-import ErrorMessage from '../components/ui/ErrorMessage';
+import ImageWithSkeleton from '../components/ui/ImageWithSkeleton';
 
 export default function Profile({ user }) {
   const [policies, setPolicies] = useState(null);
@@ -46,11 +42,12 @@ export default function Profile({ user }) {
           
           {/* Profile Card */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 flex flex-col items-center text-center">
-            <div className="w-32 h-32 rounded-full overflow-hidden mb-6 border-4 border-slate-50">
-               <img 
-                 src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=687&q=80" 
-                 alt="Profile" 
-                 className="w-full h-full object-cover"
+            <div className="w-32 h-32 rounded-full overflow-hidden mb-6 border-4 border-slate-50 relative">
+               <ImageWithSkeleton
+                 src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=687&q=80"
+                 alt="Profile"
+                 className="w-full h-full"
+                 skeletonClassName="bg-slate-200"
                />
             </div>
             
