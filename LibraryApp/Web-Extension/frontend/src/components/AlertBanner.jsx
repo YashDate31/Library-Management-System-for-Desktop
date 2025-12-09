@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { AlertCircle, ChevronRight, X } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import axios from 'axios';
 
 export default function AlertBanner() {
   const [alert, setAlert] = useState(null);
   const [visible, setVisible] = useState(true);
+  const location = useLocation();
+  const isDashboard = location.pathname === '/';
 
   useEffect(() => {
     const checkAlerts = async () => {
@@ -24,7 +26,8 @@ export default function AlertBanner() {
     // Optional: Poll every 5 minutes if needed, but on-mount is sufficient for MVP
   }, []);
 
-  if (!alert || !visible) return null;
+  // Hide on Dashboard (avoid double alert) or if dismissed
+  if (!alert || !visible || isDashboard) return null;
 
   return (
     <div className="bg-red-600 text-white px-4 py-3 shadow-md relative z-50 animate-slide-in">
