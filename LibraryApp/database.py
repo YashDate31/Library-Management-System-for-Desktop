@@ -104,6 +104,12 @@ class Database:
     
     def add_student(self, enrollment_no, name, email='', phone='', department='', year=''):
         """Add a new student to the database"""
+        # Validate required fields
+        if not enrollment_no or not enrollment_no.strip():
+            return False, "Enrollment number is required"
+        if not name or not name.strip():
+            return False, "Student name is required"
+        
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
@@ -179,6 +185,14 @@ class Database:
     
     def add_book(self, book_id, title, author, isbn='', category='', total_copies=1):
         """Add a new book to the database"""
+        # Validate required fields
+        if not book_id or not book_id.strip():
+            return False, "Book ID is required"
+        if not title or not title.strip():
+            return False, "Book title is required"
+        if not author or not author.strip():
+            return False, "Book author is required"
+        
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
@@ -419,6 +433,11 @@ class Database:
             return False, f"Error: {str(e)}"
         finally:
             conn.close()
+    
+    # Alias for backward compatibility
+    def remove_book(self, book_id):
+        """Alias for delete_book for backward compatibility"""
+        return self.delete_book(book_id)
     
     # Removed add_sample_data_if_empty to keep production database empty on first run
 
