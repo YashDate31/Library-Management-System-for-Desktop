@@ -653,12 +653,17 @@ def api_admin_all_requests():
     cursor2 = conn2.cursor()
     cursor2.execute("SELECT COUNT(*) as count FROM requests WHERE status = 'rejected'")
     rejected_count = cursor2.fetchone()['count']
+    
+    # Get deletion counts by status
+    cursor2.execute("SELECT status, COUNT(*) as count FROM deletion_requests GROUP BY status")
+    deletion_counts = {row['status']: row['count'] for row in cursor2.fetchall()}
     conn2.close()
     
     return jsonify({
         'requests': general_requests,
         'deletion_requests': deletion_requests,
         'rejected_count': rejected_count,
+        'deletion_counts': deletion_counts,
         'counts': {
             'total': len(general_requests) + len(deletion_requests),
             'requests': len(general_requests),

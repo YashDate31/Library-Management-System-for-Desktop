@@ -7851,18 +7851,37 @@ Note: This is an automated email. Please find the attached formal overdue letter
             messagebox.showerror("Error", f"Failed to {action} request: {str(e)}")
     
     def _create_deletion_section(self, parent):
-        """Create deletion requests management section"""
-        # Header
-        header_frame = tk.Frame(parent, bg='white')
-        header_frame.pack(fill=tk.X, padx=20, pady=(20, 10))
+        """Create deletion requests management section with enhanced UI"""
+        # Main container
+        container = tk.Frame(parent, bg='white')
+        container.pack(fill=tk.BOTH, expand=True)
+        
+        # Header frame with count badge
+        header_frame = tk.Frame(container, bg='white')
+        header_frame.pack(fill=tk.X, padx=20, pady=(20, 15))
+        
+        title_frame = tk.Frame(header_frame, bg='white')
+        title_frame.pack(side=tk.LEFT)
         
         tk.Label(
-            header_frame,
+            title_frame,
             text="🗑️ Account Deletion Requests",
             font=('Segoe UI', 18, 'bold'),
             bg='white',
             fg=self.colors['accent']
         ).pack(side=tk.LEFT)
+        
+        # Count badge
+        self.deletion_count_badge = tk.Label(
+            title_frame,
+            text="0",
+            font=('Segoe UI', 10, 'bold'),
+            bg='#dc3545',
+            fg='white',
+            padx=10,
+            pady=2
+        )
+        self.deletion_count_badge.pack(side=tk.LEFT, padx=(10, 0))
         
         refresh_btn = tk.Button(
             header_frame,
@@ -7878,8 +7897,44 @@ Note: This is an automated email. Please find the attached formal overdue letter
         )
         refresh_btn.pack(side=tk.RIGHT)
         
-        # Warning
-        warning_frame = tk.Frame(parent, bg='#fff3cd', relief='solid', bd=1)
+        # Stats summary bar
+        stats_frame = tk.Frame(container, bg='#f8f9fa', relief='solid', bd=1)
+        stats_frame.pack(fill=tk.X, padx=20, pady=(0, 15))
+        
+        stats_inner = tk.Frame(stats_frame, bg='#f8f9fa')
+        stats_inner.pack(padx=15, pady=10)
+        
+        self.deletion_stats_labels = {}
+        stat_types = [
+            ("Pending", "#fd7e14", "pending"),
+            ("Approved", "#28a745", "approved"),
+            ("Rejected", "#dc3545", "rejected")
+        ]
+        
+        for label, color, key in stat_types:
+            stat_item = tk.Frame(stats_inner, bg='#f8f9fa')
+            stat_item.pack(side=tk.LEFT, padx=20)
+            
+            count_label = tk.Label(
+                stat_item,
+                text="0",
+                font=('Segoe UI', 16, 'bold'),
+                bg='#f8f9fa',
+                fg=color
+            )
+            count_label.pack()
+            self.deletion_stats_labels[key] = count_label
+            
+            tk.Label(
+                stat_item,
+                text=label,
+                font=('Segoe UI', 9),
+                bg='#f8f9fa',
+                fg='#666'
+            ).pack()
+        
+        # Warning banner
+        warning_frame = tk.Frame(container, bg='#fff3cd', relief='solid', bd=1)
         warning_frame.pack(fill=tk.X, padx=20, pady=(0, 15))
         
         tk.Label(
@@ -7892,34 +7947,42 @@ Note: This is an automated email. Please find the attached formal overdue letter
             pady=8
         ).pack(anchor='w')
         
-        # Scrollable list
-        list_frame = tk.Frame(parent, bg='white')
+        # Scrollable list with proper width binding
+        list_frame = tk.Frame(container, bg='white', relief='solid', bd=1)
         list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
         
-        canvas = tk.Canvas(list_frame, bg='white', highlightthickness=0)
-        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=canvas.yview)
-        self.deletion_container = tk.Frame(canvas, bg='white')
+        self.deletion_canvas = tk.Canvas(list_frame, bg='white', highlightthickness=0)
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.deletion_canvas.yview)
+        self.deletion_container = tk.Frame(self.deletion_canvas, bg='white')
         
         self.deletion_container.bind(
             "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            lambda e: self.deletion_canvas.configure(scrollregion=self.deletion_canvas.bbox("all"))
         )
         
-        canvas.create_window((0, 0), window=self.deletion_container, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        # Create window and bind width updates
+        self.deletion_canvas_window = self.deletion_canvas.create_window((0, 0), window=self.deletion_container, anchor="nw")
         
-        canvas.pack(side="left", fill="both", expand=True)
+        def on_canvas_configure(event):
+            self.deletion_canvas.itemconfig(self.deletion_canvas_window, width=event.width)
+        self.deletion_canvas.bind('<Configure>', on_canvas_configure)
+        
+        self.deletion_canvas.configure(yscrollcommand=scrollbar.set)
+        
+        self.deletion_canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
+        # Bind mousewheel
         def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        canvas.bind("<MouseWheel>", _on_mousewheel)
+            self.deletion_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        self.deletion_canvas.bind("<MouseWheel>", _on_mousewheel)
+        self.deletion_canvas.bind("<Enter>", lambda e: self.deletion_canvas.focus_set())
         
         # Load
         self._refresh_deletion_requests()
     
     def _refresh_deletion_requests(self):
-        """Fetch and display deletion requests"""
+        """Fetch and display deletion requests in two-column layout"""
         for w in self.deletion_container.winfo_children():
             w.destroy()
         
@@ -7933,63 +7996,121 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 data = json.loads(response.read().decode())
                 deletions = data.get('deletion_requests', [])
                 
+                # Update count badge
+                if hasattr(self, 'deletion_count_badge'):
+                    self.deletion_count_badge.config(text=str(len(deletions)))
+                
+                # Get deletion stats from separate query
+                if hasattr(self, 'deletion_stats_labels'):
+                    deletion_counts = data.get('deletion_counts', {})
+                    self.deletion_stats_labels['pending'].config(text=str(len(deletions)))
+                    self.deletion_stats_labels['approved'].config(text=str(deletion_counts.get('approved', 0)))
+                    self.deletion_stats_labels['rejected'].config(text=str(deletion_counts.get('rejected', 0)))
+                
                 if not deletions:
-                    self._show_empty_message(self.deletion_container, "No deletion requests", "No students have requested account deletion.")
+                    self._show_empty_message(self.deletion_container, "No deletion requests", "No students have requested account deletion. 🎉")
                     return
                 
-                for del_data in deletions:
-                    self._create_deletion_card(self.deletion_container, del_data)
+                # Create two-column grid layout
+                self.deletion_container.columnconfigure(0, weight=1)
+                self.deletion_container.columnconfigure(1, weight=1)
+                
+                # Place cards in grid
+                for idx, del_data in enumerate(deletions):
+                    row = idx // 2
+                    col = idx % 2
+                    self._create_deletion_card(self.deletion_container, del_data, row, col, idx + 1)
                     
         except Exception as e:
             self._show_empty_message(self.deletion_container, "Could not load requests", str(e))
     
-    def _create_deletion_card(self, parent, del_data):
-        """Create a card for deletion request"""
+    def _create_deletion_card(self, parent, del_data, row=0, col=0, index=1):
+        """Create a card for deletion request in grid layout with index"""
         card = tk.Frame(parent, bg='#ffe6e6', relief='solid', bd=1)
-        card.pack(fill=tk.X, pady=5, padx=5)
+        card.grid(row=row, column=col, sticky='nsew', padx=8, pady=8)
+        
+        # Bind mousewheel to card for scrolling
+        def _on_card_mousewheel(event):
+            self.deletion_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        card.bind("<MouseWheel>", _on_card_mousewheel)
         
         inner = tk.Frame(card, bg='#ffe6e6')
-        inner.pack(fill=tk.X, padx=15, pady=12)
+        inner.pack(fill=tk.BOTH, expand=True, padx=18, pady=15)
+        inner.bind("<MouseWheel>", _on_card_mousewheel)
         
-        # Info
-        info_frame = tk.Frame(inner, bg='#ffe6e6')
-        info_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        # Header row with index badge
+        header_row = tk.Frame(inner, bg='#ffe6e6')
+        header_row.pack(fill=tk.X)
+        header_row.bind("<MouseWheel>", _on_card_mousewheel)
+        
+        # Index badge
+        index_badge = tk.Label(
+            header_row,
+            text=f"#{index}",
+            font=('Segoe UI', 11, 'bold'),
+            bg='#c0392b',
+            fg='white',
+            padx=8,
+            pady=2
+        )
+        index_badge.pack(side=tk.LEFT)
+        index_badge.bind("<MouseWheel>", _on_card_mousewheel)
+        
+        # Deletion icon badge
+        tk.Label(
+            header_row,
+            text="🗑️ Deletion Request",
+            font=('Segoe UI', 9, 'bold'),
+            bg='#dc3545',
+            fg='white',
+            padx=10,
+            pady=3
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        
+        # Student name row
+        name_row = tk.Frame(inner, bg='#ffe6e6')
+        name_row.pack(fill=tk.X, pady=(8, 0))
         
         tk.Label(
-            info_frame,
-            text=f"🗑️ {del_data.get('student_name', 'Unknown')}",
+            name_row,
+            text=f"{del_data.get('student_name', 'Unknown')}",
             font=('Segoe UI', 11, 'bold'),
             bg='#ffe6e6',
             fg='#c0392b'
-        ).pack(anchor='w')
+        ).pack(side=tk.LEFT)
         
         tk.Label(
-            info_frame,
-            text=f"Enrollment: {del_data.get('student_id', '')}",
+            name_row,
+            text=f"({del_data.get('student_id', '')})",
             font=('Segoe UI', 9),
             bg='#ffe6e6',
             fg='#666'
-        ).pack(anchor='w')
+        ).pack(side=tk.LEFT, padx=(8, 0))
         
+        # Reason
+        reason = del_data.get('reason', 'No reason provided')
         tk.Label(
-            info_frame,
-            text=f"Reason: {del_data.get('reason', 'No reason provided')}",
+            inner,
+            text=f"Reason: {reason[:80]}{'...' if len(reason) > 80 else ''}",
             font=('Segoe UI', 9, 'italic'),
             bg='#ffe6e6',
-            fg='#555'
-        ).pack(anchor='w', pady=(5, 0))
+            fg='#555',
+            wraplength=350,
+            justify='left'
+        ).pack(anchor='w', pady=(6, 0))
         
+        # Timestamp
         tk.Label(
-            info_frame,
-            text=f"Requested: {del_data.get('timestamp', 'N/A')}",
+            inner,
+            text=f"📅 {del_data.get('timestamp', 'N/A')}",
             font=('Segoe UI', 8),
             bg='#ffe6e6',
-            fg='#999'
-        ).pack(anchor='w', pady=(3, 0))
+            fg='#888'
+        ).pack(anchor='w', pady=(6, 0))
         
-        # Actions
+        # Actions row at bottom
         actions_frame = tk.Frame(inner, bg='#ffe6e6')
-        actions_frame.pack(side=tk.RIGHT)
+        actions_frame.pack(fill=tk.X, pady=(12, 0))
         
         del_id = del_data.get('id')
         
@@ -8000,12 +8121,12 @@ Note: This is an automated email. Please find the attached formal overdue letter
             bg='#dc3545',
             fg='white',
             padx=12,
-            pady=4,
+            pady=5,
             cursor='hand2',
             relief='flat',
             command=lambda did=del_id, name=del_data.get('student_name'): self._handle_deletion_action(did, 'approve', name)
         )
-        approve_btn.pack(side=tk.LEFT, padx=(0, 5))
+        approve_btn.pack(side=tk.LEFT, padx=(0, 8))
         
         reject_btn = tk.Button(
             actions_frame,
@@ -8014,7 +8135,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
             bg='#6c757d',
             fg='white',
             padx=12,
-            pady=4,
+            pady=5,
             cursor='hand2',
             relief='flat',
             command=lambda did=del_id: self._handle_deletion_action(did, 'reject')
