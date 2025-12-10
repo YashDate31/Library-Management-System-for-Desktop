@@ -3260,7 +3260,7 @@ Government Polytechnic Awasari (Kh)"""
         btn_frame.pack(pady=20)
         
         def save_book():
-            # Validate required fields
+            # Validate required fields (only book_id and title are required)
             required_fields = ['book_id', 'title']
             for field in required_fields:
                 if not entries[field].get().strip():
@@ -3290,7 +3290,7 @@ Government Polytechnic Awasari (Kh)"""
             success, message = self.db.add_book(
                 book_id_val,
                 entries['title'].get().strip(),
-                entries['author'].get().strip(),
+                entries['author'].get().strip() if entries['author'].get().strip() else '',
                 entries['isbn'].get().strip(),
                 entries['category'].get(),
                 copies
@@ -9222,7 +9222,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 INNER JOIN borrow_records br ON b.book_id = br.book_id
                 WHERE br.borrow_date >= ?
                 GROUP BY b.book_id, b.title
-                ORDER BY borrow_count DESC
+                ORDER BY borrow_count DESC, b.title ASC
                 LIMIT 10
             """, (start_date,))
             
@@ -9284,7 +9284,8 @@ Note: This is an automated email. Please find the attached formal overdue letter
             
             start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
             
-            # Get books with lowest borrow count in the period (including zero borrows)
+            # Get books with lowest borrow count in the period (prioritize zero borrows)
+            # First get the minimum count that's been borrowed (to exclude books with higher counts)
             cursor.execute("""
                 SELECT 
                     b.title,
@@ -9292,9 +9293,17 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 FROM books b
                 LEFT JOIN borrow_records br ON b.book_id = br.book_id AND br.borrow_date >= ?
                 GROUP BY b.book_id, b.title
-                ORDER BY borrow_count ASC, b.title
+                HAVING borrow_count = (
+                    SELECT MIN(cnt) FROM (
+                        SELECT COALESCE(COUNT(br2.id), 0) as cnt
+                        FROM books b2
+                        LEFT JOIN borrow_records br2 ON b2.book_id = br2.book_id AND br2.borrow_date >= ?
+                        GROUP BY b2.book_id
+                    )
+                )
+                ORDER BY b.title ASC
                 LIMIT 10
-            """, (start_date,))
+            """, (start_date, start_date))
             
             results = cursor.fetchall()
             conn.close()

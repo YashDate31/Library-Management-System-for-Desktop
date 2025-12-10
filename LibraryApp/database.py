@@ -183,15 +183,14 @@ class Database:
         finally:
             conn.close()
     
-    def add_book(self, book_id, title, author, isbn='', category='', total_copies=1):
+    def add_book(self, book_id, title, author='', isbn='', category='', total_copies=1):
         """Add a new book to the database"""
         # Validate required fields
         if not book_id or not book_id.strip():
             return False, "Book ID is required"
         if not title or not title.strip():
             return False, "Book title is required"
-        if not author or not author.strip():
-            return False, "Book author is required"
+        # Author is optional - no validation needed
         
         conn = self.get_connection()
         cursor = conn.cursor()
