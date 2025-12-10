@@ -4,7 +4,7 @@ import { CheckCircle, AlertTriangle, Award, BookOpen, DollarSign, Calendar, Hist
 import EmptyState from '../components/ui/EmptyState';
 import { Link } from 'react-router-dom';
 
-export default function History() {
+export default function History({ user }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 

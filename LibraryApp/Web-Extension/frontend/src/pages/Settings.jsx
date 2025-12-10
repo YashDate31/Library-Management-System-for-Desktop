@@ -4,10 +4,10 @@ import DangerValidationModal from '../components/DangerValidationModal';
 
 export default function Settings({ user, setUser }) {
   // Local state for settings form
-  const [email, setEmail] = useState(user?.email || 'alex.thompson@university.edu');
+  const [email, setEmail] = useState(user?.email || '');
   const [libraryAlerts, setLibraryAlerts] = useState(false);
   const [loanReminders, setLoanReminders] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(localStorage.getItem('theme') === 'dark');
   const [language, setLanguage] = useState('English');
   const [dataConsent, setDataConsent] = useState(true);
 
@@ -58,10 +58,10 @@ export default function Settings({ user, setUser }) {
 
   // Initial State Tracking
   const initialSettings = {
-    email: user?.email || 'alex.thompson@university.edu',
+    email: user?.email || '',
     libraryAlerts: false,
     loanReminders: true,
-    darkMode: false,
+    darkMode: localStorage.getItem('theme') === 'dark',
     language: 'English',
     dataConsent: true
   };
@@ -211,7 +211,16 @@ export default function Settings({ user, setUser }) {
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-slate-700 font-medium">{darkMode ? 'Dark Mode' : 'Light Mode'}</span>
-                <Switch checked={darkMode} onChange={setDarkMode} />
+                <Switch checked={darkMode} onChange={(checked) => {
+                  setDarkMode(checked);
+                  if (checked) {
+                    document.documentElement.classList.add('dark');
+                    localStorage.setItem('theme', 'dark');
+                  } else {
+                    document.documentElement.classList.remove('dark');
+                    localStorage.setItem('theme', 'light');
+                  }
+                }} />
               </div>
             </div>
 

@@ -278,8 +278,8 @@ export default function Layout({ user, setUser }) {
                     <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
                  </div>
                  <h1 className="text-lg font-heading font-bold text-slate-900 leading-tight">
-                   GPA's Library <br/>
-                   <span className="text-xs font-medium text-slate-500 font-sans">Student Portal for College Library</span>
+                   GPA Library <br/>
+                   <span className="text-xs font-medium text-slate-500 font-sans">Government Polytechnic Awasari</span>
                  </h1>
              </div>
 
@@ -366,7 +366,7 @@ export default function Layout({ user, setUser }) {
         <div className="md:hidden fixed bottom-6 left-4 right-4 h-16 bg-white/80 backdrop-blur-xl rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-white/20 z-50 flex justify-around items-center px-2 transition-all duration-300">
              <MobileTabItem to="/" icon={LayoutDashboard} label="Dashboard" />
              <MobileTabItem to="/books" icon={BookOpen} label="Catalogue" />
-             <MobileTabItem to="/history" icon={Clock} label="My Books" />
+             <MobileTabItem to="/my-books" icon={Clock} label="My Books" />
              <MobileTabItem to="/profile" icon={User} label="Profile" />
         </div>
       </div>
