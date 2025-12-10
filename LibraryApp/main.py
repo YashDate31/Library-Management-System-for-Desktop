@@ -7212,6 +7212,96 @@ Note: This is an automated email. Please find the attached formal overdue letter
             fg='#28a745'
         )
         self.issues_label.pack(anchor='w')
+    
+    def _build_quick_actions_content(self, parent):
+        """Build quick actions content"""
+        # Button container
+        btn_frame = tk.Frame(parent, bg='white')
+        btn_frame.pack(fill=tk.X, pady=5)
+        
+        # Restart Server Button
+        restart_btn = tk.Button(
+            btn_frame,
+            text="🔄 Restart Server",
+            font=('Segoe UI', 9),
+            bg='#e9ecef',
+            fg='#333',
+            padx=12,
+            pady=5,
+            cursor='hand2',
+            relief='flat',
+            command=self._restart_portal_server
+        )
+        restart_btn.pack(side=tk.LEFT, padx=(0, 8))
+        
+        # View Logs Button
+        logs_btn = tk.Button(
+            btn_frame,
+            text="📋 View Stats",
+            font=('Segoe UI', 9),
+            bg='#e9ecef',
+            fg='#333',
+            padx=12,
+            pady=5,
+            cursor='hand2',
+            relief='flat',
+            command=self._show_portal_stats
+        )
+        logs_btn.pack(side=tk.LEFT, padx=(0, 8))
+        
+        # Open in Browser Button
+        browser_btn = tk.Button(
+            btn_frame,
+            text="🌐 Open in Browser",
+            font=('Segoe UI', 9),
+            bg='#e9ecef',
+            fg='#333',
+            padx=12,
+            pady=5,
+            cursor='hand2',
+            relief='flat',
+            command=self._open_portal_in_browser
+        )
+        browser_btn.pack(side=tk.LEFT)
+        
+        # Info text
+        tk.Label(
+            parent,
+            text="Quick access to common portal management tasks",
+            font=('Segoe UI', 8, 'italic'),
+            bg='white',
+            fg='#888'
+        ).pack(anchor='w', pady=(8, 0))
+    
+    def _restart_portal_server(self):
+        """Restart the portal server"""
+        self.start_student_portal()
+        self._run_health_checks()
+        messagebox.showinfo("Server", "Portal server has been restarted.")
+    
+    def _show_portal_stats(self):
+        """Show portal statistics"""
+        try:
+            import urllib.request
+            import json
+            response = urllib.request.urlopen(f"http://127.0.0.1:{self.portal_port}/api/admin/stats", timeout=3)
+            stats = json.loads(response.read().decode())
+            
+            stats_msg = f"""Portal Statistics:
+            
+📊 Active Users: {stats.get('active_users', 0)}
+📝 Pending Requests: {stats.get('pending_requests', 0)}
+🗑️ Deletion Requests: {stats.get('pending_deletions', 0)}
+🔐 Password Resets: {stats.get('pending_resets', 0)}
+"""
+            messagebox.showinfo("Portal Stats", stats_msg)
+        except:
+            messagebox.showinfo("Portal Stats", "Statistics not available. Server may be starting up.")
+    
+    def _open_portal_in_browser(self):
+        """Open portal in default browser"""
+        import webbrowser
+        webbrowser.open(self.portal_url)
         
     def _initialize_portal_server(self):
         """Initialize portal server and update dashboard"""
@@ -7280,7 +7370,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
         url = f"http://{local_ip}:{self.portal_port}"
         
         try:
-            qr = qrcode.QRCode(box_size=6, border=2)
+            qr = qrcode.QRCode(box_size=8, border=2)
             qr.add_data(url)
             qr.make(fit=True)
             img = qr.make_image(fill_color="#0F3460", back_color="white")
