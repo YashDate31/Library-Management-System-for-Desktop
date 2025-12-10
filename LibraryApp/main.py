@@ -7609,32 +7609,39 @@ Note: This is an automated email. Please find the attached formal overdue letter
         list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
         
         # Canvas for scrolling
-        canvas = tk.Canvas(list_frame, bg='white', highlightthickness=0)
-        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=canvas.yview)
-        self.requests_container = tk.Frame(canvas, bg='white')
+        self.requests_canvas = tk.Canvas(list_frame, bg='white', highlightthickness=0)
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.requests_canvas.yview)
+        self.requests_container = tk.Frame(self.requests_canvas, bg='white')
         
         self.requests_container.bind(
             "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            lambda e: self.requests_canvas.configure(scrollregion=self.requests_canvas.bbox("all"))
         )
         
-        canvas.create_window((0, 0), window=self.requests_container, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        # Create window and bind width updates
+        self.requests_canvas_window = self.requests_canvas.create_window((0, 0), window=self.requests_container, anchor="nw")
         
-        canvas.pack(side="left", fill="both", expand=True)
+        # Make container width match canvas width
+        def on_canvas_configure(event):
+            self.requests_canvas.itemconfig(self.requests_canvas_window, width=event.width)
+        self.requests_canvas.bind('<Configure>', on_canvas_configure)
+        
+        self.requests_canvas.configure(yscrollcommand=scrollbar.set)
+        
+        self.requests_canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
         # Bind mousewheel
         def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        canvas.bind("<MouseWheel>", _on_mousewheel)
-        canvas.bind("<Enter>", lambda e: canvas.focus_set())
+            self.requests_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        self.requests_canvas.bind("<MouseWheel>", _on_mousewheel)
+        self.requests_canvas.bind("<Enter>", lambda e: self.requests_canvas.focus_set())
         
         # Load requests
         self._refresh_portal_requests()
     
     def _refresh_portal_requests(self):
-        """Fetch and display pending requests"""
+        """Fetch and display pending requests in two-column layout"""
         # Clear existing
         for w in self.requests_container.winfo_children():
             w.destroy()
@@ -7668,26 +7675,34 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     self._show_empty_message(self.requests_container, "No pending requests", "All student requests have been processed! 🎉")
                     return
                 
-                for req_data in requests_list:
-                    self._create_request_card(self.requests_container, req_data)
+                # Create two-column grid layout
+                self.requests_container.columnconfigure(0, weight=1)
+                self.requests_container.columnconfigure(1, weight=1)
+                
+                # Place cards in grid - alternate between columns
+                for idx, req_data in enumerate(requests_list):
+                    row = idx // 2
+                    col = idx % 2
+                    self._create_request_card(self.requests_container, req_data, row, col, idx + 1)
                     
         except Exception as e:
             self._show_empty_message(self.requests_container, "Could not load requests", f"Portal server may not be running.\n{str(e)}")
     
-    def _create_request_card(self, parent, req_data):
-        """Create a card for displaying a request"""
+    def _create_request_card(self, parent, req_data, row=0, col=0, index=1):
+        """Create a card for displaying a request in grid layout with index"""
         card = tk.Frame(parent, bg='#f8f9fa', relief='solid', bd=1)
-        card.pack(fill=tk.X, pady=5, padx=5)
+        card.grid(row=row, column=col, sticky='nsew', padx=8, pady=8)
         
-        # Inner padding
+        # Bind mousewheel to card for scrolling
+        def _on_card_mousewheel(event):
+            self.requests_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        card.bind("<MouseWheel>", _on_card_mousewheel)
+        
+        # Inner padding - larger for better visibility
         inner = tk.Frame(card, bg='#f8f9fa')
-        inner.pack(fill=tk.X, padx=15, pady=12)
+        inner.pack(fill=tk.BOTH, expand=True, padx=18, pady=15)
         
-        # Left side: Info
-        info_frame = tk.Frame(inner, bg='#f8f9fa')
-        info_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
-        # Type badge
+        # Type badge row
         type_colors = {
             'profile_update': '#17a2b8',
             'renewal': '#28a745',
@@ -7697,7 +7712,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
         req_type = req_data.get('request_type', 'request')
         type_color = type_colors.get(req_type, '#6c757d')
         
-        header_row = tk.Frame(info_frame, bg='#f8f9fa')
+        header_row = tk.Frame(inner, bg='#f8f9fa')
         header_row.pack(fill=tk.X)
         
         type_badge = tk.Label(
@@ -7706,26 +7721,30 @@ Note: This is an automated email. Please find the attached formal overdue letter
             font=('Segoe UI', 9, 'bold'),
             bg=type_color,
             fg='white',
-            padx=8,
-            pady=2
+            padx=10,
+            pady=3
         )
         type_badge.pack(side=tk.LEFT)
         
-        tk.Label(
-            header_row,
-            text=f"from {req_data.get('student_name', 'Unknown')}",
-            font=('Segoe UI', 10),
-            bg='#f8f9fa',
-            fg='#333'
-        ).pack(side=tk.LEFT, padx=(10, 0))
+        # Student info row
+        student_row = tk.Frame(inner, bg='#f8f9fa')
+        student_row.pack(fill=tk.X, pady=(8, 0))
         
         tk.Label(
-            header_row,
+            student_row,
+            text=f"{req_data.get('student_name', 'Unknown')}",
+            font=('Segoe UI', 11, 'bold'),
+            bg='#f8f9fa',
+            fg='#333'
+        ).pack(side=tk.LEFT)
+        
+        tk.Label(
+            student_row,
             text=f"({req_data.get('enrollment_no', '')})",
             font=('Segoe UI', 9),
             bg='#f8f9fa',
             fg='#666'
-        ).pack(side=tk.LEFT, padx=(5, 0))
+        ).pack(side=tk.LEFT, padx=(8, 0))
         
         # Details
         details = req_data.get('details', {})
@@ -7736,26 +7755,28 @@ Note: This is an automated email. Please find the attached formal overdue letter
         
         if detail_text:
             tk.Label(
-                info_frame,
-                text=detail_text[:100] + ('...' if len(detail_text) > 100 else ''),
+                inner,
+                text=detail_text[:120] + ('...' if len(detail_text) > 120 else ''),
                 font=('Segoe UI', 9),
                 bg='#f8f9fa',
                 fg='#555',
-                anchor='w'
-            ).pack(fill=tk.X, pady=(5, 0))
+                anchor='w',
+                justify='left',
+                wraplength=350
+            ).pack(fill=tk.X, pady=(6, 0), anchor='w')
         
         # Timestamp
         tk.Label(
-            info_frame,
-            text=f"Submitted: {req_data.get('created_at', 'N/A')}",
+            inner,
+            text=f"📅 {req_data.get('created_at', 'N/A')}",
             font=('Segoe UI', 8),
             bg='#f8f9fa',
-            fg='#999'
-        ).pack(anchor='w', pady=(3, 0))
+            fg='#888'
+        ).pack(anchor='w', pady=(6, 0))
         
-        # Right side: Actions
+        # Actions row at bottom
         actions_frame = tk.Frame(inner, bg='#f8f9fa')
-        actions_frame.pack(side=tk.RIGHT)
+        actions_frame.pack(fill=tk.X, pady=(12, 0))
         
         req_id = req_data.get('req_id')
         
@@ -7765,13 +7786,13 @@ Note: This is an automated email. Please find the attached formal overdue letter
             font=('Segoe UI', 9, 'bold'),
             bg='#28a745',
             fg='white',
-            padx=12,
-            pady=4,
+            padx=15,
+            pady=5,
             cursor='hand2',
             relief='flat',
             command=lambda rid=req_id: self._handle_request_action(rid, 'approve')
         )
-        approve_btn.pack(side=tk.LEFT, padx=(0, 5))
+        approve_btn.pack(side=tk.LEFT, padx=(0, 8))
         
         reject_btn = tk.Button(
             actions_frame,
@@ -7779,8 +7800,8 @@ Note: This is an automated email. Please find the attached formal overdue letter
             font=('Segoe UI', 9, 'bold'),
             bg='#dc3545',
             fg='white',
-            padx=12,
-            pady=4,
+            padx=15,
+            pady=5,
             cursor='hand2',
             relief='flat',
             command=lambda rid=req_id: self._handle_request_action(rid, 'reject')
