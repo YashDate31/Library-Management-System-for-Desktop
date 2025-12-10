@@ -7497,19 +7497,37 @@ Note: This is an automated email. Please find the attached formal overdue letter
     
     def _create_requests_section(self, parent):
         """Create requests management section"""
-        # Header frame
-        header_frame = tk.Frame(parent, bg='white')
-        header_frame.pack(fill=tk.X, padx=20, pady=(20, 10))
+        # Main container
+        container = tk.Frame(parent, bg='white')
+        container.pack(fill=tk.BOTH, expand=True)
+        
+        # Header frame with stats
+        header_frame = tk.Frame(container, bg='white')
+        header_frame.pack(fill=tk.X, padx=20, pady=(20, 15))
+        
+        title_frame = tk.Frame(header_frame, bg='white')
+        title_frame.pack(side=tk.LEFT)
         
         tk.Label(
-            header_frame,
+            title_frame,
             text="📋 Student Portal Requests",
             font=('Segoe UI', 18, 'bold'),
             bg='white',
             fg=self.colors['accent']
         ).pack(side=tk.LEFT)
         
-        # Refresh button
+        # Count badge
+        self.requests_count_badge = tk.Label(
+            title_frame,
+            text="0",
+            font=('Segoe UI', 10, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            padx=10,
+            pady=2
+        )
+        self.requests_count_badge.pack(side=tk.LEFT, padx=(10, 0))
+        
         refresh_btn = tk.Button(
             header_frame,
             text="🔄 Refresh",
@@ -7524,17 +7542,54 @@ Note: This is an automated email. Please find the attached formal overdue letter
         )
         refresh_btn.pack(side=tk.RIGHT)
         
+        # Stats summary bar
+        stats_frame = tk.Frame(container, bg='#f8f9fa', relief='solid', bd=1)
+        stats_frame.pack(fill=tk.X, padx=20, pady=(0, 15))
+        
+        stats_inner = tk.Frame(stats_frame, bg='#f8f9fa')
+        stats_inner.pack(padx=15, pady=10)
+        
+        self.request_stats_labels = {}
+        stat_types = [
+            ("Profile Updates", "#17a2b8", "profile_update"),
+            ("Book Reservations", "#6f42c1", "book_reservation"),
+            ("Renewals", "#28a745", "renewal"),
+            ("Extensions", "#fd7e14", "extension")
+        ]
+        
+        for label, color, key in stat_types:
+            stat_item = tk.Frame(stats_inner, bg='#f8f9fa')
+            stat_item.pack(side=tk.LEFT, padx=15)
+            
+            count_label = tk.Label(
+                stat_item,
+                text="0",
+                font=('Segoe UI', 14, 'bold'),
+                bg='#f8f9fa',
+                fg=color
+            )
+            count_label.pack()
+            self.request_stats_labels[key] = count_label
+            
+            tk.Label(
+                stat_item,
+                text=label,
+                font=('Segoe UI', 8),
+                bg='#f8f9fa',
+                fg='#666'
+            ).pack()
+        
         # Description
         tk.Label(
-            parent,
+            container,
             text="Profile updates, book reservations, and other requests from students",
             font=('Segoe UI', 10),
             bg='white',
             fg='#666'
-        ).pack(anchor='w', padx=20, pady=(0, 15))
+        ).pack(anchor='w', padx=20, pady=(0, 10))
         
         # Scrollable request list
-        list_frame = tk.Frame(parent, bg='white')
+        list_frame = tk.Frame(container, bg='white', relief='solid', bd=1)
         list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
         
         # Canvas for scrolling
