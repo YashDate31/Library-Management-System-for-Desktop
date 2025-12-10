@@ -29,8 +29,17 @@ from PIL import ImageTk, Image
 
 # Add Web-Extension directory to path to allow import
 sys.path.append(os.path.join(os.path.dirname(__file__), 'Web-Extension'))
-from student_portal import app as flask_app
-from waitress import serve
+
+# Optional: Web Portal support
+try:
+    from student_portal import app as flask_app  # type: ignore
+    from waitress import serve  # type: ignore
+    WEB_PORTAL_AVAILABLE = True
+except Exception:
+    flask_app = None
+    serve = None
+    WEB_PORTAL_AVAILABLE = False
+    print("Web portal not available - student portal features will be disabled")
 
 # Optional: Word export support
 try:
@@ -9503,6 +9512,10 @@ Note: This is an automated email. Please find the attached formal overdue letter
 
     def start_student_portal(self):
         """Start the Flask server in a daemon thread"""
+        if not WEB_PORTAL_AVAILABLE:
+            print("Web portal is not available. Install flask and waitress.")
+            return
+        
         if self.portal_thread and self.portal_thread.is_alive():
             return
 
@@ -9517,6 +9530,11 @@ Note: This is an automated email. Please find the attached formal overdue letter
 
     def show_qr_code(self):
         """Generate and show QR code for the student portal"""
+        if not WEB_PORTAL_AVAILABLE:
+            messagebox.showwarning("Web Portal Unavailable", 
+                                 "Web portal is not available.\n\nPlease install required packages: flask, waitress")
+            return
+        
         # Ensure server is running
         self.start_student_portal()
         
