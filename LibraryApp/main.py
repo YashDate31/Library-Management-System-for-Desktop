@@ -7262,7 +7262,22 @@ Note: This is an automated email. Please find the attached formal overdue letter
             relief='flat',
             command=self._open_portal_in_browser
         )
-        browser_btn.pack(side=tk.LEFT)
+        browser_btn.pack(side=tk.LEFT, padx=(0, 8))
+        
+        # Save QR Button
+        save_qr_btn = tk.Button(
+            btn_frame,
+            text="💾 Save QR",
+            font=('Segoe UI', 9),
+            bg='#17a2b8',
+            fg='white',
+            padx=12,
+            pady=5,
+            cursor='hand2',
+            relief='flat',
+            command=self._save_qr_as_image
+        )
+        save_qr_btn.pack(side=tk.LEFT)
         
         # Info text
         tk.Label(
@@ -7411,6 +7426,39 @@ Note: This is an automated email. Please find the attached formal overdue letter
         self.root.clipboard_clear()
         self.root.clipboard_append(self.portal_url)
         messagebox.showinfo("Copied", "Portal URL copied to clipboard!")
+    
+    def _save_qr_as_image(self):
+        """Save QR code as PNG image file"""
+        from tkinter import filedialog
+        
+        if not hasattr(self, 'portal_url') or not self.portal_url:
+            messagebox.showerror("Error", "No portal URL available. Please start the server first.")
+            return
+        
+        # Ask user for save location
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".png",
+            filetypes=[("PNG files", "*.png"), ("All files", "*.*")],
+            initialfile="student_portal_qr.png",
+            title="Save QR Code"
+        )
+        
+        if not file_path:
+            return  # User cancelled
+        
+        try:
+            # Generate QR code
+            qr = qrcode.QRCode(box_size=10, border=2)
+            qr.add_data(self.portal_url)
+            qr.make(fit=True)
+            img = qr.make_image(fill_color="#0F3460", back_color="white")
+            
+            # Save to file
+            img.save(file_path)
+            
+            messagebox.showinfo("Success", f"QR code saved successfully!\n\nLocation: {file_path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save QR code: {str(e)}")
     
     def _run_health_checks(self):
         """Run health diagnostics"""

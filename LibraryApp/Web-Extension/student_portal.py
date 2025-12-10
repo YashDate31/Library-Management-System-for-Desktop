@@ -874,6 +874,56 @@ def api_admin_reset_password(enrollment_no):
         'message': f'Password reset to enrollment number. Student will be prompted to change on next login.'
     })
 
+@app.route('/api/admin/auth-stats')
+def api_admin_auth_stats():
+    """Get auth statistics and recent password resets for dashboard"""
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    
+    # Total registered students
+    cursor.execute("SELECT COUNT(*) as count FROM student_auth")
+    total_registered = cursor.fetchone()['count']
+    
+    # Students with changed passwords (not first login)
+    cursor.execute("SELECT COUNT(*) as count FROM student_auth WHERE is_first_login = 0")
+    active_users = cursor.fetchone()['count']
+    
+    # Students still on default password
+    cursor.execute("SELECT COUNT(*) as count FROM student_auth WHERE is_first_login = 1")
+    pending_change = cursor.fetchone()['count']
+    
+    # Recent password resets (by checking last_changed within last 7 days where is_first_login = 1)
+    cursor.execute("""
+        SELECT enrollment_no, last_changed 
+        FROM student_auth 
+        WHERE is_first_login = 1 AND last_changed IS NOT NULL
+        ORDER BY last_changed DESC 
+        LIMIT 10
+    """)
+    recent_resets = [dict(row) for row in cursor.fetchall()]
+    
+    conn.close()
+    
+    # Get student names
+    conn_lib = get_library_db()
+    cursor_lib = conn_lib.cursor()
+    
+    for reset in recent_resets:
+        cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (reset['enrollment_no'],))
+        student = cursor_lib.fetchone()
+        reset['student_name'] = student['name'] if student else 'Unknown'
+    
+    conn_lib.close()
+    
+    return jsonify({
+        'stats': {
+            'total_registered': total_registered,
+            'active_users': active_users,
+            'pending_change': pending_change
+        },
+        'recent_resets': recent_resets
+    })
+
 @app.route('/api/admin/stats')
 def api_admin_stats():
     """Get portal statistics for dashboard"""
