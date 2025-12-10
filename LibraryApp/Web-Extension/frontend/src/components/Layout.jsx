@@ -208,7 +208,7 @@ export default function Layout({ user, setUser }) {
            <div className="flex items-center gap-3 overflow-hidden">
              <img src="/logo.png" alt="Logo" className="w-8 h-8 object-contain shrink-0" />
              <div className={`whitespace-nowrap transition-all duration-150 ${isExpanded ? 'opacity-100 translate-x-0 w-auto' : 'opacity-0 -translate-x-2 w-0'}`}>
-               <h1 className="text-lg font-bold text-slate-800 tracking-tight">GPA's Library</h1>
+               <h1 className="text-lg font-bold text-slate-800 tracking-tight">Government Polytechnic, Awasari (Kh.)</h1>
              </div>
            </div>
            
@@ -279,7 +279,7 @@ export default function Layout({ user, setUser }) {
                  </div>
                  <h1 className="text-lg font-heading font-bold text-slate-900 leading-tight">
                    GPA's Library <br/>
-                   <span className="text-xs font-medium text-slate-500 font-sans">Student Portal</span>
+                   <span className="text-xs font-medium text-slate-500 font-sans">Student Portal for College Library</span>
                  </h1>
              </div>
 
