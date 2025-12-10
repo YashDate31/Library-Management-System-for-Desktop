@@ -648,9 +648,17 @@ def api_admin_all_requests():
     
     conn_lib.close()
     
+    # Get rejected count from portal DB
+    conn2 = get_portal_db()
+    cursor2 = conn2.cursor()
+    cursor2.execute("SELECT COUNT(*) as count FROM requests WHERE status = 'rejected'")
+    rejected_count = cursor2.fetchone()['count']
+    conn2.close()
+    
     return jsonify({
         'requests': general_requests,
         'deletion_requests': deletion_requests,
+        'rejected_count': rejected_count,
         'counts': {
             'total': len(general_requests) + len(deletion_requests),
             'requests': len(general_requests),

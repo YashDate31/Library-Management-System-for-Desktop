@@ -7568,14 +7568,15 @@ Note: This is an automated email. Please find the attached formal overdue letter
         self.request_stats_labels = {}
         stat_types = [
             ("Profile Updates", "#17a2b8", "profile_update"),
-            ("Book Reservations", "#6f42c1", "book_reservation"),
+            ("Book Requests", "#6f42c1", "book_request"),
             ("Renewals", "#28a745", "renewal"),
-            ("Extensions", "#fd7e14", "extension")
+            ("Extensions", "#fd7e14", "extension"),
+            ("Rejected", "#dc3545", "rejected")
         ]
         
         for label, color, key in stat_types:
             stat_item = tk.Frame(stats_inner, bg='#f8f9fa')
-            stat_item.pack(side=tk.LEFT, padx=15)
+            stat_item.pack(side=tk.LEFT, padx=12)
             
             count_label = tk.Label(
                 stat_item,
@@ -7668,6 +7669,10 @@ Note: This is an automated email. Please find the attached formal overdue letter
                         req_type = req_data.get('request_type', 'other')
                         type_counts[req_type] = type_counts.get(req_type, 0) + 1
                     
+                    # Get rejected count from API response
+                    rejected_count = data.get('rejected_count', 0)
+                    type_counts['rejected'] = rejected_count
+                    
                     for key, label in self.request_stats_labels.items():
                         label.config(text=str(type_counts.get(key, 0)))
                 
@@ -7726,6 +7731,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
             'profile_update': '#17a2b8',
             'renewal': '#28a745',
             'book_reservation': '#6f42c1',
+            'book_request': '#6f42c1',
             'extension': '#fd7e14'
         }
         req_type = req_data.get('request_type', 'request')
