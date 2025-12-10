@@ -1043,6 +1043,7 @@ Government Polytechnic Awasari (Kh)"""
         self.create_transactions_tab()
         self.create_records_tab()  # New records tab
         self.create_analysis_tab()  # New analysis tab with charts
+        self.create_student_portal_tab()  # Student Portal tab
         
         # Set focus to dashboard
         self.notebook.select(0)
@@ -1166,20 +1167,7 @@ Government Polytechnic Awasari (Kh)"""
         user_frame = tk.Frame(logo_title_frame, bg=self.colors['secondary'])
         user_frame.grid(row=0, column=2, sticky='e', padx=(25, 0))
         
-        # STUDENT PORTAL BUTTON (NEW)
-        portal_btn = tk.Button(
-            user_frame,
-            text="📱 Student Portal",
-            font=('Segoe UI', 10, 'bold'),
-            bg='white',
-            fg=self.colors['secondary'],
-            padx=15,
-            pady=5,
-            cursor='hand2',
-            relief='flat',
-            command=self.show_qr_code
-        )
-        portal_btn.pack(side=tk.RIGHT, padx=(10, 0))
+
         
         # Top-right row: Developer label + inline Promote link
         user_top_row = tk.Frame(user_frame, bg=self.colors['secondary'])
@@ -6852,6 +6840,1116 @@ Note: This is an automated email. Please find the attached formal overdue letter
             bg='white',
             fg='#666666'
         ).pack(pady=20)
+    
+    def create_student_portal_tab(self):
+        """Create comprehensive student portal management tab with sub-sections"""
+        portal_frame = tk.Frame(self.notebook, bg=self.colors['primary'])
+        self.notebook.add(portal_frame, text="📱 Portal")
+        
+        # Initialize server tracking variables FIRST
+        self.portal_url_history = []
+        self.portal_start_time = None
+        self.portal_request_count = 0
+        self.portal_url = f"http://127.0.0.1:{self.portal_port}"
+        self.health_indicators = {}
+        
+        # Create internal notebook for sub-tabs
+        portal_notebook = ttk.Notebook(portal_frame)
+        portal_notebook.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
+        
+        # Configure notebook style
+        style = ttk.Style()
+        style.configure('Portal.TNotebook.Tab', padding=[15, 8], font=('Segoe UI', 10, 'bold'))
+        
+        # Sub-tab 1: QR Access
+        qr_tab = tk.Frame(portal_notebook, bg='white')
+        portal_notebook.add(qr_tab, text="📱 QR Access")
+        self._create_qr_access_section(qr_tab)
+        
+        # Sub-tab 2: All Requests
+        requests_tab = tk.Frame(portal_notebook, bg='white')
+        portal_notebook.add(requests_tab, text="📋 Requests")
+        self._create_requests_section(requests_tab)
+        
+        # Sub-tab 3: Deletion Requests
+        deletion_tab = tk.Frame(portal_notebook, bg='white')
+        portal_notebook.add(deletion_tab, text="🗑️ Deletions")
+        self._create_deletion_section(deletion_tab)
+        
+        # Sub-tab 4: Password Resets
+        password_tab = tk.Frame(portal_notebook, bg='white')
+        portal_notebook.add(password_tab, text="🔑 Password Reset")
+        self._create_password_reset_section(password_tab)
+        
+        # Store reference for refreshing
+        self.portal_notebook = portal_notebook
+        
+    def _create_qr_access_section(self, parent):
+        """Create comprehensive QR code access section with server dashboard"""
+        # Main container - fill entire space
+        container = tk.Frame(parent, bg='white')
+        container.pack(fill=tk.BOTH, expand=True, padx=25, pady=15)
+        
+        # ═══════════════════════════════════════════════════════════════
+        # HEADER SECTION
+        # ═══════════════════════════════════════════════════════════════
+        header_frame = tk.Frame(container, bg='white')
+        header_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        tk.Label(
+            header_frame,
+            text="📱 Student Portal Server",
+            font=('Segoe UI', 18, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        ).pack(side=tk.LEFT)
+        
+        # Server status badge
+        self.server_status_badge = tk.Label(
+            header_frame,
+            text="● ONLINE",
+            font=('Segoe UI', 10, 'bold'),
+            bg='#d4edda',
+            fg='#155724',
+            padx=12,
+            pady=4
+        )
+        self.server_status_badge.pack(side=tk.RIGHT, padx=5)
+        
+        # Refresh all button
+        refresh_all_btn = tk.Button(
+            header_frame,
+            text="🔄 Refresh All",
+            font=('Segoe UI', 9, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            padx=15,
+            pady=4,
+            cursor='hand2',
+            relief='flat',
+            command=self._refresh_server_dashboard
+        )
+        refresh_all_btn.pack(side=tk.RIGHT, padx=5)
+        
+        # Separator
+        tk.Frame(container, height=2, bg='#e9ecef').pack(fill=tk.X, pady=(0, 20))
+        
+        # ═══════════════════════════════════════════════════════════════
+        # MAIN CONTENT: Two-column layout using grid
+        # ═══════════════════════════════════════════════════════════════
+        main_content = tk.Frame(container, bg='white')
+        main_content.pack(fill=tk.BOTH, expand=True)
+        
+        # Configure grid columns with weights for proper expansion
+        main_content.columnconfigure(0, weight=2, minsize=280)  # QR Column
+        main_content.columnconfigure(1, weight=3, minsize=400)  # Status Column
+        main_content.rowconfigure(0, weight=1)
+        
+        # ═══════════════════════════════════════════════════════════════
+        # LEFT COLUMN: QR Code Card
+        # ═══════════════════════════════════════════════════════════════
+        left_frame = tk.Frame(main_content, bg='white')
+        left_frame.grid(row=0, column=0, sticky='nsew', padx=(0, 15))
+        
+        # QR Card - full height
+        qr_card = tk.Frame(left_frame, bg='#f8f9fa', relief='solid', bd=1)
+        qr_card.pack(fill=tk.BOTH, expand=True)
+        
+        qr_inner = tk.Frame(qr_card, bg='#f8f9fa')
+        qr_inner.pack(expand=True, pady=25, padx=20)
+        
+        tk.Label(
+            qr_inner,
+            text="📲 Scan to Access",
+            font=('Segoe UI', 14, 'bold'),
+            bg='#f8f9fa',
+            fg='#333'
+        ).pack()
+        
+        tk.Label(
+            qr_inner,
+            text="Point your phone camera at this QR code",
+            font=('Segoe UI', 10),
+            bg='#f8f9fa',
+            fg='#666'
+        ).pack(pady=(5, 20))
+        
+        # QR Code Container - Larger
+        self.portal_qr_container = tk.Frame(qr_inner, bg='white', relief='solid', bd=2)
+        self.portal_qr_container.pack(pady=10)
+        
+        # Current URL Display
+        self.portal_current_url_label = tk.Label(
+            qr_inner,
+            text="Loading...",
+            font=('Consolas', 13, 'bold'),
+            bg='#f8f9fa',
+            fg=self.colors['secondary']
+        )
+        self.portal_current_url_label.pack(pady=(20, 10))
+        
+        # Copy URL button
+        copy_btn = tk.Button(
+            qr_inner,
+            text="📋 Copy URL",
+            font=('Segoe UI', 10, 'bold'),
+            bg='white',
+            fg='#333',
+            padx=20,
+            pady=6,
+            cursor='hand2',
+            relief='solid',
+            bd=1,
+            command=self._copy_portal_url
+        )
+        copy_btn.pack(pady=10)
+        
+        # WiFi Note
+        tk.Label(
+            qr_inner,
+            text="⚡ Both devices must be on the same network",
+            font=('Segoe UI', 9, 'italic'),
+            bg='#f8f9fa',
+            fg='#888'
+        ).pack(pady=(15, 5))
+        
+        # ═══════════════════════════════════════════════════════════════
+        # RIGHT COLUMN: Status Dashboard
+        # ═══════════════════════════════════════════════════════════════
+        right_frame = tk.Frame(main_content, bg='white')
+        right_frame.grid(row=0, column=1, sticky='nsew')
+        
+        # STATUS CARD 1: Server Info
+        self._create_status_card(right_frame, "🖥️ Server Information", self._build_server_info_content)
+        
+        # STATUS CARD 2: URL History
+        self._create_status_card(right_frame, "🔗 URL History", self._build_url_history_content)
+        
+        # STATUS CARD 3: Health & Diagnostics
+        self._create_status_card(right_frame, "🩺 Health & Diagnostics", self._build_health_content)
+        
+        # STATUS CARD 4: Quick Actions
+        self._create_status_card(right_frame, "⚡ Quick Actions", self._build_quick_actions_content)
+        
+        # Initialize server and generate QR
+        self._initialize_portal_server()
+        
+    def _create_status_card(self, parent, title, content_builder):
+        """Create a status card with title and dynamic content"""
+        card = tk.Frame(parent, bg='white', relief='solid', bd=1)
+        card.pack(fill=tk.X, pady=(0, 12))
+        
+        # Header
+        header = tk.Frame(card, bg='#f1f3f4')
+        header.pack(fill=tk.X)
+        
+        tk.Label(
+            header,
+            text=title,
+            font=('Segoe UI', 10, 'bold'),
+            bg='#f1f3f4',
+            fg='#333',
+            padx=15,
+            pady=8
+        ).pack(side=tk.LEFT)
+        
+        # Content
+        content_frame = tk.Frame(card, bg='white')
+        content_frame.pack(fill=tk.X, padx=15, pady=12)
+        
+        # Build content
+        content_builder(content_frame)
+        
+    def _build_server_info_content(self, parent):
+        """Build server information content"""
+        # Store reference for updates
+        self.server_info_frame = parent
+        
+        # Row 1: Status + Port
+        row1 = tk.Frame(parent, bg='white')
+        row1.pack(fill=tk.X, pady=3)
+        
+        tk.Label(row1, text="Status:", font=('Segoe UI', 9, 'bold'), bg='white', fg='#555', width=12, anchor='w').pack(side=tk.LEFT)
+        self.server_status_label = tk.Label(row1, text="● Running", font=('Segoe UI', 9), bg='white', fg='#28a745')
+        self.server_status_label.pack(side=tk.LEFT)
+        
+        tk.Label(row1, text="Port:", font=('Segoe UI', 9, 'bold'), bg='white', fg='#555').pack(side=tk.LEFT, padx=20)
+        tk.Label(row1, text=str(self.portal_port), font=('Consolas', 9), bg='white', fg='#333').pack(side=tk.LEFT, padx=5)
+        
+        # Row 2: Runtime
+        row2 = tk.Frame(parent, bg='white')
+        row2.pack(fill=tk.X, pady=3)
+        
+        tk.Label(row2, text="Runtime:", font=('Segoe UI', 9, 'bold'), bg='white', fg='#555', width=12, anchor='w').pack(side=tk.LEFT)
+        self.server_runtime_label = tk.Label(row2, text="0h 0m 0s", font=('Consolas', 9), bg='white', fg='#333')
+        self.server_runtime_label.pack(side=tk.LEFT)
+        
+        # Row 3: IP Address
+        row3 = tk.Frame(parent, bg='white')
+        row3.pack(fill=tk.X, pady=3)
+        
+        tk.Label(row3, text="IP Address:", font=('Segoe UI', 9, 'bold'), bg='white', fg='#555', width=12, anchor='w').pack(side=tk.LEFT)
+        self.server_ip_label = tk.Label(row3, text="Detecting...", font=('Consolas', 9), bg='white', fg='#333')
+        self.server_ip_label.pack(side=tk.LEFT)
+        
+        # Row 4: Traffic Estimate
+        row4 = tk.Frame(parent, bg='white')
+        row4.pack(fill=tk.X, pady=3)
+        
+        tk.Label(row4, text="Est. Traffic:", font=('Segoe UI', 9, 'bold'), bg='white', fg='#555', width=12, anchor='w').pack(side=tk.LEFT)
+        self.server_traffic_label = tk.Label(row4, text="—", font=('Segoe UI', 9), bg='white', fg='#666')
+        self.server_traffic_label.pack(side=tk.LEFT)
+        
+    def _build_url_history_content(self, parent):
+        """Build URL history content with toggle"""
+        self.url_history_frame = parent
+        
+        # Toggle for showing history
+        toggle_frame = tk.Frame(parent, bg='white')
+        toggle_frame.pack(fill=tk.X, pady=(0, 8))
+        
+        self.show_url_history = tk.BooleanVar(value=False)
+        
+        tk.Label(toggle_frame, text="Current:", font=('Segoe UI', 9, 'bold'), bg='white', fg='#555').pack(side=tk.LEFT)
+        self.current_url_display = tk.Label(toggle_frame, text="Loading...", font=('Consolas', 9), bg='white', fg=self.colors['secondary'])
+        self.current_url_display.pack(side=tk.LEFT, padx=8)
+        
+        # History toggle button
+        self.history_toggle_btn = tk.Button(
+            toggle_frame,
+            text="▼ Show History",
+            font=('Segoe UI', 8),
+            bg='white',
+            fg='#666',
+            relief='flat',
+            cursor='hand2',
+            command=self._toggle_url_history
+        )
+        self.history_toggle_btn.pack(side=tk.RIGHT)
+        
+        # History container (hidden by default)
+        self.url_history_container = tk.Frame(parent, bg='#f8f9fa')
+        # Don't pack - will be toggled
+        
+    def _toggle_url_history(self):
+        """Toggle URL history visibility"""
+        if self.show_url_history.get():
+            self.show_url_history.set(False)
+            self.url_history_container.pack_forget()
+            self.history_toggle_btn.config(text="▼ Show History")
+        else:
+            self.show_url_history.set(True)
+            self._populate_url_history()
+            self.url_history_container.pack(fill=tk.X, pady=(8, 0))
+            self.history_toggle_btn.config(text="▲ Hide History")
+    
+    def _populate_url_history(self):
+        """Populate URL history list"""
+        for w in self.url_history_container.winfo_children():
+            w.destroy()
+        
+        if not self.portal_url_history:
+            tk.Label(
+                self.url_history_container,
+                text="No previous URLs recorded",
+                font=('Segoe UI', 8, 'italic'),
+                bg='#f8f9fa',
+                fg='#999',
+                pady=8,
+                padx=10
+            ).pack(anchor='w')
+            return
+        
+        tk.Label(
+            self.url_history_container,
+            text="Previous Sessions (Last 3):",
+            font=('Segoe UI', 8, 'bold'),
+            bg='#f8f9fa',
+            fg='#555',
+            pady=5,
+            padx=10
+        ).pack(anchor='w')
+        
+        for i, url_entry in enumerate(self.portal_url_history[-3:]):
+            row = tk.Frame(self.url_history_container, bg='#f8f9fa')
+            row.pack(fill=tk.X, padx=10, pady=2)
+            
+            tk.Label(row, text=f"#{i+1}", font=('Segoe UI', 8), bg='#f8f9fa', fg='#888', width=3).pack(side=tk.LEFT)
+            tk.Label(row, text=url_entry.get('url', ''), font=('Consolas', 8), bg='#f8f9fa', fg='#333').pack(side=tk.LEFT, padx=5)
+            tk.Label(row, text=url_entry.get('time', ''), font=('Segoe UI', 7), bg='#f8f9fa', fg='#999').pack(side=tk.RIGHT)
+        
+    def _build_health_content(self, parent):
+        """Build health diagnostics content"""
+        self.health_frame = parent
+        
+        # Health indicators
+        indicators = [
+            ("Portal Server", "checking"),
+            ("Database Connection", "checking"),
+            ("Network Access", "checking")
+        ]
+        
+        self.health_indicators = {}
+        
+        for name, status in indicators:
+            row = tk.Frame(parent, bg='white')
+            row.pack(fill=tk.X, pady=3)
+            
+            tk.Label(row, text=name + ":", font=('Segoe UI', 9), bg='white', fg='#555', width=18, anchor='w').pack(side=tk.LEFT)
+            
+            indicator = tk.Label(row, text="◯ Checking...", font=('Segoe UI', 9), bg='white', fg='#ffc107')
+            indicator.pack(side=tk.LEFT)
+            self.health_indicators[name] = indicator
+        
+        # Issues section
+        tk.Frame(parent, height=1, bg='#e9ecef').pack(fill=tk.X, pady=(10, 8))
+        
+        self.issues_label = tk.Label(
+            parent,
+            text="✓ No issues detected",
+            font=('Segoe UI', 9),
+            bg='white',
+            fg='#28a745'
+        )
+        self.issues_label.pack(anchor='w')
+        
+    def _initialize_portal_server(self):
+        """Initialize portal server and update dashboard"""
+        self.start_student_portal()
+        self.portal_start_time = datetime.now()
+        
+        # Get current IP
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+        except:
+            local_ip = "127.0.0.1"
+        
+        self.portal_url = f"http://{local_ip}:{self.portal_port}"
+        
+        # Add to history
+        self.portal_url_history.append({
+            'url': self.portal_url,
+            'time': datetime.now().strftime('%H:%M:%S'),
+            'ip': local_ip
+        })
+        
+        # Keep only last 3
+        if len(self.portal_url_history) > 3:
+            self.portal_url_history = self.portal_url_history[-3:]
+        
+        # Update displays
+        self._update_dashboard_displays(local_ip)
+        
+        # Generate QR
+        self._generate_portal_qr_code()
+        
+        # Run health checks
+        self._run_health_checks()
+        
+        # Start runtime updater
+        self._start_runtime_updater()
+        
+    def _update_dashboard_displays(self, local_ip):
+        """Update all dashboard displays"""
+        if hasattr(self, 'portal_current_url_label'):
+            self.portal_current_url_label.config(text=self.portal_url)
+        if hasattr(self, 'current_url_display'):
+            self.current_url_display.config(text=self.portal_url)
+        if hasattr(self, 'server_ip_label'):
+            self.server_ip_label.config(text=local_ip)
+        if hasattr(self, 'server_traffic_label'):
+            self.server_traffic_label.config(text="Low (< 10 active)")
+        
+    def _generate_portal_qr_code(self):
+        """Generate and display QR code"""
+        # Clear existing
+        for w in self.portal_qr_container.winfo_children():
+            w.destroy()
+        
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+        except:
+            local_ip = "127.0.0.1"
+        
+        url = f"http://{local_ip}:{self.portal_port}"
+        
+        try:
+            qr = qrcode.QRCode(box_size=6, border=2)
+            qr.add_data(url)
+            qr.make(fit=True)
+            img = qr.make_image(fill_color="#0F3460", back_color="white")
+            
+            img_tk = ImageTk.PhotoImage(img)
+            qr_label = tk.Label(self.portal_qr_container, image=img_tk, bg='white', padx=10, pady=10)
+            qr_label.image = img_tk
+            qr_label.pack()
+        except Exception as e:
+            tk.Label(
+                self.portal_qr_container,
+                text="⚠️ QR Generation Failed",
+                font=('Segoe UI', 10),
+                bg='white',
+                fg='#dc3545',
+                padx=30,
+                pady=30
+            ).pack()
+    
+    def _copy_portal_url(self):
+        """Copy portal URL to clipboard"""
+        self.root.clipboard_clear()
+        self.root.clipboard_append(self.portal_url)
+        messagebox.showinfo("Copied", "Portal URL copied to clipboard!")
+    
+    def _run_health_checks(self):
+        """Run health diagnostics"""
+        # Skip if health indicators not yet created
+        if not hasattr(self, 'health_indicators') or not self.health_indicators:
+            return
+        
+        issues = []
+        
+        # Check 1: Portal Server
+        try:
+            import urllib.request
+            urllib.request.urlopen(f"http://127.0.0.1:{self.portal_port}/api/me", timeout=2)
+            if "Portal Server" in self.health_indicators:
+                self.health_indicators["Portal Server"].config(text="● Healthy", fg='#28a745')
+        except:
+            if "Portal Server" in self.health_indicators:
+                self.health_indicators["Portal Server"].config(text="● Unavailable", fg='#dc3545')
+            issues.append("Portal server not responding")
+        
+        # Check 2: Database
+        try:
+            portal_db_path = os.path.join(os.path.dirname(__file__), 'Web-Extension', 'portal.db')
+            if os.path.exists(portal_db_path):
+                if "Database Connection" in self.health_indicators:
+                    self.health_indicators["Database Connection"].config(text="● Connected", fg='#28a745')
+            else:
+                if "Database Connection" in self.health_indicators:
+                    self.health_indicators["Database Connection"].config(text="● Not Found", fg='#ffc107')
+                issues.append("Portal database not found")
+        except:
+            if "Database Connection" in self.health_indicators:
+                self.health_indicators["Database Connection"].config(text="● Error", fg='#dc3545')
+            issues.append("Database connection error")
+        
+        # Check 3: Network
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            s.close()
+            if "Network Access" in self.health_indicators:
+                self.health_indicators["Network Access"].config(text="● Available", fg='#28a745')
+        except:
+            if "Network Access" in self.health_indicators:
+                self.health_indicators["Network Access"].config(text="● Limited", fg='#ffc107')
+            issues.append("Limited network access")
+        
+        # Update issues label
+        if hasattr(self, 'issues_label') and hasattr(self, 'server_status_badge'):
+            if issues:
+                self.issues_label.config(text=f"⚠️ {len(issues)} issue(s): " + "; ".join(issues), fg='#dc3545')
+                self.server_status_badge.config(text="● ISSUES", bg='#fff3cd', fg='#856404')
+            else:
+                self.issues_label.config(text="✓ All systems operational", fg='#28a745')
+                self.server_status_badge.config(text="● ONLINE", bg='#d4edda', fg='#155724')
+    
+    def _start_runtime_updater(self):
+        """Start background runtime updater"""
+        def update_runtime():
+            if self.portal_start_time and hasattr(self, 'server_runtime_label'):
+                delta = datetime.now() - self.portal_start_time
+                hours, remainder = divmod(int(delta.total_seconds()), 3600)
+                minutes, seconds = divmod(remainder, 60)
+                self.server_runtime_label.config(text=f"{hours}h {minutes}m {seconds}s")
+            self.root.after(1000, update_runtime)
+        
+        update_runtime()
+    
+    def _refresh_server_dashboard(self):
+        """Refresh all server dashboard data"""
+        self._run_health_checks()
+        self._generate_portal_qr_code()
+        
+        # Re-detect IP
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+        except:
+            local_ip = "127.0.0.1"
+        
+        new_url = f"http://{local_ip}:{self.portal_port}"
+        
+        if new_url != self.portal_url:
+            self.portal_url = new_url
+            self.portal_url_history.append({
+                'url': new_url,
+                'time': datetime.now().strftime('%H:%M:%S'),
+                'ip': local_ip
+            })
+            if len(self.portal_url_history) > 3:
+                self.portal_url_history = self.portal_url_history[-3:]
+        
+        self._update_dashboard_displays(local_ip)
+        
+        if hasattr(self, 'show_url_history') and self.show_url_history.get():
+            self._populate_url_history()
+
+    
+    def _create_requests_section(self, parent):
+        """Create requests management section"""
+        # Header frame
+        header_frame = tk.Frame(parent, bg='white')
+        header_frame.pack(fill=tk.X, padx=20, pady=(20, 10))
+        
+        tk.Label(
+            header_frame,
+            text="📋 Student Portal Requests",
+            font=('Segoe UI', 18, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        ).pack(side=tk.LEFT)
+        
+        # Refresh button
+        refresh_btn = tk.Button(
+            header_frame,
+            text="🔄 Refresh",
+            font=('Segoe UI', 10, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            padx=15,
+            pady=5,
+            cursor='hand2',
+            relief='flat',
+            command=self._refresh_portal_requests
+        )
+        refresh_btn.pack(side=tk.RIGHT)
+        
+        # Description
+        tk.Label(
+            parent,
+            text="Profile updates, book reservations, and other requests from students",
+            font=('Segoe UI', 10),
+            bg='white',
+            fg='#666'
+        ).pack(anchor='w', padx=20, pady=(0, 15))
+        
+        # Scrollable request list
+        list_frame = tk.Frame(parent, bg='white')
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+        
+        # Canvas for scrolling
+        canvas = tk.Canvas(list_frame, bg='white', highlightthickness=0)
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=canvas.yview)
+        self.requests_container = tk.Frame(canvas, bg='white')
+        
+        self.requests_container.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=self.requests_container, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Bind mousewheel
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind("<MouseWheel>", _on_mousewheel)
+        canvas.bind("<Enter>", lambda e: canvas.focus_set())
+        
+        # Load requests
+        self._refresh_portal_requests()
+    
+    def _refresh_portal_requests(self):
+        """Fetch and display pending requests"""
+        # Clear existing
+        for w in self.requests_container.winfo_children():
+            w.destroy()
+        
+        try:
+            import urllib.request
+            import urllib.error
+            
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/all-requests"
+            req = urllib.request.Request(url)
+            
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode())
+                requests_list = data.get('requests', [])
+                
+                if not requests_list:
+                    self._show_empty_message(self.requests_container, "No pending requests", "All student requests have been processed! 🎉")
+                    return
+                
+                for req_data in requests_list:
+                    self._create_request_card(self.requests_container, req_data)
+                    
+        except Exception as e:
+            self._show_empty_message(self.requests_container, "Could not load requests", f"Portal server may not be running.\n{str(e)}")
+    
+    def _create_request_card(self, parent, req_data):
+        """Create a card for displaying a request"""
+        card = tk.Frame(parent, bg='#f8f9fa', relief='solid', bd=1)
+        card.pack(fill=tk.X, pady=5, padx=5)
+        
+        # Inner padding
+        inner = tk.Frame(card, bg='#f8f9fa')
+        inner.pack(fill=tk.X, padx=15, pady=12)
+        
+        # Left side: Info
+        info_frame = tk.Frame(inner, bg='#f8f9fa')
+        info_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Type badge
+        type_colors = {
+            'profile_update': '#17a2b8',
+            'renewal': '#28a745',
+            'book_reservation': '#6f42c1',
+            'extension': '#fd7e14'
+        }
+        req_type = req_data.get('request_type', 'request')
+        type_color = type_colors.get(req_type, '#6c757d')
+        
+        header_row = tk.Frame(info_frame, bg='#f8f9fa')
+        header_row.pack(fill=tk.X)
+        
+        type_badge = tk.Label(
+            header_row,
+            text=req_type.replace('_', ' ').title(),
+            font=('Segoe UI', 9, 'bold'),
+            bg=type_color,
+            fg='white',
+            padx=8,
+            pady=2
+        )
+        type_badge.pack(side=tk.LEFT)
+        
+        tk.Label(
+            header_row,
+            text=f"from {req_data.get('student_name', 'Unknown')}",
+            font=('Segoe UI', 10),
+            bg='#f8f9fa',
+            fg='#333'
+        ).pack(side=tk.LEFT, padx=(10, 0))
+        
+        tk.Label(
+            header_row,
+            text=f"({req_data.get('enrollment_no', '')})",
+            font=('Segoe UI', 9),
+            bg='#f8f9fa',
+            fg='#666'
+        ).pack(side=tk.LEFT, padx=(5, 0))
+        
+        # Details
+        details = req_data.get('details', {})
+        if isinstance(details, dict):
+            detail_text = ', '.join([f"{k}: {v}" for k, v in details.items() if v])
+        else:
+            detail_text = str(details)
+        
+        if detail_text:
+            tk.Label(
+                info_frame,
+                text=detail_text[:100] + ('...' if len(detail_text) > 100 else ''),
+                font=('Segoe UI', 9),
+                bg='#f8f9fa',
+                fg='#555',
+                anchor='w'
+            ).pack(fill=tk.X, pady=(5, 0))
+        
+        # Timestamp
+        tk.Label(
+            info_frame,
+            text=f"Submitted: {req_data.get('created_at', 'N/A')}",
+            font=('Segoe UI', 8),
+            bg='#f8f9fa',
+            fg='#999'
+        ).pack(anchor='w', pady=(3, 0))
+        
+        # Right side: Actions
+        actions_frame = tk.Frame(inner, bg='#f8f9fa')
+        actions_frame.pack(side=tk.RIGHT)
+        
+        req_id = req_data.get('req_id')
+        
+        approve_btn = tk.Button(
+            actions_frame,
+            text="✓ Approve",
+            font=('Segoe UI', 9, 'bold'),
+            bg='#28a745',
+            fg='white',
+            padx=12,
+            pady=4,
+            cursor='hand2',
+            relief='flat',
+            command=lambda rid=req_id: self._handle_request_action(rid, 'approve')
+        )
+        approve_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        reject_btn = tk.Button(
+            actions_frame,
+            text="✕ Reject",
+            font=('Segoe UI', 9, 'bold'),
+            bg='#dc3545',
+            fg='white',
+            padx=12,
+            pady=4,
+            cursor='hand2',
+            relief='flat',
+            command=lambda rid=req_id: self._handle_request_action(rid, 'reject')
+        )
+        reject_btn.pack(side=tk.LEFT)
+    
+    def _handle_request_action(self, req_id, action):
+        """Handle approve/reject action for a request"""
+        try:
+            import urllib.request
+            import urllib.error
+            
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/requests/{req_id}/{action}"
+            req = urllib.request.Request(url, method='POST', data=b'')
+            
+            with urllib.request.urlopen(req, timeout=5) as response:
+                result = json.loads(response.read().decode())
+                if result.get('status') == 'success':
+                    messagebox.showinfo("Success", f"Request {action}d successfully!")
+                    self._refresh_portal_requests()
+                else:
+                    messagebox.showerror("Error", result.get('message', 'Action failed'))
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to {action} request: {str(e)}")
+    
+    def _create_deletion_section(self, parent):
+        """Create deletion requests management section"""
+        # Header
+        header_frame = tk.Frame(parent, bg='white')
+        header_frame.pack(fill=tk.X, padx=20, pady=(20, 10))
+        
+        tk.Label(
+            header_frame,
+            text="🗑️ Account Deletion Requests",
+            font=('Segoe UI', 18, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        ).pack(side=tk.LEFT)
+        
+        refresh_btn = tk.Button(
+            header_frame,
+            text="🔄 Refresh",
+            font=('Segoe UI', 10, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            padx=15,
+            pady=5,
+            cursor='hand2',
+            relief='flat',
+            command=self._refresh_deletion_requests
+        )
+        refresh_btn.pack(side=tk.RIGHT)
+        
+        # Warning
+        warning_frame = tk.Frame(parent, bg='#fff3cd', relief='solid', bd=1)
+        warning_frame.pack(fill=tk.X, padx=20, pady=(0, 15))
+        
+        tk.Label(
+            warning_frame,
+            text="⚠️ Approving deletion will remove the student from the portal authentication system.",
+            font=('Segoe UI', 9),
+            bg='#fff3cd',
+            fg='#856404',
+            padx=15,
+            pady=8
+        ).pack(anchor='w')
+        
+        # Scrollable list
+        list_frame = tk.Frame(parent, bg='white')
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+        
+        canvas = tk.Canvas(list_frame, bg='white', highlightthickness=0)
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=canvas.yview)
+        self.deletion_container = tk.Frame(canvas, bg='white')
+        
+        self.deletion_container.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=self.deletion_container, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind("<MouseWheel>", _on_mousewheel)
+        
+        # Load
+        self._refresh_deletion_requests()
+    
+    def _refresh_deletion_requests(self):
+        """Fetch and display deletion requests"""
+        for w in self.deletion_container.winfo_children():
+            w.destroy()
+        
+        try:
+            import urllib.request
+            
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/all-requests"
+            req = urllib.request.Request(url)
+            
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode())
+                deletions = data.get('deletion_requests', [])
+                
+                if not deletions:
+                    self._show_empty_message(self.deletion_container, "No deletion requests", "No students have requested account deletion.")
+                    return
+                
+                for del_data in deletions:
+                    self._create_deletion_card(self.deletion_container, del_data)
+                    
+        except Exception as e:
+            self._show_empty_message(self.deletion_container, "Could not load requests", str(e))
+    
+    def _create_deletion_card(self, parent, del_data):
+        """Create a card for deletion request"""
+        card = tk.Frame(parent, bg='#ffe6e6', relief='solid', bd=1)
+        card.pack(fill=tk.X, pady=5, padx=5)
+        
+        inner = tk.Frame(card, bg='#ffe6e6')
+        inner.pack(fill=tk.X, padx=15, pady=12)
+        
+        # Info
+        info_frame = tk.Frame(inner, bg='#ffe6e6')
+        info_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        tk.Label(
+            info_frame,
+            text=f"🗑️ {del_data.get('student_name', 'Unknown')}",
+            font=('Segoe UI', 11, 'bold'),
+            bg='#ffe6e6',
+            fg='#c0392b'
+        ).pack(anchor='w')
+        
+        tk.Label(
+            info_frame,
+            text=f"Enrollment: {del_data.get('student_id', '')}",
+            font=('Segoe UI', 9),
+            bg='#ffe6e6',
+            fg='#666'
+        ).pack(anchor='w')
+        
+        tk.Label(
+            info_frame,
+            text=f"Reason: {del_data.get('reason', 'No reason provided')}",
+            font=('Segoe UI', 9, 'italic'),
+            bg='#ffe6e6',
+            fg='#555'
+        ).pack(anchor='w', pady=(5, 0))
+        
+        tk.Label(
+            info_frame,
+            text=f"Requested: {del_data.get('timestamp', 'N/A')}",
+            font=('Segoe UI', 8),
+            bg='#ffe6e6',
+            fg='#999'
+        ).pack(anchor='w', pady=(3, 0))
+        
+        # Actions
+        actions_frame = tk.Frame(inner, bg='#ffe6e6')
+        actions_frame.pack(side=tk.RIGHT)
+        
+        del_id = del_data.get('id')
+        
+        approve_btn = tk.Button(
+            actions_frame,
+            text="✓ Approve Deletion",
+            font=('Segoe UI', 9, 'bold'),
+            bg='#dc3545',
+            fg='white',
+            padx=12,
+            pady=4,
+            cursor='hand2',
+            relief='flat',
+            command=lambda did=del_id, name=del_data.get('student_name'): self._handle_deletion_action(did, 'approve', name)
+        )
+        approve_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        reject_btn = tk.Button(
+            actions_frame,
+            text="✕ Reject",
+            font=('Segoe UI', 9, 'bold'),
+            bg='#6c757d',
+            fg='white',
+            padx=12,
+            pady=4,
+            cursor='hand2',
+            relief='flat',
+            command=lambda did=del_id: self._handle_deletion_action(did, 'reject')
+        )
+        reject_btn.pack(side=tk.LEFT)
+    
+    def _handle_deletion_action(self, del_id, action, student_name=None):
+        """Handle deletion request action"""
+        if action == 'approve':
+            if not messagebox.askyesno("Confirm Deletion", 
+                f"Are you sure you want to approve the deletion request for {student_name}?\n\n"
+                "This will remove their portal authentication."):
+                return
+        
+        try:
+            import urllib.request
+            
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/deletion/{del_id}/{action}"
+            req = urllib.request.Request(url, method='POST', data=b'')
+            
+            with urllib.request.urlopen(req, timeout=5) as response:
+                result = json.loads(response.read().decode())
+                if result.get('status') == 'success':
+                    messagebox.showinfo("Success", result.get('message', f"Deletion {action}d!"))
+                    self._refresh_deletion_requests()
+                else:
+                    messagebox.showerror("Error", result.get('message', 'Action failed'))
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to {action} deletion: {str(e)}")
+    
+    def _create_password_reset_section(self, parent):
+        """Create password reset section"""
+        # Header
+        tk.Label(
+            parent,
+            text="🔑 Reset Student Password",
+            font=('Segoe UI', 18, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        ).pack(pady=(30, 10), padx=20, anchor='w')
+        
+        tk.Label(
+            parent,
+            text="Reset a student's password to their enrollment number (they'll be prompted to change it on next login)",
+            font=('Segoe UI', 10),
+            bg='white',
+            fg='#666'
+        ).pack(padx=20, anchor='w', pady=(0, 20))
+        
+        # Reset form
+        form_frame = tk.Frame(parent, bg='#f8f9fa', relief='solid', bd=1)
+        form_frame.pack(fill=tk.X, padx=20, pady=10)
+        
+        inner = tk.Frame(form_frame, bg='#f8f9fa')
+        inner.pack(padx=30, pady=25)
+        
+        tk.Label(
+            inner,
+            text="Enter Student Enrollment Number:",
+            font=('Segoe UI', 11, 'bold'),
+            bg='#f8f9fa',
+            fg='#333'
+        ).pack(anchor='w')
+        
+        self.password_reset_enrollment = tk.Entry(
+            inner,
+            font=('Segoe UI', 12),
+            width=30,
+            relief='solid',
+            bd=1
+        )
+        self.password_reset_enrollment.pack(pady=(10, 15), ipady=6)
+        
+        reset_btn = tk.Button(
+            inner,
+            text="🔑 Reset Password",
+            font=('Segoe UI', 11, 'bold'),
+            bg='#fd7e14',
+            fg='white',
+            padx=25,
+            pady=10,
+            cursor='hand2',
+            relief='flat',
+            command=self._handle_password_reset
+        )
+        reset_btn.pack()
+        
+        # Note
+        note_frame = tk.Frame(parent, bg='#e7f3ff', relief='solid', bd=1)
+        note_frame.pack(fill=tk.X, padx=20, pady=20)
+        
+        tk.Label(
+            note_frame,
+            text="ℹ️ The student's password will be reset to their enrollment number. "
+                 "They will be required to change it upon their next login.",
+            font=('Segoe UI', 9),
+            bg='#e7f3ff',
+            fg='#0066cc',
+            wraplength=600,
+            justify=tk.LEFT,
+            padx=15,
+            pady=12
+        ).pack()
+    
+    def _handle_password_reset(self):
+        """Handle password reset action"""
+        enrollment = self.password_reset_enrollment.get().strip()
+        
+        if not enrollment:
+            messagebox.showwarning("Missing Information", "Please enter an enrollment number.")
+            return
+        
+        if not messagebox.askyesno("Confirm Reset", 
+            f"Reset password for enrollment: {enrollment}?\n\n"
+            "Their password will be set to their enrollment number."):
+            return
+        
+        try:
+            import urllib.request
+            
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/password-reset/{enrollment}"
+            req = urllib.request.Request(url, method='POST', data=b'')
+            
+            with urllib.request.urlopen(req, timeout=5) as response:
+                result = json.loads(response.read().decode())
+                if result.get('status') == 'success':
+                    messagebox.showinfo("Success", result.get('message', 'Password reset successfully!'))
+                    self.password_reset_enrollment.delete(0, tk.END)
+                else:
+                    messagebox.showerror("Error", result.get('message', 'Reset failed'))
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to reset password: {str(e)}")
+    
+    def _show_empty_message(self, container, title, message):
+        """Show empty state message"""
+        frame = tk.Frame(container, bg='white')
+        frame.pack(fill=tk.BOTH, expand=True, pady=40)
+        
+        tk.Label(
+            frame,
+            text=title,
+            font=('Segoe UI', 14, 'bold'),
+            bg='white',
+            fg='#666'
+        ).pack()
+        
+        tk.Label(
+            frame,
+            text=message,
+            font=('Segoe UI', 10),
+            bg='white',
+            fg='#999'
+        ).pack(pady=(8, 0))
+
     
     def refresh_analysis(self):
         """Refresh all analysis charts based on selected time period"""

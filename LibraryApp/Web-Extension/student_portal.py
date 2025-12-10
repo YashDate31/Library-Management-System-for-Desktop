@@ -594,6 +594,214 @@ def api_books():
     conn.close()
     return jsonify({'books': books, 'categories': categories})
 
+# --- Admin/Librarian API Endpoints ---
+
+@app.route('/api/admin/all-requests')
+def api_admin_all_requests():
+    """Fetch all pending requests for librarian management"""
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    
+    # Fetch general requests (profile_update, renewal, book_reservation, etc.)
+    cursor.execute("""
+        SELECT id as req_id, enrollment_no, request_type, details, status, created_at
+        FROM requests
+        WHERE status = 'pending'
+        ORDER BY created_at DESC
+    """)
+    general_requests = []
+    for row in cursor.fetchall():
+        req = dict(row)
+        # Try to parse JSON details
+        try:
+            req['details'] = json.loads(req['details']) if req['details'] else {}
+        except:
+            req['details'] = {'raw': req['details']}
+        general_requests.append(req)
+    
+    # Fetch deletion requests
+    cursor.execute("""
+        SELECT id, student_id, reason, status, timestamp
+        FROM deletion_requests
+        WHERE status = 'pending'
+        ORDER BY timestamp DESC
+    """)
+    deletion_requests = [dict(row) for row in cursor.fetchall()]
+    
+    conn.close()
+    
+    # Get student names from library DB
+    conn_lib = get_library_db()
+    cursor_lib = conn_lib.cursor()
+    
+    # Enrich general requests with student names
+    for req in general_requests:
+        cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (req['enrollment_no'],))
+        student = cursor_lib.fetchone()
+        req['student_name'] = student['name'] if student else 'Unknown'
+    
+    # Enrich deletion requests with student names
+    for req in deletion_requests:
+        cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (req['student_id'],))
+        student = cursor_lib.fetchone()
+        req['student_name'] = student['name'] if student else 'Unknown'
+    
+    conn_lib.close()
+    
+    return jsonify({
+        'requests': general_requests,
+        'deletion_requests': deletion_requests,
+        'counts': {
+            'total': len(general_requests) + len(deletion_requests),
+            'requests': len(general_requests),
+            'deletions': len(deletion_requests)
+        }
+    })
+
+@app.route('/api/admin/requests/<int:req_id>/approve', methods=['POST'])
+def api_admin_approve_request(req_id):
+    """Approve a general request"""
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    
+    # Get the request details
+    cursor.execute("SELECT * FROM requests WHERE id = ?", (req_id,))
+    req = cursor.fetchone()
+    
+    if not req:
+        conn.close()
+        return jsonify({'status': 'error', 'message': 'Request not found'}), 404
+    
+    # Update status to approved
+    cursor.execute("UPDATE requests SET status = 'approved' WHERE id = ?", (req_id,))
+    conn.commit()
+    conn.close()
+    
+    # If it's a profile update, we could apply changes to main DB here
+    # For now, just mark as approved (librarian can manually update if needed)
+    
+    return jsonify({'status': 'success', 'message': 'Request approved'})
+
+@app.route('/api/admin/requests/<int:req_id>/reject', methods=['POST'])
+def api_admin_reject_request(req_id):
+    """Reject a general request"""
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    
+    cursor.execute("UPDATE requests SET status = 'rejected' WHERE id = ?", (req_id,))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'status': 'success', 'message': 'Request rejected'})
+
+@app.route('/api/admin/deletion/<int:del_id>/approve', methods=['POST'])
+def api_admin_approve_deletion(del_id):
+    """Approve account deletion request"""
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    
+    # Get deletion request
+    cursor.execute("SELECT student_id FROM deletion_requests WHERE id = ?", (del_id,))
+    req = cursor.fetchone()
+    
+    if not req:
+        conn.close()
+        return jsonify({'status': 'error', 'message': 'Deletion request not found'}), 404
+    
+    student_id = req['student_id']
+    
+    # Update status
+    cursor.execute("UPDATE deletion_requests SET status = 'approved' WHERE id = ?", (del_id,))
+    
+    # Also clean up auth record
+    cursor.execute("DELETE FROM student_auth WHERE enrollment_no = ?", (student_id,))
+    conn.commit()
+    conn.close()
+    
+    # Note: Actual student deletion from main DB should be done via the main app
+    # This just marks the request as approved
+    
+    return jsonify({
+        'status': 'success', 
+        'message': 'Deletion approved. Student auth removed.',
+        'student_id': student_id
+    })
+
+@app.route('/api/admin/deletion/<int:del_id>/reject', methods=['POST'])
+def api_admin_reject_deletion(del_id):
+    """Reject account deletion request"""
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    
+    cursor.execute("UPDATE deletion_requests SET status = 'rejected' WHERE id = ?", (del_id,))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'status': 'success', 'message': 'Deletion request rejected'})
+
+@app.route('/api/admin/password-reset/<enrollment_no>', methods=['POST'])
+def api_admin_reset_password(enrollment_no):
+    """Reset student password to enrollment number"""
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    
+    # Check if auth record exists
+    cursor.execute("SELECT * FROM student_auth WHERE enrollment_no = ?", (enrollment_no,))
+    auth = cursor.fetchone()
+    
+    if auth:
+        # Reset to enrollment number and mark as first login
+        cursor.execute("""
+            UPDATE student_auth 
+            SET password = ?, is_first_login = 1, last_changed = CURRENT_TIMESTAMP
+            WHERE enrollment_no = ?
+        """, (enrollment_no, enrollment_no))
+    else:
+        # Create new auth record with default password
+        cursor.execute("""
+            INSERT INTO student_auth (enrollment_no, password, is_first_login)
+            VALUES (?, ?, 1)
+        """, (enrollment_no, enrollment_no))
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({
+        'status': 'success', 
+        'message': f'Password reset to enrollment number. Student will be prompted to change on next login.'
+    })
+
+@app.route('/api/admin/stats')
+def api_admin_stats():
+    """Get portal statistics for dashboard"""
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    
+    # Count requests by status
+    cursor.execute("SELECT status, COUNT(*) as count FROM requests GROUP BY status")
+    request_stats = {row['status']: row['count'] for row in cursor.fetchall()}
+    
+    # Count deletion requests by status
+    cursor.execute("SELECT status, COUNT(*) as count FROM deletion_requests GROUP BY status")
+    deletion_stats = {row['status']: row['count'] for row in cursor.fetchall()}
+    
+    # Count active auth records
+    cursor.execute("SELECT COUNT(*) as count FROM student_auth")
+    auth_count = cursor.fetchone()['count']
+    
+    # Count first-time login pending
+    cursor.execute("SELECT COUNT(*) as count FROM student_auth WHERE is_first_login = 1")
+    first_login_count = cursor.fetchone()['count']
+    
+    conn.close()
+    
+    return jsonify({
+        'requests': request_stats,
+        'deletions': deletion_stats,
+        'portal_users': auth_count,
+        'pending_password_change': first_login_count
+    })
+
 # --- SPA Serving ---
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
