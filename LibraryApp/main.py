@@ -7701,8 +7701,27 @@ Note: This is an automated email. Please find the attached formal overdue letter
         # Inner padding - larger for better visibility
         inner = tk.Frame(card, bg='#f8f9fa')
         inner.pack(fill=tk.BOTH, expand=True, padx=18, pady=15)
+        inner.bind("<MouseWheel>", _on_card_mousewheel)
         
-        # Type badge row
+        # Header row with index and type badge
+        header_row = tk.Frame(inner, bg='#f8f9fa')
+        header_row.pack(fill=tk.X)
+        header_row.bind("<MouseWheel>", _on_card_mousewheel)
+        
+        # Index badge - prominent number
+        index_badge = tk.Label(
+            header_row,
+            text=f"#{index}",
+            font=('Segoe UI', 11, 'bold'),
+            bg=self.colors['accent'],
+            fg='white',
+            padx=8,
+            pady=2
+        )
+        index_badge.pack(side=tk.LEFT)
+        index_badge.bind("<MouseWheel>", _on_card_mousewheel)
+        
+        # Type badge
         type_colors = {
             'profile_update': '#17a2b8',
             'renewal': '#28a745',
@@ -7711,9 +7730,6 @@ Note: This is an automated email. Please find the attached formal overdue letter
         }
         req_type = req_data.get('request_type', 'request')
         type_color = type_colors.get(req_type, '#6c757d')
-        
-        header_row = tk.Frame(inner, bg='#f8f9fa')
-        header_row.pack(fill=tk.X)
         
         type_badge = tk.Label(
             header_row,
@@ -7724,7 +7740,8 @@ Note: This is an automated email. Please find the attached formal overdue letter
             padx=10,
             pady=3
         )
-        type_badge.pack(side=tk.LEFT)
+        type_badge.pack(side=tk.LEFT, padx=(8, 0))
+        type_badge.bind("<MouseWheel>", _on_card_mousewheel)
         
         # Student info row
         student_row = tk.Frame(inner, bg='#f8f9fa')
