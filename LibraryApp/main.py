@@ -2736,10 +2736,10 @@ Government Polytechnic Awasari (Kh)"""
             else:
                 academic_years.append(year)
         
-        academic_year_combo = ttk.Combobox(row2, textvariable=self.record_academic_year_var, 
+        self.academic_year_combo = ttk.Combobox(row2, textvariable=self.record_academic_year_var, 
                                           values=academic_years, state="readonly", width=15)
-        academic_year_combo.pack(side=tk.LEFT, padx=(5, 15))
-        academic_year_combo.bind('<<ComboboxSelected>>', lambda e: self.search_records())
+        self.academic_year_combo.pack(side=tk.LEFT, padx=(5, 15))
+        self.academic_year_combo.bind('<<ComboboxSelected>>', lambda e: self.search_records())
         
         filter_btn = tk.Button(
             row2,
@@ -3715,6 +3715,31 @@ Government Polytechnic Awasari (Kh)"""
             filtered_records.append(record)
         
         self.populate_records_tree(filtered_records)
+    
+    def refresh_academic_year_filter(self):
+        """Refresh academic year dropdown with latest years from database"""
+        if hasattr(self, 'academic_year_combo'):
+            # Get academic years from database and convert format
+            academic_years_raw = self.db.get_all_academic_years()
+            academic_years = ["All"]
+            for year in academic_years_raw:
+                # Convert format from "2025-2026" to "25-26"
+                if "-" in year:
+                    years = year.split("-")
+                    if len(years) == 2:
+                        year1 = years[0][-2:]  # "2025" -> "25"
+                        year2 = years[1][-2:]  # "2026" -> "26"
+                        academic_years.append(f"{year1}-{year2}")
+                    else:
+                        academic_years.append(year)
+                else:
+                    academic_years.append(year)
+            
+            # Update combobox values
+            self.academic_year_combo['values'] = academic_years
+            # If current selection is not in list, reset to "All"
+            if self.record_academic_year_var.get() not in academic_years:
+                self.record_academic_year_var.set("All")
     
     def clear_record_filters(self):
         """Clear all record filters"""
@@ -5035,6 +5060,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 try:
                     self.refresh_students()
                     self.refresh_dashboard()
+                    self.refresh_academic_year_filter()  # Refresh academic year dropdown
                 except Exception:
                     pass
                     
@@ -5050,6 +5076,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     try:
                         self.refresh_students()
                         self.refresh_dashboard()
+                        self.refresh_academic_year_filter()  # Refresh academic year dropdown
                     except Exception:
                         pass
                 else:
