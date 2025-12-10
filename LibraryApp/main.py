@@ -7287,16 +7287,32 @@ Note: This is an automated email. Please find the attached formal overdue letter
             response = urllib.request.urlopen(f"http://127.0.0.1:{self.portal_port}/api/admin/stats", timeout=3)
             stats = json.loads(response.read().decode())
             
-            stats_msg = f"""Portal Statistics:
+            # Parse request stats
+            requests = stats.get('requests', {})
+            deletions = stats.get('deletions', {})
             
-📊 Active Users: {stats.get('active_users', 0)}
-📝 Pending Requests: {stats.get('pending_requests', 0)}
-🗑️ Deletion Requests: {stats.get('pending_deletions', 0)}
-🔐 Password Resets: {stats.get('pending_resets', 0)}
+            pending_requests = requests.get('pending', 0)
+            approved_requests = requests.get('approved', 0)
+            rejected_requests = requests.get('rejected', 0)
+            
+            pending_deletions = deletions.get('pending', 0)
+            
+            stats_msg = f"""📊 Portal Statistics
+
+👥 Portal Users: {stats.get('portal_users', 0)}
+🔐 Pending Password Change: {stats.get('pending_password_change', 0)}
+
+📝 Requests:
+   • Pending: {pending_requests}
+   • Approved: {approved_requests}
+   • Rejected: {rejected_requests}
+
+🗑️ Deletion Requests:
+   • Pending: {pending_deletions}
 """
             messagebox.showinfo("Portal Stats", stats_msg)
-        except:
-            messagebox.showinfo("Portal Stats", "Statistics not available. Server may be starting up.")
+        except Exception as e:
+            messagebox.showinfo("Portal Stats", f"Statistics not available.\n{str(e)}")
     
     def _open_portal_in_browser(self):
         """Open portal in default browser"""
@@ -7633,6 +7649,20 @@ Note: This is an automated email. Please find the attached formal overdue letter
             with urllib.request.urlopen(req, timeout=5) as response:
                 data = json.loads(response.read().decode())
                 requests_list = data.get('requests', [])
+                
+                # Update count badge
+                if hasattr(self, 'requests_count_badge'):
+                    self.requests_count_badge.config(text=str(len(requests_list)))
+                
+                # Update stats by type
+                if hasattr(self, 'request_stats_labels'):
+                    type_counts = {}
+                    for req_data in requests_list:
+                        req_type = req_data.get('request_type', 'other')
+                        type_counts[req_type] = type_counts.get(req_type, 0) + 1
+                    
+                    for key, label in self.request_stats_labels.items():
+                        label.config(text=str(type_counts.get(key, 0)))
                 
                 if not requests_list:
                     self._show_empty_message(self.requests_container, "No pending requests", "All student requests have been processed! 🎉")
