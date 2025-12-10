@@ -671,6 +671,96 @@ def api_admin_all_requests():
         }
     })
 
+@app.route('/api/admin/request-history')
+def api_admin_request_history():
+    """Fetch processed (approved/rejected) requests for history view"""
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    
+    # Fetch approved and rejected requests
+    cursor.execute("""
+        SELECT id as req_id, enrollment_no, request_type, details, status, created_at
+        FROM requests
+        WHERE status IN ('approved', 'rejected')
+        ORDER BY created_at DESC
+        LIMIT 50
+    """)
+    processed_requests = []
+    for row in cursor.fetchall():
+        req = dict(row)
+        try:
+            req['details'] = json.loads(req['details']) if req['details'] else {}
+        except:
+            req['details'] = {'raw': req['details']}
+        processed_requests.append(req)
+    
+    conn.close()
+    
+    # Get student names from library DB
+    conn_lib = get_library_db()
+    cursor_lib = conn_lib.cursor()
+    
+    for req in processed_requests:
+        cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (req['enrollment_no'],))
+        student = cursor_lib.fetchone()
+        req['student_name'] = student['name'] if student else 'Unknown'
+    
+    conn_lib.close()
+    
+    # Count by status
+    approved_count = len([r for r in processed_requests if r['status'] == 'approved'])
+    rejected_count = len([r for r in processed_requests if r['status'] == 'rejected'])
+    
+    return jsonify({
+        'history': processed_requests,
+        'counts': {
+            'approved': approved_count,
+            'rejected': rejected_count,
+            'total': len(processed_requests)
+        }
+    })
+
+@app.route('/api/admin/deletion-history')
+def api_admin_deletion_history():
+    """Fetch processed deletion requests for history view"""
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    
+    # Fetch approved and rejected deletions
+    cursor.execute("""
+        SELECT id, student_id, reason, status, timestamp
+        FROM deletion_requests
+        WHERE status IN ('approved', 'rejected')
+        ORDER BY timestamp DESC
+        LIMIT 50
+    """)
+    processed_deletions = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
+    # Get student names from library DB
+    conn_lib = get_library_db()
+    cursor_lib = conn_lib.cursor()
+    
+    for req in processed_deletions:
+        cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (req['student_id'],))
+        student = cursor_lib.fetchone()
+        req['student_name'] = student['name'] if student else 'Deleted Account'
+    
+    conn_lib.close()
+    
+    # Count by status
+    approved_count = len([r for r in processed_deletions if r['status'] == 'approved'])
+    rejected_count = len([r for r in processed_deletions if r['status'] == 'rejected'])
+    
+    return jsonify({
+        'history': processed_deletions,
+        'counts': {
+            'approved': approved_count,
+            'rejected': rejected_count,
+            'total': len(processed_deletions)
+        }
+    })
+
 @app.route('/api/admin/requests/<int:req_id>/approve', methods=['POST'])
 def api_admin_approve_request(req_id):
     """Approve a general request"""

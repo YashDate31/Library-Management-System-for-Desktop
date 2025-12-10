@@ -7544,8 +7544,29 @@ Note: This is an automated email. Please find the attached formal overdue letter
         )
         self.requests_count_badge.pack(side=tk.LEFT, padx=(10, 0))
         
+        # Buttons frame on the right
+        buttons_frame = tk.Frame(header_frame, bg='white')
+        buttons_frame.pack(side=tk.RIGHT)
+        
+        # History toggle state
+        self.show_request_history = tk.BooleanVar(value=False)
+        
+        self.history_toggle_btn = tk.Button(
+            buttons_frame,
+            text="📜 View History",
+            font=('Segoe UI', 10, 'bold'),
+            bg='#6c757d',
+            fg='white',
+            padx=12,
+            pady=5,
+            cursor='hand2',
+            relief='flat',
+            command=self._toggle_request_history
+        )
+        self.history_toggle_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
         refresh_btn = tk.Button(
-            header_frame,
+            buttons_frame,
             text="🔄 Refresh",
             font=('Segoe UI', 10, 'bold'),
             bg=self.colors['secondary'],
@@ -7556,7 +7577,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
             relief='flat',
             command=self._refresh_portal_requests
         )
-        refresh_btn.pack(side=tk.RIGHT)
+        refresh_btn.pack(side=tk.LEFT)
         
         # Stats summary bar
         stats_frame = tk.Frame(container, bg='#f8f9fa', relief='solid', bd=1)
@@ -7692,6 +7713,189 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     
         except Exception as e:
             self._show_empty_message(self.requests_container, "Could not load requests", f"Portal server may not be running.\n{str(e)}")
+    
+    def _toggle_request_history(self):
+        """Toggle between pending requests and history view"""
+        current = self.show_request_history.get()
+        self.show_request_history.set(not current)
+        
+        if self.show_request_history.get():
+            # Switch to history mode
+            self.history_toggle_btn.config(text="📋 View Pending", bg='#28a745')
+            self._refresh_request_history()
+        else:
+            # Switch to pending mode
+            self.history_toggle_btn.config(text="📜 View History", bg='#6c757d')
+            self._refresh_portal_requests()
+    
+    def _refresh_request_history(self):
+        """Fetch and display processed request history"""
+        # Clear existing
+        for w in self.requests_container.winfo_children():
+            w.destroy()
+        
+        try:
+            import urllib.request
+            import urllib.error
+            
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/request-history"
+            req = urllib.request.Request(url)
+            
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode())
+                history_list = data.get('history', [])
+                counts = data.get('counts', {})
+                
+                # Update count badge to show total history
+                if hasattr(self, 'requests_count_badge'):
+                    self.requests_count_badge.config(text=str(counts.get('total', 0)), bg='#6c757d')
+                
+                # Update stats labels
+                if hasattr(self, 'request_stats_labels'):
+                    # Reset all to 0, then show approved/rejected in appropriate slots
+                    for key in self.request_stats_labels:
+                        self.request_stats_labels[key].config(text="0")
+                    if 'rejected' in self.request_stats_labels:
+                        self.request_stats_labels['rejected'].config(text=str(counts.get('rejected', 0)))
+                
+                if not history_list:
+                    self._show_empty_message(self.requests_container, "No request history", "No processed requests found.")
+                    return
+                
+                # Create two-column grid layout
+                self.requests_container.columnconfigure(0, weight=1)
+                self.requests_container.columnconfigure(1, weight=1)
+                
+                # Place history cards
+                for idx, req_data in enumerate(history_list):
+                    row = idx // 2
+                    col = idx % 2
+                    self._create_history_card(self.requests_container, req_data, row, col, idx + 1)
+                    
+        except Exception as e:
+            self._show_empty_message(self.requests_container, "Could not load history", str(e))
+    
+    def _create_history_card(self, parent, req_data, row=0, col=0, index=1):
+        """Create a card for displaying processed request in history view"""
+        status = req_data.get('status', 'unknown')
+        
+        # Color scheme based on status
+        if status == 'approved':
+            bg_color = '#d4edda'  # Light green
+            border_color = '#28a745'
+            status_text = '✓ Approved'
+            status_bg = '#28a745'
+        else:  # rejected
+            bg_color = '#f8d7da'  # Light red
+            border_color = '#dc3545'
+            status_text = '✕ Rejected'
+            status_bg = '#dc3545'
+        
+        card = tk.Frame(parent, bg=bg_color, relief='solid', bd=1)
+        card.grid(row=row, column=col, sticky='nsew', padx=8, pady=8)
+        
+        # Bind mousewheel
+        def _on_card_mousewheel(event):
+            self.requests_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        card.bind("<MouseWheel>", _on_card_mousewheel)
+        
+        inner = tk.Frame(card, bg=bg_color)
+        inner.pack(fill=tk.BOTH, expand=True, padx=18, pady=15)
+        inner.bind("<MouseWheel>", _on_card_mousewheel)
+        
+        # Header row with index and status badge
+        header_row = tk.Frame(inner, bg=bg_color)
+        header_row.pack(fill=tk.X)
+        
+        # Index badge
+        tk.Label(
+            header_row,
+            text=f"#{index}",
+            font=('Segoe UI', 11, 'bold'),
+            bg='#6c757d',
+            fg='white',
+            padx=8,
+            pady=2
+        ).pack(side=tk.LEFT)
+        
+        # Status badge
+        tk.Label(
+            header_row,
+            text=status_text,
+            font=('Segoe UI', 9, 'bold'),
+            bg=status_bg,
+            fg='white',
+            padx=10,
+            pady=3
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        
+        # Type badge
+        type_colors = {
+            'profile_update': '#17a2b8',
+            'renewal': '#28a745',
+            'book_reservation': '#6f42c1',
+            'book_request': '#6f42c1',
+            'extension': '#fd7e14'
+        }
+        req_type = req_data.get('request_type', 'request')
+        type_color = type_colors.get(req_type, '#6c757d')
+        
+        tk.Label(
+            header_row,
+            text=req_type.replace('_', ' ').title(),
+            font=('Segoe UI', 8, 'bold'),
+            bg=type_color,
+            fg='white',
+            padx=8,
+            pady=2
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        
+        # Student info
+        student_row = tk.Frame(inner, bg=bg_color)
+        student_row.pack(fill=tk.X, pady=(8, 0))
+        
+        tk.Label(
+            student_row,
+            text=f"{req_data.get('student_name', 'Unknown')}",
+            font=('Segoe UI', 11, 'bold'),
+            bg=bg_color,
+            fg='#333'
+        ).pack(side=tk.LEFT)
+        
+        tk.Label(
+            student_row,
+            text=f"({req_data.get('enrollment_no', '')})",
+            font=('Segoe UI', 9),
+            bg=bg_color,
+            fg='#666'
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        
+        # Details
+        details = req_data.get('details', {})
+        if isinstance(details, dict):
+            detail_text = ', '.join([f"{k}: {v}" for k, v in details.items() if v])
+        else:
+            detail_text = str(details)
+        
+        if detail_text:
+            tk.Label(
+                inner,
+                text=detail_text[:100] + ('...' if len(detail_text) > 100 else ''),
+                font=('Segoe UI', 9),
+                bg=bg_color,
+                fg='#555',
+                wraplength=350,
+                justify='left'
+            ).pack(anchor='w', pady=(6, 0))
+        
+        # Timestamp
+        tk.Label(
+            inner,
+            text=f"📅 {req_data.get('created_at', 'N/A')}",
+            font=('Segoe UI', 8),
+            bg=bg_color,
+            fg='#888'
+        ).pack(anchor='w', pady=(6, 0))
     
     def _create_request_card(self, parent, req_data, row=0, col=0, index=1):
         """Create a card for displaying a request in grid layout with index"""
@@ -7883,8 +8087,29 @@ Note: This is an automated email. Please find the attached formal overdue letter
         )
         self.deletion_count_badge.pack(side=tk.LEFT, padx=(10, 0))
         
+        # Buttons frame on the right
+        buttons_frame = tk.Frame(header_frame, bg='white')
+        buttons_frame.pack(side=tk.RIGHT)
+        
+        # History toggle state
+        self.show_deletion_history = tk.BooleanVar(value=False)
+        
+        self.deletion_history_toggle_btn = tk.Button(
+            buttons_frame,
+            text="📜 View History",
+            font=('Segoe UI', 10, 'bold'),
+            bg='#6c757d',
+            fg='white',
+            padx=12,
+            pady=5,
+            cursor='hand2',
+            relief='flat',
+            command=self._toggle_deletion_history
+        )
+        self.deletion_history_toggle_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
         refresh_btn = tk.Button(
-            header_frame,
+            buttons_frame,
             text="🔄 Refresh",
             font=('Segoe UI', 10, 'bold'),
             bg=self.colors['secondary'],
@@ -7895,7 +8120,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
             relief='flat',
             command=self._refresh_deletion_requests
         )
-        refresh_btn.pack(side=tk.RIGHT)
+        refresh_btn.pack(side=tk.LEFT)
         
         # Stats summary bar
         stats_frame = tk.Frame(container, bg='#f8f9fa', relief='solid', bd=1)
@@ -8023,6 +8248,169 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     
         except Exception as e:
             self._show_empty_message(self.deletion_container, "Could not load requests", str(e))
+    
+    def _toggle_deletion_history(self):
+        """Toggle between pending deletions and history view"""
+        current = self.show_deletion_history.get()
+        self.show_deletion_history.set(not current)
+        
+        if self.show_deletion_history.get():
+            # Switch to history mode
+            self.deletion_history_toggle_btn.config(text="📋 View Pending", bg='#28a745')
+            self._refresh_deletion_history()
+        else:
+            # Switch to pending mode
+            self.deletion_history_toggle_btn.config(text="📜 View History", bg='#6c757d')
+            self._refresh_deletion_requests()
+    
+    def _refresh_deletion_history(self):
+        """Fetch and display processed deletion history"""
+        # Clear existing
+        for w in self.deletion_container.winfo_children():
+            w.destroy()
+        
+        try:
+            import urllib.request
+            import urllib.error
+            
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/deletion-history"
+            req = urllib.request.Request(url)
+            
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode())
+                history_list = data.get('history', [])
+                counts = data.get('counts', {})
+                
+                # Update count badge to show total history
+                if hasattr(self, 'deletion_count_badge'):
+                    self.deletion_count_badge.config(text=str(counts.get('total', 0)), bg='#6c757d')
+                
+                # Update stats labels
+                if hasattr(self, 'deletion_stats_labels'):
+                    self.deletion_stats_labels['pending'].config(text="0")
+                    self.deletion_stats_labels['approved'].config(text=str(counts.get('approved', 0)))
+                    self.deletion_stats_labels['rejected'].config(text=str(counts.get('rejected', 0)))
+                
+                if not history_list:
+                    self._show_empty_message(self.deletion_container, "No deletion history", "No processed deletion requests found.")
+                    return
+                
+                # Create two-column grid layout
+                self.deletion_container.columnconfigure(0, weight=1)
+                self.deletion_container.columnconfigure(1, weight=1)
+                
+                # Place history cards
+                for idx, del_data in enumerate(history_list):
+                    row = idx // 2
+                    col = idx % 2
+                    self._create_deletion_history_card(self.deletion_container, del_data, row, col, idx + 1)
+                    
+        except Exception as e:
+            self._show_empty_message(self.deletion_container, "Could not load history", str(e))
+    
+    def _create_deletion_history_card(self, parent, del_data, row=0, col=0, index=1):
+        """Create a card for processed deletion in history view"""
+        status = del_data.get('status', 'unknown')
+        
+        # Color scheme based on status
+        if status == 'approved':
+            bg_color = '#d4edda'  # Light green
+            status_text = '✓ Approved'
+            status_bg = '#28a745'
+        else:  # rejected
+            bg_color = '#f8d7da'  # Light red
+            status_text = '✕ Rejected'
+            status_bg = '#dc3545'
+        
+        card = tk.Frame(parent, bg=bg_color, relief='solid', bd=1)
+        card.grid(row=row, column=col, sticky='nsew', padx=8, pady=8)
+        
+        # Bind mousewheel
+        def _on_card_mousewheel(event):
+            self.deletion_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        card.bind("<MouseWheel>", _on_card_mousewheel)
+        
+        inner = tk.Frame(card, bg=bg_color)
+        inner.pack(fill=tk.BOTH, expand=True, padx=18, pady=15)
+        inner.bind("<MouseWheel>", _on_card_mousewheel)
+        
+        # Header row with index and status badge
+        header_row = tk.Frame(inner, bg=bg_color)
+        header_row.pack(fill=tk.X)
+        
+        # Index badge
+        tk.Label(
+            header_row,
+            text=f"#{index}",
+            font=('Segoe UI', 11, 'bold'),
+            bg='#6c757d',
+            fg='white',
+            padx=8,
+            pady=2
+        ).pack(side=tk.LEFT)
+        
+        # Status badge
+        tk.Label(
+            header_row,
+            text=status_text,
+            font=('Segoe UI', 9, 'bold'),
+            bg=status_bg,
+            fg='white',
+            padx=10,
+            pady=3
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        
+        # Deletion badge
+        tk.Label(
+            header_row,
+            text="🗑️ Deletion",
+            font=('Segoe UI', 8, 'bold'),
+            bg='#c0392b',
+            fg='white',
+            padx=8,
+            pady=2
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        
+        # Student info
+        student_row = tk.Frame(inner, bg=bg_color)
+        student_row.pack(fill=tk.X, pady=(8, 0))
+        
+        tk.Label(
+            student_row,
+            text=f"{del_data.get('student_name', 'Deleted Account')}",
+            font=('Segoe UI', 11, 'bold'),
+            bg=bg_color,
+            fg='#333'
+        ).pack(side=tk.LEFT)
+        
+        tk.Label(
+            student_row,
+            text=f"({del_data.get('student_id', '')})",
+            font=('Segoe UI', 9),
+            bg=bg_color,
+            fg='#666'
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        
+        # Reason
+        reason = del_data.get('reason', 'No reason provided')
+        tk.Label(
+            inner,
+            text=f"Reason: {reason[:80]}{'...' if len(reason) > 80 else ''}",
+            font=('Segoe UI', 9, 'italic'),
+            bg=bg_color,
+            fg='#555',
+            wraplength=350,
+            justify='left'
+        ).pack(anchor='w', pady=(6, 0))
+        
+        # Timestamp
+        tk.Label(
+            inner,
+            text=f"📅 {del_data.get('timestamp', 'N/A')}",
+            font=('Segoe UI', 8),
+            bg=bg_color,
+            fg='#888'
+        ).pack(anchor='w', pady=(6, 0))
     
     def _create_deletion_card(self, parent, del_data, row=0, col=0, index=1):
         """Create a card for deletion request in grid layout with index"""
