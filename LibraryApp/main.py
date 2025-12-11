@@ -35,7 +35,10 @@ try:
     from student_portal import app as flask_app  # type: ignore
     from waitress import serve  # type: ignore
     WEB_PORTAL_AVAILABLE = True
-except Exception:
+except Exception as e:
+    import traceback
+    traceback.print_exc()
+    print(f"Portal Import Error: {e}")
     flask_app = None
     serve = None
     WEB_PORTAL_AVAILABLE = False
@@ -6917,6 +6920,231 @@ Note: This is an automated email. Please find the attached formal overdue letter
         portal_notebook.add(password_tab, text="🔑 Password Reset")
         self._create_password_reset_section(password_tab)
         
+        # Sub-tab 5: Broadcasts (New)
+        broadcast_tab = tk.Frame(portal_notebook, bg='white')
+        portal_notebook.add(broadcast_tab, text="📢 Broadcasts")
+        self._create_broadcast_section(broadcast_tab)
+
+    def _create_broadcast_section(self, parent):
+        """Create broadcast notice management section"""
+        # Header
+        tk.Label(
+            parent,
+            text="📢 Broadcast System",
+            font=('Segoe UI', 18, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        ).pack(pady=(20, 5), padx=20, anchor='w')
+        
+        tk.Label(
+            parent,
+            text="Post important announcements to all students on the portal dashboard.",
+            font=('Segoe UI', 10),
+            bg='white',
+            fg='#666'
+        ).pack(padx=20, anchor='w', pady=(0, 20))
+        
+        # Main layout: Left (Form), Right (Active List)
+        container = tk.Frame(parent, bg='white')
+        container.pack(fill=tk.BOTH, expand=True, padx=20)
+        container.columnconfigure(0, weight=1)
+        container.columnconfigure(1, weight=1)
+        
+        # --- Left: Post Notice Form ---
+        form_card = tk.Frame(container, bg='#f8f9fa', relief='solid', bd=1)
+        form_card.grid(row=0, column=0, sticky='nsew', padx=(0, 10), pady=5)
+        
+        tk.Label(
+            form_card,
+            text="📝 Post New Notice",
+            font=('Segoe UI', 12, 'bold'),
+            bg='#f1f3f4',
+            fg='#333',
+            padx=15,
+            pady=10
+        ).pack(fill=tk.X)
+        
+        form_inner = tk.Frame(form_card, bg='#f8f9fa')
+        form_inner.pack(padx=20, pady=20, fill=tk.X)
+        
+        tk.Label(form_inner, text="Title:", font=('Segoe UI', 10, 'bold'), bg='#f8f9fa').pack(anchor='w')
+        self.notice_title = tk.Entry(form_inner, font=('Segoe UI', 11), width=30)
+        self.notice_title.pack(fill=tk.X, pady=(5, 15))
+        
+        tk.Label(form_inner, text="Message:", font=('Segoe UI', 10, 'bold'), bg='#f8f9fa').pack(anchor='w')
+        self.notice_msg = tk.Text(form_inner, height=4, font=('Segoe UI', 10), width=30)
+        self.notice_msg.pack(fill=tk.X, pady=(5, 15))
+        
+        post_btn = tk.Button(
+            form_inner,
+            text="📢 Post Notice",
+            font=('Segoe UI', 10, 'bold'),
+            bg='#007bff', # Hardcoded blue to ensure visibility
+            fg='white',
+            activebackground='#0056b3',
+            activeforeground='white',
+            padx=20,
+            pady=8,
+            cursor='hand2',
+            relief='flat',
+            command=self._post_notice
+        )
+        post_btn.pack(anchor='w', pady=(10, 0))
+        
+        # --- Right: Active Notices ---
+        list_card = tk.Frame(container, bg='white', relief='solid', bd=1)
+        list_card.grid(row=0, column=1, sticky='nsew', padx=(10, 0), pady=0)
+        
+        header_frame = tk.Frame(list_card, bg='#f1f3f4')
+        header_frame.pack(fill=tk.X)
+        
+        tk.Label(
+            header_frame,
+            text="📡 Active Broadcasts",
+            font=('Segoe UI', 12, 'bold'),
+            bg='#f1f3f4',
+            fg='#333',
+            padx=15,
+            pady=10
+        ).pack(side=tk.LEFT)
+        
+        tk.Button(
+            header_frame,
+            text="🔄 Refresh",
+            font=('Segoe UI', 8),
+            bg='white',
+            fg='#333',
+            relief='solid',
+            bd=1,
+            command=self._refresh_notices
+        ).pack(side=tk.RIGHT, padx=10)
+        
+        # Scrollable container
+        self.notices_canvas = tk.Canvas(list_card, bg='white')
+        scrollbar = ttk.Scrollbar(list_card, orient="vertical", command=self.notices_canvas.yview)
+        self.notices_container = tk.Frame(self.notices_canvas, bg='white')
+        
+        self.notices_container.bind(
+            "<Configure>",
+            lambda e: self.notices_canvas.configure(scrollregion=self.notices_canvas.bbox("all"))
+        )
+        
+        self.notices_canvas.create_window((0, 0), window=self.notices_container, anchor="nw")
+        
+        self.notices_canvas.configure(yscrollcommand=scrollbar.set)
+        
+        self.notices_canvas.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+        scrollbar.pack(side="right", fill="y", pady=5)
+        
+        # Initial Load
+        self._refresh_notices()
+
+    def _post_notice(self):
+        """Send notice to backend"""
+        if not WEB_PORTAL_AVAILABLE:
+            messagebox.showwarning("Unavailable", "Web portal server is not running.")
+            return
+
+        title = self.notice_title.get().strip()
+        msg = self.notice_msg.get("1.0", tk.END).strip()
+        
+        if not title or not msg:
+            messagebox.showwarning("Incomplete", "Please enter both title and message.")
+            return
+        
+        try:
+            import urllib.request
+            import json
+            
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/notices"
+            data = json.dumps({"title": title, "message": msg}).encode('utf-8')
+            req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'}, method='POST')
+            
+            with urllib.request.urlopen(req, timeout=1) as response:
+                res = json.loads(response.read().decode())
+                if res['status'] == 'success':
+                    messagebox.showinfo("Success", "Notice posted successfully!")
+                    self.notice_title.delete(0, tk.END)
+                    self.notice_msg.delete("1.0", tk.END)
+                    self._refresh_notices()
+                else:
+                    messagebox.showerror("Error", res.get('message', 'Failed to post'))
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to post notice: {e}")
+
+    def _refresh_notices(self):
+        """Fetch active notices"""
+        for w in self.notices_container.winfo_children():
+            w.destroy()
+            
+        if not WEB_PORTAL_AVAILABLE:
+            tk.Label(self.notices_container, text="Portal server unavailable", bg='white', fg='red').pack(pady=20)
+            return
+            
+        try:
+            import urllib.request
+            import json
+            
+            url = f"http://127.0.0.1:{self.portal_port}/api/notices" # Get active only
+            req = urllib.request.Request(url)
+            
+            with urllib.request.urlopen(req, timeout=1) as response:
+                data = json.loads(response.read().decode())
+                notices = data.get('notices', [])
+                
+                if not notices:
+                    tk.Label(self.notices_container, text="No active notices", bg='white', fg='#999').pack(pady=20)
+                    return
+                
+                for notice in notices:
+                    card = tk.Frame(self.notices_container, bg='#fff3cd', relief='solid', bd=1)
+                    card.pack(fill=tk.X, padx=10, pady=5)
+                    
+                    header = tk.Frame(card, bg='#fff3cd')
+                    header.pack(fill=tk.X, padx=10, pady=5)
+                    
+                    tk.Label(header, text=notice['title'], font=('Segoe UI', 10, 'bold'), bg='#fff3cd', fg='#856404').pack(side=tk.LEFT)
+                    
+                    # Delete Button
+                    tk.Button(
+                        header,
+                        text="✕",
+                        font=('Segoe UI', 8, 'bold'),
+                        bg='#dc3545',
+                        fg='white',
+                        relief='flat',
+                        width=2,
+                        command=lambda nid=notice['id']: self._delete_notice(nid)
+                    ).pack(side=tk.RIGHT)
+                    
+                    tk.Label(card, text=notice['message'], font=('Segoe UI', 9), bg='#fff3cd', wraplength=300, justify='left').pack(anchor='w', padx=10, pady=(0, 10))
+                    
+                    creation = notice.get('created_at', '')[:16]
+                    tk.Label(card, text=creation, font=('Segoe UI', 7), bg='#fff3cd', fg='#856404').pack(anchor='e', padx=10, pady=(0, 5))
+                    
+        except Exception as e:
+            tk.Label(self.notices_container, text=f"Error loading: {e}", bg='white', fg='red').pack()
+
+    def _delete_notice(self, notice_id):
+        """Deactivate notice"""
+        if not WEB_PORTAL_AVAILABLE:
+            return
+
+        if not messagebox.askyesno("Confirm", "Are you sure you want to delete this notice?"):
+            return
+            
+        try:
+            import urllib.request
+            import json
+            
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/notices/{notice_id}"
+            req = urllib.request.Request(url, method='DELETE')
+            
+            with urllib.request.urlopen(req, timeout=1) as response:
+                self._refresh_notices()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to delete: {e}")
+        
         # Store reference for refreshing
         self.portal_notebook = portal_notebook
         
@@ -7774,6 +8002,10 @@ Note: This is an automated email. Please find the attached formal overdue letter
         # Clear existing
         for w in self.requests_container.winfo_children():
             w.destroy()
+            
+        if not WEB_PORTAL_AVAILABLE:
+            self._show_empty_message(self.requests_container, "Portal Unavailable", "Web portal server is not running.")
+            return
         
         try:
             import urllib.request
@@ -7844,6 +8076,10 @@ Note: This is an automated email. Please find the attached formal overdue letter
         # Clear existing
         for w in self.requests_container.winfo_children():
             w.destroy()
+            
+        if not WEB_PORTAL_AVAILABLE:
+            self._show_empty_message(self.requests_container, "Portal Unavailable", "Web portal server is not running.")
+            return
         
         try:
             import urllib.request
@@ -8354,6 +8590,10 @@ Note: This is an automated email. Please find the attached formal overdue letter
         """Fetch and display deletion requests in two-column layout"""
         for w in self.deletion_container.winfo_children():
             w.destroy()
+            
+        if not WEB_PORTAL_AVAILABLE:
+            self._show_empty_message(self.deletion_container, "Portal Unavailable", "Web portal server is not running.")
+            return
         
         try:
             import urllib.request
@@ -8415,6 +8655,10 @@ Note: This is an automated email. Please find the attached formal overdue letter
         # Clear existing
         for w in self.deletion_container.winfo_children():
             w.destroy()
+            
+        if not WEB_PORTAL_AVAILABLE:
+            self._show_empty_message(self.deletion_container, "Portal Unavailable", "Web portal server is not running.")
+            return
         
         try:
             import urllib.request
@@ -8895,6 +9139,9 @@ Note: This is an automated email. Please find the attached formal overdue letter
     
     def _refresh_auth_stats(self):
         """Fetch and display auth statistics and recent password resets"""
+        if not WEB_PORTAL_AVAILABLE:
+            return
+
         try:
             import urllib.request
             
