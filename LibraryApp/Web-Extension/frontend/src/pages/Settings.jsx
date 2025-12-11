@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import DangerValidationModal from '../components/DangerValidationModal';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Settings as SettingsIcon, Bell, Shield, Moon, Globe, Trash2, Key, Mail, Save, X, Loader2 } from 'lucide-react';
+import { Settings as SettingsIcon, Bell, Shield, Moon, Trash2, Key, Mail, Save, X, Loader2 } from 'lucide-react';
 
 export default function Settings({ user, setUser }) {
   // Local state for settings form
@@ -10,7 +10,7 @@ export default function Settings({ user, setUser }) {
   const [libraryAlerts, setLibraryAlerts] = useState(false);
   const [loanReminders, setLoanReminders] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
-  const [language, setLanguage] = useState('English');
+
   const [dataConsent, setDataConsent] = useState(true);
 
   // Initialize state from user prop when available
@@ -22,7 +22,7 @@ export default function Settings({ user, setUser }) {
         setLibraryAlerts(settings.libraryAlerts ?? false);
         setLoanReminders(settings.loanReminders ?? true);
         setDarkMode(settings.theme === 'dark');
-        setLanguage(settings.language || 'English');
+
         setDataConsent(settings.dataConsent ?? true);
     }
   }, [user]);
@@ -46,7 +46,7 @@ export default function Settings({ user, setUser }) {
     libraryAlerts: user?.settings?.libraryAlerts ?? false,
     loanReminders: user?.settings?.loanReminders ?? true,
     darkMode: user?.settings?.theme === 'dark',
-    language: user?.settings?.language || 'English',
+
     dataConsent: user?.settings?.dataConsent ?? true
   };
 
@@ -55,7 +55,7 @@ export default function Settings({ user, setUser }) {
     libraryAlerts !== initialSettings.libraryAlerts ||
     loanReminders !== initialSettings.loanReminders ||
     darkMode !== initialSettings.darkMode ||
-    language !== initialSettings.language ||
+
     dataConsent !== initialSettings.dataConsent;
 
   const handleChangePassword = async () => {
@@ -94,7 +94,7 @@ export default function Settings({ user, setUser }) {
             libraryAlerts,
             loanReminders,
             theme: darkMode ? 'dark' : 'light',
-            language,
+
             dataConsent
         };
 
@@ -123,7 +123,7 @@ export default function Settings({ user, setUser }) {
     setLibraryAlerts(initialSettings.libraryAlerts);
     setLoanReminders(initialSettings.loanReminders);
     setDarkMode(initialSettings.darkMode);
-    setLanguage(initialSettings.language);
+
     setDataConsent(initialSettings.dataConsent);
   };
 
@@ -234,24 +234,7 @@ export default function Settings({ user, setUser }) {
                     }} />
                 </div>
 
-                <div className="border-t border-slate-100 dark:border-slate-700 my-2 transition-colors"></div>
 
-                <div className="flex items-center justify-between group">
-                    <div>
-                        <span className="block font-bold text-slate-800 dark:text-white text-lg transition-colors">Language</span>
-                        <span className="text-xs font-medium text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors">System language preference</span>
-                    </div>
-                    <select 
-                        value={language}
-                        onChange={(e) => setLanguage(e.target.value)}
-                        className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-sm font-bold rounded-xl focus:ring-blue-500 focus:border-blue-500 block p-2.5 outline-none cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    >
-                        <option>English</option>
-                        <option>Spanish</option>
-                        <option>French</option>
-                        <option>German</option>
-                    </select>
-                </div>
             </Panel>
 
             <Panel title="Notifications" icon={Bell} delay={0.3}>
