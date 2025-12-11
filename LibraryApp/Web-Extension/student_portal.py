@@ -90,6 +90,20 @@ def init_portal_db():
             data_consent INTEGER DEFAULT 1
         )
     """)
+
+    # Notifications Table (Persistent History)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            enrollment_no TEXT,
+            type TEXT,              -- 'request_update', 'security', 'system', 'overdue'
+            title TEXT,
+            message TEXT,
+            link TEXT,              -- Optional action link
+            is_read INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     
     conn.commit()
     conn.close()
@@ -304,6 +318,173 @@ def api_public_notices():
     notices = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return jsonify({'notices': notices})
+
+# --- Notification System API ---
+
+@app.route('/api/notifications', methods=['GET'])
+def api_get_notifications():
+    """Unified Notification Stream"""
+    if 'student_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    enrollment = session['student_id']
+    notifications = []
+    
+    # 1. Fetch Persistent Notifications (History)
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM user_notifications 
+        WHERE enrollment_no = ? 
+        ORDER BY created_at DESC 
+        LIMIT 50
+    """, (enrollment,))
+    history_items = [dict(row) for row in cursor.fetchall()]
+    
+    # 2. Real-time Overdue Alerts (High Priority)
+    conn_lib = get_library_db()
+    cursor_lib = conn_lib.cursor()
+    cursor_lib.execute("""
+        SELECT b.title, br.due_date, br.book_id
+        FROM borrow_records br
+        JOIN books b ON br.book_id = b.book_id
+        WHERE br.enrollment_no = ? AND br.status = 'borrowed'
+    """, (enrollment,))
+    borrows = cursor_lib.fetchall()
+    conn_lib.close()
+    
+    today = datetime.now()
+    active_alerts = []
+    
+    for row in borrows:
+        if row['due_date']:
+            try:
+                due_dt = datetime.strptime(row['due_date'], '%Y-%m-%d')
+                delta = (due_dt - today).days
+                
+                if delta < 0:
+                    active_alerts.append({
+                        'id': f"overdue_{row['book_id']}", # Virtual ID
+                        'type': 'danger',
+                        'title': 'Overdue Book',
+                        'message': f"'{row['title']}' is overdue by {abs(delta)} days. Please return immediately.",
+                        'is_read': 0, # Always unread/active until resolved
+                        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'link': f"/books/{row['book_id']}"
+                    })
+                elif delta <= 2:
+                    active_alerts.append({
+                        'id': f"warning_{row['book_id']}",
+                        'type': 'warning',
+                        'title': 'Due Soon',
+                        'message': f"'{row['title']}' is due in {delta} days.",
+                        'is_read': 0,
+                        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'link': f"/books/{row['book_id']}"
+                    })
+            except:
+                pass
+
+    # 3. Security Alert
+    cursor.execute("SELECT is_first_login FROM student_auth WHERE enrollment_no = ?", (enrollment,))
+    auth = cursor.fetchone()
+    if auth and auth['is_first_login']:
+        active_alerts.insert(0, {
+            'id': 'security_alert',
+            'type': 'danger',
+            'title': 'Security Alert',
+            'message': 'You are using a default password. Change it now to secure your account.',
+            'is_read': 0,
+            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'link': '/settings'
+        })
+
+    # 4. Broadcast Notices (System)
+    cursor.execute("SELECT * FROM notices WHERE active = 1 ORDER BY created_at DESC LIMIT 10")
+    notices = [dict(row) for row in cursor.fetchall()]
+    broadcasts = []
+    
+    for note in notices:
+        broadcasts.append({
+            'id': f"notice_{note['id']}",
+            'type': 'system',
+            'title': note['title'],
+            'message': note['message'],
+            'is_read': 0, # Notices are technically always "unread" unless tracked separately, but for now we show them.
+            'created_at': note['created_at'],
+            'link': None
+        })
+
+    conn.close()
+    
+    # Combine: Security > Overdue > History > Broadcasts
+    # Note: History includes past request updates. Broadcasts are general.
+    # We'll merge them all and sort by date for the "All" tab.
+    
+    combined = active_alerts + history_items + broadcasts
+    
+    # Sort by created_at desc
+    def get_date(item):
+        try:
+            return datetime.strptime(item['created_at'], '%Y-%m-%d %H:%M:%S')
+        except:
+             try:
+                 # Backup format if milliseconds exist
+                 return datetime.strptime(item['created_at'].split('.')[0], '%Y-%m-%d %H:%M:%S')
+             except:
+                 return datetime.min
+
+    combined.sort(key=get_date, reverse=True)
+    
+    # Count Unread
+    # For generated items (alerts/broadcasts), they count as unread if they aren't explicitly suppressed.
+    # Logic: Database items have 'is_read'. Virtual items (Overdue/Security) depend on existence.
+    # Broadcasts: We don't have per-user read state yet. We'll mark them as read for badge count to avoid permanent red dot,
+    # OR we just count DB items + Active Alerts.
+    
+    unread_db = len([n for n in history_items if not n['is_read']])
+    unread_alerts = len(active_alerts) # Alerts are always actionable/unread
+    # We won't count Broadcasts in the badge to avoid annoyance, they appear in the list silently (or maybe separate logic later)
+    
+    return jsonify({
+        'notifications': combined,
+        'unread_count': unread_db + unread_alerts
+    })
+
+@app.route('/api/notifications/mark-read', methods=['POST'])
+def api_mark_read():
+    if 'student_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    data = request.json
+    notif_id = data.get('id')
+    enrollment = session['student_id']
+    
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    
+    if notif_id == 'all':
+        cursor.execute("UPDATE user_notifications SET is_read = 1 WHERE enrollment_no = ?", (enrollment,))
+    elif str(notif_id).isdigit():
+        # Only mark DB items (virtual alerts can't be marked read via API, they persist until resolved)
+        cursor.execute("UPDATE user_notifications SET is_read = 1 WHERE id = ? AND enrollment_no = ?", (notif_id, enrollment))
+        
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'success'})
+
+@app.route('/api/notifications/<int:notif_id>', methods=['DELETE'])
+def api_delete_notification(notif_id):
+    if 'student_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+        
+    enrollment = session['student_id']
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM user_notifications WHERE id = ? AND enrollment_no = ?", (notif_id, enrollment))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'success'})
 
 @app.route('/api/admin/notices', methods=['GET', 'POST', 'DELETE'])
 def api_admin_notices():
@@ -975,6 +1156,25 @@ def api_admin_approve_request(req_id):
     
     # Update status to approved
     cursor.execute("UPDATE requests SET status = 'approved' WHERE id = ?", (req_id,))
+    
+    # NOTIFICATION TRIGGER: Notify student
+    # Parse details to get book name if possible
+    message = f"Your {req['request_type']} request has been approved."
+    try:
+        details = json.loads(req['details']) if req['details'] else {}
+        if 'title' in details:
+            message = f"Your request for '{details['title']}' has been approved."
+        elif 'book_id' in details:
+             # Try to fetch book title from ID? (Lazy approach: just generic if title missing)
+             pass
+    except:
+        pass
+
+    cursor.execute("""
+        INSERT INTO user_notifications (enrollment_no, type, title, message, link, created_at)
+        VALUES (?, 'request_update', 'Request Approved', ?, '/requests', ?)
+    """, (req['enrollment_no'], message, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+    
     conn.commit()
     conn.close()
     
@@ -990,6 +1190,26 @@ def api_admin_reject_request(req_id):
     cursor = conn.cursor()
     
     cursor.execute("UPDATE requests SET status = 'rejected' WHERE id = ?", (req_id,))
+    
+    # Get enrollment to notify
+    cursor.execute("SELECT enrollment_no, request_type FROM requests WHERE id = ?", (req_id,))
+    req = cursor.fetchone()
+    
+    if req:
+         # Parse details to get book name
+         message = f"Your {req['request_type']} request was rejected."
+         try:
+            details = json.loads(req['details']) if req['details'] else {}
+            if 'title' in details:
+                message = f"Your request for '{details['title']}' was rejected."
+         except:
+             pass
+
+         cursor.execute("""
+            INSERT INTO user_notifications (enrollment_no, type, title, message, link, created_at)
+            VALUES (?, 'request_update', 'Request Rejected', ?, '/requests', ?)
+        """, (req['enrollment_no'], message, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+
     conn.commit()
     conn.close()
     

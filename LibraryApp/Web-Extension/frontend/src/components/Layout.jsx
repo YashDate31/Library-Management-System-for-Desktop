@@ -45,6 +45,25 @@ export default function Layout({ user, setUser }) {
   const collapseTimerRef = useRef(null);
   const autoCollapseTimerRef = useRef(null);
 
+  // Notifications State
+  const [unreadCount, setUnreadCount] = useState(0);
+  const POLL_INTERVAL = 10000; // 10 seconds
+
+  useEffect(() => {
+    const fetchUnread = async () => {
+        try {
+            const { data } = await axios.get('/api/notifications');
+            setUnreadCount(data.unread_count || 0);
+        } catch (e) {
+            console.error("Poll failed", e);
+        }
+    };
+    
+    fetchUnread();
+    const interval = setInterval(fetchUnread, POLL_INTERVAL);
+    return () => clearInterval(interval);
+  }, []);
+
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef(null);
 
@@ -272,7 +291,8 @@ export default function Layout({ user, setUser }) {
       {/* Main Content */}
       <div className={`flex-1 flex flex-col min-w-0 overflow-hidden relative sidebar-transition ${mainMargin}`}>
         {/* Mobile Header */}
-        <header className="h-20 flex items-center justify-between px-4 md:px-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl sticky top-0 z-30 border-b border-slate-100 dark:border-slate-800 transition-colors">
+        {/* Mobile Header */}
+        <header className="h-20 flex items-center justify-between px-4 md:px-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl sticky top-0 z-40 border-b border-slate-100 dark:border-slate-800 transition-colors">
              <div className="flex items-center gap-4">
                  <div className="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 p-1 transition-colors">
                     <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
@@ -290,16 +310,26 @@ export default function Layout({ user, setUser }) {
                    {user?.enrollment_no || '0000'}
                 </div>
 
+                {/* Notifications Bell */}
+                <Link to="/notifications" className="relative w-9 h-9 md:w-10 md:h-10 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:ring-2 hover:ring-blue-100 dark:hover:ring-blue-900 transition-all flex items-center justify-center text-slate-500 dark:text-slate-400 group">
+                    <Bell size={20} className="group-hover:text-blue-500 transition-colors" />
+                    {unreadCount > 0 && (
+                        <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white dark:border-slate-900 shadow-sm animate-pulse-slow">
+                            {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
+                    )}
+                </Link>
+
                 {/* Unified Profile Dropdown */}
                 <div className="relative" ref={profileMenuRef}>
-                  <button 
-                     onClick={() => setProfileMenuOpen(!profileMenuOpen)}
-                     className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 overflow-hidden hover:ring-2 hover:ring-blue-100 dark:hover:ring-blue-900 transition-all"
-                  >
-                     <div className="w-full h-full flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold text-sm">
-                       {user?.name?.charAt(0)}
-                     </div>
-                  </button>
+                   <button 
+                      onClick={() => setProfileMenuOpen(!profileMenuOpen)}
+                      className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 overflow-hidden hover:ring-2 hover:ring-blue-100 dark:hover:ring-blue-900 transition-all"
+                   >
+                      <div className="w-full h-full flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold text-sm">
+                        {user?.name?.charAt(0)}
+                      </div>
+                   </button>
                   
                   <AnimatePresence>
                     {profileMenuOpen && (
@@ -308,7 +338,7 @@ export default function Layout({ user, setUser }) {
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
                         transition={{ duration: 0.2, ease: "easeOut" }}
-                        className="absolute right-0 top-12 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-xl shadow-slate-200/50 dark:shadow-slate-900/50 border border-slate-100 dark:border-slate-700 py-1.5 z-50 origin-top-right transition-colors"
+                        className="absolute right-0 top-12 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-xl shadow-slate-200/50 dark:shadow-slate-900/50 border border-slate-100 dark:border-slate-700 py-1.5 z-[100] origin-top-right transition-colors"
                       >
                         <div className="px-4 py-2 border-b border-slate-50 dark:border-slate-700 md:hidden">
                           <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{user?.name}</p>
