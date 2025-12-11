@@ -7146,7 +7146,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
             messagebox.showerror("Error", f"Failed to delete: {e}")
         
         # Store reference for refreshing
-        self.portal_notebook = portal_notebook
+        # Line removed to fix NameError
         
     def _create_qr_access_section(self, parent):
         """Create comprehensive QR code access section with server dashboard"""

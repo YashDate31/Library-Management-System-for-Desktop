@@ -2,7 +2,7 @@ from flask import Flask, session, jsonify, request, send_from_directory
 import sqlite3
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 import smtplib
 import threading
@@ -138,11 +138,19 @@ def send_email_bg(recipient, subject, body):
         if not settings.get('enabled'):
             return
 
-        msg = MIMEMultipart()
+        msg = MIMEMultipart('alternative')
         msg['From'] = settings['sender_email']
         msg['To'] = recipient
         msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain'))
+        
+        # Attach plain text version (fallback)
+        msg.attach(MIMEText("Please enable HTML to view this email.", 'plain'))
+        
+        # Attach HTML version if body looks like HTML, otherwise plain
+        if body.strip().startswith('<html') or body.strip().startswith('<!DOCTYPE html'):
+             msg.attach(MIMEText(body, 'html'))
+        else:
+             msg.attach(MIMEText(body, 'plain'))
 
         # Standard SMTP (Gmail/Outlook)
         server = smtplib.SMTP(settings['smtp_server'], settings['smtp_port'])
@@ -941,6 +949,133 @@ def get_book_details(book_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+def get_request_received_template(user_name, book_title, request_id, current_date):
+    """Generates a responsive HTML email template for book requests."""
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {{ font-family: 'Helvetica', 'Arial', sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }}
+        .container {{ max-width: 600px; margin: 0 auto; background-color: #ffffff; }}
+        .header {{ background-color: #0F3460; color: #ffffff; padding: 20px; text-align: center; }}
+        .content {{ padding: 30px 20px; color: #333333; line-height: 1.6; }}
+        .box {{ background-color: #f9f9f9; border: 1px solid #e1e1e1; border-radius: 4px; padding: 15px; margin: 20px 0; }}
+        .btn-table {{ margin: 25px 0; }}
+        .btn {{ background-color: #2E86AB; color: #ffffff; text-decoration: none; padding: 12px 25px; border-radius: 4px; font-weight: bold; display: inline-block; }}
+        .footer {{ text-align: center; font-size: 12px; color: #888888; padding: 20px; background-color: #f4f4f4; }}
+        table {{ width: 100%; border-collapse: collapse; }}
+        td {{ padding: 8px 0; vertical-align: top; }}
+        .label {{ font-weight: bold; width: 30%; color: #555; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h2 style="margin:0;">GPA Library System</h2>
+        </div>
+        
+        <!-- Content -->
+        <div class="content">
+            <p>Dear <strong>{user_name}</strong>,</p>
+            <p>Thank you for using the GPA Library System.</p>
+            <p>We have successfully received your reservation request for the following item:</p>
+            
+            <!-- Summary Card -->
+            <div class="box">
+                <table>
+                    <tr>
+                        <td class="label">Book Title:</td>
+                        <td><strong>{book_title}</strong></td>
+                    </tr>
+                    <tr>
+                        <td class="label">Request ID:</td>
+                        <td>#{request_id}</td>
+                    </tr>
+                    <tr>
+                        <td class="label">Date:</td>
+                        <td>{current_date}</td>
+                    </tr>
+                </table>
+            </div>
+            
+            <p><strong>What happens next?</strong><br>
+            Your request has been forwarded to the Librarian for approval. You will receive a separate confirmation email once the book is ready for pickup or if there are any issues with availability.</p>
+            
+            <p style="margin-top: 30px;">Best regards,<br>The GPA Library Team</p>
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            &copy; {datetime.now().year} Government Polytechnic Awasari (Kh).<br>
+            This is an automated message. Please do not reply.
+        </div>
+    </div>
+</body>
+</html>"""
+
+def get_request_approved_template(user_name, book_title, expiry_date):
+    """Generates a responsive HTML email template for approved requests."""
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {{ font-family: 'Helvetica', 'Arial', sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }}
+        .container {{ max-width: 600px; margin: 0 auto; background-color: #ffffff; }}
+        .header {{ background-color: #28a745; color: #ffffff; padding: 20px; text-align: center; }}
+        .content {{ padding: 30px 20px; color: #333333; line-height: 1.6; }}
+        .box {{ background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px; padding: 20px; margin: 25px 0; }}
+        .btn-table {{ margin: 25px 0; }}
+        .btn {{ background-color: #28a745; color: #ffffff; text-decoration: none; padding: 12px 25px; border-radius: 4px; font-weight: bold; display: inline-block; }}
+        .footer {{ text-align: center; font-size: 12px; color: #888888; padding: 20px; background-color: #f4f4f4; }}
+        .label {{ font-weight: bold; color: #15803d; display: block; margin-bottom: 5px; }}
+        .value {{ margin-bottom: 15px; display: block; }}
+        .warning {{ font-size: 13px; color: #666; font-style: italic; margin-top: 10px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h2 style="margin:0;">Request Approved</h2>
+        </div>
+        
+        <!-- Content -->
+        <div class="content">
+            <p>Dear <strong>{user_name}</strong>,</p>
+            <p>Great news! Your request to reserve <strong>{book_title}</strong> has been approved by the librarian. The book is now ready for collection at the library circulation desk.</p>
+            
+            <!-- Pickup Instructions Box -->
+            <div class="box">
+                <h3 style="margin-top:0; color:#15803d; border-bottom:1px solid #bbf7d0; padding-bottom:10px;">📦 Pickup Instructions</h3>
+                
+                <span class="label">📍 Location:</span>
+                <span class="value">Main Library Desk</span>
+                
+                <span class="label">🆔 Bring:</span>
+                <span class="value">Your Student ID Card</span>
+                
+                <span class="label">⏰ Deadline:</span>
+                <span class="value"><strong>{expiry_date}</strong></span>
+                
+                <p class="warning">Note: If you do not collect the book by the deadline, the reservation will be cancelled to allow other students to access the material.</p>
+            </div>
+            
+            
+            <p>Best regards,<br>The GPA Library Team</p>
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            &copy; {datetime.now().year} Government Polytechnic Awasari (Kh).<br>
+            This is an automated message. Please do not reply.
+        </div>
+    </div>
+</body>
+</html>"""
+
 @app.route('/api/request', methods=['POST'])
 def api_submit_request():
     if 'student_id' not in session:
@@ -962,8 +1097,57 @@ def api_submit_request():
         conn.close()
         
         # Send Email Notification
-        email_body = f"Hello,\n\nWe have received your '{req_type}' request.\nDetails: {details}\n\nThe librarian will review this shortly.\n\nGPA Library System"
-        trigger_notification_email(session['student_id'], f"Request Received: {req_type}", email_body)
+        # Send Email Notification
+        conn_lib = get_library_db()
+        cursor_lib = conn_lib.cursor()
+        
+        # Fetch Name
+        cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (session['student_id'],))
+        student = cursor_lib.fetchone()
+        student_name = student['name'].split()[0] if student and student['name'] else "Student"
+        
+        # Parse Title
+        book_title = req_type
+        if isinstance(details, dict) and 'title' in details:
+            book_title = details['title']
+        elif isinstance(details, dict) and 'book_id' in details:
+             # Try to fetch book title from ID
+            try:
+                cursor_lib.execute("SELECT title FROM books WHERE book_id = ?", (details['book_id'],))
+                book_data = cursor_lib.fetchone()
+                if book_data:
+                    book_title = book_data['title']
+            except:
+                pass
+        elif isinstance(details, str):
+            # Try to extract title from string "Request for book: {title} (ID: {id})"
+            try:
+                if "Request for book: " in details:
+                    import re
+                    match = re.search(r"Request for book: (.*?) \(ID:", details)
+                    if match:
+                        book_title = match.group(1)
+                    else:
+                        # Fallback if no ID part
+                        book_title = details.replace("Request for book: ", "")
+            except:
+                pass
+        conn_lib.close()
+
+        email_subject = f"Request Received: {book_title}"
+        current_date_str = datetime.now().strftime('%d %b %Y, %I:%M %p')
+        # Generate ID (fetch last inserted ID logic is complex in threading, using timestamp as proxy or just omitting for now, 
+        # but user wants it. Let's fetch the max ID for this user roughly)
+        try:
+             cursor_lib = get_portal_db().cursor()
+             cursor_lib.execute("SELECT MAX(id) FROM requests WHERE enrollment_no=?", (session['student_id'],))
+             req_id = cursor_lib.fetchone()[0]
+             cursor_lib.close()
+        except:
+             req_id = "PENDING"
+
+        email_body = get_request_received_template(student_name, book_title, req_id, current_date_str)
+        trigger_notification_email(session['student_id'], email_subject, email_body)
         
         return jsonify({'status': 'success', 'message': 'Request submitted to librarian'})
     except Exception as e:
@@ -1234,15 +1418,46 @@ def api_admin_approve_request(req_id):
     cursor.execute("UPDATE requests SET status = 'approved' WHERE id = ?", (req_id,))
     
     # NOTIFICATION TRIGGER: Notify student
-    # Parse details to get book name if possible
+    # Parse details to get book name
     message = f"Your {req['request_type']} request has been approved."
+    book_title = req['request_type']
+    
     try:
         details = json.loads(req['details']) if req['details'] else {}
+        
+        # Try to find title in details first
         if 'title' in details:
-            message = f"Your request for '{details['title']}' has been approved."
+            book_title = details['title']
+            message = f"Your request for '{book_title}' has been approved."
+        
+        # If not, look update from library DB using book_id
         elif 'book_id' in details:
-             # Try to fetch book title from ID? (Lazy approach: just generic if title missing)
-             pass
+            try:
+                conn_lib = get_library_db()
+                cursor_lib = conn_lib.cursor()
+                cursor_lib.execute("SELECT title FROM books WHERE book_id = ?", (details['book_id'],))
+                book_data = cursor_lib.fetchone()
+                conn_lib.close()
+                
+                if book_data:
+                    book_title = book_data['title']
+                    message = f"Your request for '{book_title}' has been approved."
+            except:
+                pass
+        
+        # Handle string details (e.g. "Request for book: Title (ID: X)")
+        if isinstance(details, str):
+            try:
+                if "Request for book: " in details:
+                    import re
+                    match = re.search(r"Request for book: (.*?) \(ID:", details)
+                    if match:
+                        book_title = match.group(1)
+                    else:
+                        book_title = details.replace("Request for book: ", "")
+                    message = f"Your request for '{book_title}' has been approved."
+            except:
+                pass
     except:
         pass
 
@@ -1251,9 +1466,24 @@ def api_admin_approve_request(req_id):
         VALUES (?, 'request_update', 'Request Approved', ?, '/requests', ?)
     """, (req['enrollment_no'], message, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
     
+    cursor.execute("""
+        INSERT INTO user_notifications (enrollment_no, type, title, message, link, created_at)
+        VALUES (?, 'request_update', 'Request Approved', ?, '/requests', ?)
+    """, (req['enrollment_no'], message, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+    
     # Email Trigger
-    email_body = f"Hello,\n\n{message}\n\nPlease visit the library to collect your book (if applicable).\n\nGPA Library System"
-    trigger_notification_email(req['enrollment_no'], f"Request Approved: {req['request_type']}", email_body)
+    conn_lib = get_library_db()
+    cursor_lib = conn_lib.cursor()
+    cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (req['enrollment_no'],))
+    student_record = cursor_lib.fetchone()
+    conn_lib.close()
+    
+    student_name = student_record['name'].split()[0] if student_record and student_record['name'] else "Student"
+    expiry_date = (datetime.now() + timedelta(days=2)).strftime('%d %b %Y')
+    
+    email_subject = f"✅ Ready for Pickup: {book_title}"
+    email_body = get_request_approved_template(student_name, book_title, expiry_date)
+    trigger_notification_email(req['enrollment_no'], email_subject, email_body)
     
     conn.commit()
     conn.close()
@@ -1278,10 +1508,41 @@ def api_admin_reject_request(req_id):
     if req:
          # Parse details to get book name
          message = f"Your {req['request_type']} request was rejected."
+         book_title = req['request_type']
+         
          try:
             details = json.loads(req['details']) if req['details'] else {}
+            
             if 'title' in details:
-                message = f"Your request for '{details['title']}' was rejected."
+                book_title = details['title']
+                message = f"Your request for '{book_title}' was rejected."
+            elif 'book_id' in details:
+                try:
+                    conn_lib = get_library_db()
+                    cursor_lib = conn_lib.cursor()
+                    cursor_lib.execute("SELECT title FROM books WHERE book_id = ?", (details['book_id'],))
+                    book_data = cursor_lib.fetchone()
+                    conn_lib.close()
+                    
+                    if book_data:
+                        book_title = book_data['title']
+                        message = f"Your request for '{book_title}' was rejected."
+                except:
+                    pass
+            
+            # Handle string details
+            if isinstance(details, str):
+                try:
+                    if "Request for book: " in details:
+                        import re
+                        match = re.search(r"Request for book: (.*?) \(ID:", details)
+                        if match:
+                            book_title = match.group(1)
+                        else:
+                            book_title = details.replace("Request for book: ", "")
+                        message = f"Your request for '{book_title}' was rejected."
+                except:
+                    pass
          except:
              pass
 
@@ -1291,8 +1552,9 @@ def api_admin_reject_request(req_id):
         """, (req['enrollment_no'], message, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
 
          # Email Trigger
-         email_body = f"Hello,\n\n{message}\n\nPlease contact the librarian for more details.\n\nGPA Library System"
-         trigger_notification_email(req['enrollment_no'], f"Request Rejected: {req['request_type']}", email_body)
+         email_subject = f"Request Rejected: {book_title}"
+         email_body = f"Hello,\n\n{message}\n\nPlease contact the librarian if you have any questions.\n\nGPA Library System"
+         trigger_notification_email(req['enrollment_no'], email_subject, email_body)
 
     conn.commit()
     conn.close()
