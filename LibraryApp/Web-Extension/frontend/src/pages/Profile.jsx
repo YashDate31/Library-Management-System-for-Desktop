@@ -68,14 +68,14 @@ export default function Profile({ user }) {
   };
 
   const InfoRow = ({ icon: Icon, label, value, loading }) => (
-    <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors border border-slate-100">
-        <div className="bg-white p-2.5 rounded-full shadow-sm text-slate-500 shrink-0">
+    <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-slate-100 dark:border-slate-800/50">
+        <div className="bg-white dark:bg-slate-800 p-2.5 rounded-full shadow-sm text-slate-500 dark:text-slate-400 shrink-0 transition-colors">
             <Icon size={20} />
         </div>
         <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">{label}</p>
-            <p className="text-slate-900 font-semibold truncate">
-                {loading ? <div className="h-5 w-24 bg-slate-200 rounded animate-pulse"/> : value}
+            <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-0.5 transition-colors">{label}</p>
+            <p className="text-slate-900 dark:text-white font-semibold truncate transition-colors">
+                {loading ? <div className="h-5 w-24 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"/> : value}
             </p>
         </div>
     </div>
@@ -86,8 +86,8 @@ export default function Profile({ user }) {
       
       {/* Page Title */}
       <div className="mb-8">
-        <h1 className="text-3xl font-black text-slate-900 tracking-tight mb-1">Student Profile</h1>
-        <p className="text-slate-500">Manage your account settings and preferences.</p>
+        <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight mb-1 transition-colors">Student Profile</h1>
+        <p className="text-slate-500 dark:text-slate-400 transition-colors">Manage your account settings and preferences.</p>
       </div>
 
       <motion.div 
@@ -152,15 +152,15 @@ export default function Profile({ user }) {
           </div>
           
           {/* Status Pills */}
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
-             <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Current Status</h3>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 transition-colors">
+             <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-4 transition-colors">Current Status</h3>
              <div className="space-y-3">
-               <div className="flex items-center gap-3 bg-emerald-50 text-emerald-700 px-4 py-3 rounded-xl border border-emerald-100">
-                 <div className="bg-emerald-100 p-1.5 rounded-full"><CheckCircle2 size={16} /></div>
+               <div className="flex items-center gap-3 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 px-4 py-3 rounded-xl border border-emerald-100 dark:border-emerald-900/30 transition-colors">
+                 <div className="bg-emerald-100 dark:bg-emerald-800/50 p-1.5 rounded-full"><CheckCircle2 size={16} /></div>
                  <span className="font-semibold text-sm">Active Membership</span>
                </div>
-               <div className="flex items-center gap-3 bg-blue-50 text-blue-700 px-4 py-3 rounded-xl border border-blue-100">
-                 <div className="bg-blue-100 p-1.5 rounded-full"><ShieldCheck size={16} /></div>
+               <div className="flex items-center gap-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 px-4 py-3 rounded-xl border border-blue-100 dark:border-blue-900/30 transition-colors">
+                 <div className="bg-blue-100 dark:bg-blue-800/50 p-1.5 rounded-full"><ShieldCheck size={16} /></div>
                  <span className="font-semibold text-sm">No Outstanding Fines</span>
                </div>
              </div>
@@ -173,10 +173,10 @@ export default function Profile({ user }) {
           
           {/* Academic Info */}
           <section>
-            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2 transition-colors">
                 <GraduationCap className="text-blue-500" /> Academic Information
             </h3>
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 p-6 grid grid-cols-1 md:grid-cols-2 gap-4 transition-colors">
                 <InfoRow icon={Building2} label="Department" value={profile.department} />
                 <InfoRow icon={Calendar} label="Current Year" value={profile.year} />
                 <InfoRow icon={Mail} label="Email Address" value={profile.email} />
@@ -186,10 +186,10 @@ export default function Profile({ user }) {
           
           {/* Library Privileges */}
           <section>
-            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2 transition-colors">
                 <Book className="text-purple-500" /> Borrowing Privileges
             </h3>
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 p-6 grid grid-cols-1 md:grid-cols-3 gap-4 transition-colors">
                 <InfoRow icon={Book} label="Max Books" value={`${policies?.max_books || 0} Books`} loading={loading} />
                 <InfoRow icon={Clock} label="Loan Duration" value={`${policies?.loan_duration || 0} Days`} loading={loading} />
                 <InfoRow icon={RefreshCw} label="Renewals" value={`${policies?.renewal_limit || 0} Times`} loading={loading} />
@@ -198,24 +198,24 @@ export default function Profile({ user }) {
 
           {/* Account Settings */}
           <section>
-             <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                <Key className="text-slate-500" /> Security
+             <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2 transition-colors">
+                <Key className="text-slate-500 dark:text-slate-400" /> Security
             </h3>
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 p-6 flex flex-col md:flex-row items-center justify-between gap-4 transition-colors">
                  <div className="flex items-center gap-4">
-                     <div className="bg-orange-50 p-3 rounded-full text-orange-600">
+                     <div className="bg-orange-50 dark:bg-orange-900/20 p-3 rounded-full text-orange-600 dark:text-orange-400">
                          <Key size={24} />
                      </div>
                      <div>
-                         <h4 className="font-bold text-slate-900">Password</h4>
-                         <p className="text-sm text-slate-500">
+                         <h4 className="font-bold text-slate-900 dark:text-white transition-colors">Password</h4>
+                         <p className="text-sm text-slate-500 dark:text-slate-400 transition-colors">
                              Last changed: {loading ? 'Loading...' : policies?.password_last_changed || 'Unknown'}
                          </p>
                      </div>
                  </div>
                  <Link 
                    to="/settings" 
-                   className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-all shadow-lg shadow-slate-200"
+                   className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-blue-600 dark:hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-slate-200 dark:shadow-blue-900/30"
                  >
                    Change Password
                  </Link>

@@ -62,51 +62,51 @@ export default function MyBooks() {
   if (loading) return <MyBooksSkeleton />;
 
   return (
-    <div className="min-h-screen bg-slate-50/50 pb-20">
+    <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950 pb-20 transition-colors">
       
       {/* 1. Glass Header & Stats */}
-      <div className="bg-white/80 backdrop-blur-md border-b border-slate-200/50 sticky top-0 z-30">
+      <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200/50 dark:border-slate-800 sticky top-0 z-30 transition-colors">
           <div className="max-w-5xl mx-auto px-4 py-6">
             <div className="flex items-center gap-4 mb-6">
-                <button onClick={() => navigate('/')} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-500">
+                <button onClick={() => navigate('/')} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-500 dark:text-slate-400">
                     <ArrowLeft size={20} />
                 </button>
                 <div>
-                    <h1 className="text-2xl font-black text-slate-900 tracking-tight">My Library</h1>
-                    <p className="text-xs font-medium text-slate-500">Track your reading journey</p>
+                    <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight transition-colors">My Library</h1>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 transition-colors">Track your reading journey</p>
                 </div>
             </div>
 
             <div className="grid grid-cols-3 gap-4">
-                <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 border border-blue-100 rounded-xl p-4 flex flex-col items-center justify-center text-center shadow-sm relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-16 h-16 bg-blue-200/30 rounded-bl-full -mr-8 -mt-8"></div>
-                    <span className="text-3xl font-black text-blue-600 mb-1">{currentBorrows.length}</span>
-                    <span className="text-xs font-bold uppercase tracking-wider text-blue-400">Active</span>
+                <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-900/20 dark:to-blue-800/20 border border-blue-100 dark:border-blue-800/50 rounded-xl p-4 flex flex-col items-center justify-center text-center shadow-sm relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-blue-200/30 dark:bg-blue-600/10 rounded-bl-full -mr-8 -mt-8"></div>
+                    <span className="text-3xl font-black text-blue-600 dark:text-blue-400 mb-1">{currentBorrows.length}</span>
+                    <span className="text-xs font-bold uppercase tracking-wider text-blue-400 dark:text-blue-500">Active</span>
                 </div>
                 
-                <div className="bg-gradient-to-br from-red-50 to-red-100/50 border border-red-100 rounded-xl p-4 flex flex-col items-center justify-center text-center shadow-sm relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-16 h-16 bg-red-200/30 rounded-bl-full -mr-8 -mt-8"></div>
-                    <span className="text-3xl font-black text-red-600 mb-1">{currentBorrows.filter(b => b.status === 'overdue').length}</span>
-                    <span className="text-xs font-bold uppercase tracking-wider text-red-400">Overdue</span>
+                <div className="bg-gradient-to-br from-red-50 to-red-100/50 dark:from-red-900/20 dark:to-red-800/20 border border-red-100 dark:border-red-800/50 rounded-xl p-4 flex flex-col items-center justify-center text-center shadow-sm relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-red-200/30 dark:bg-red-600/10 rounded-bl-full -mr-8 -mt-8"></div>
+                    <span className="text-3xl font-black text-red-600 dark:text-red-400 mb-1">{currentBorrows.filter(b => b.status === 'overdue').length}</span>
+                    <span className="text-xs font-bold uppercase tracking-wider text-red-400 dark:text-red-500">Overdue</span>
                 </div>
 
-                <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 border border-emerald-100 rounded-xl p-4 flex flex-col items-center justify-center text-center shadow-sm relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-16 h-16 bg-emerald-200/30 rounded-bl-full -mr-8 -mt-8"></div>
-                    <span className="text-3xl font-black text-emerald-600 mb-1">{returnedBooks.length}</span>
-                    <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Read</span>
+                <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-900/20 dark:to-emerald-800/20 border border-emerald-100 dark:border-emerald-800/50 rounded-xl p-4 flex flex-col items-center justify-center text-center shadow-sm relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-emerald-200/30 dark:bg-emerald-600/10 rounded-bl-full -mr-8 -mt-8"></div>
+                    <span className="text-3xl font-black text-emerald-600 dark:text-emerald-400 mb-1">{returnedBooks.length}</span>
+                    <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 dark:text-emerald-500">Read</span>
                 </div>
             </div>
 
             {/* Tabs */}
-            <div className="flex p-1 bg-slate-100 rounded-xl mt-6">
+            <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mt-6 transition-colors">
                 {['current', 'returned', 'all'].map((tab) => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
                         className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
                             activeTab === tab 
-                            ? 'bg-white text-slate-900 shadow-sm' 
-                            : 'text-slate-500 hover:text-slate-700'
+                            ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' 
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                         }`}
                     >
                         {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -144,7 +144,7 @@ export default function MyBooks() {
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.95 }}
                             transition={{ duration: 0.2, delay: idx * 0.05 }}
-                            className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 hover:shadow-md transition-all flex gap-5 group overflow-hidden relative"
+                            className="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-slate-100 dark:border-slate-800 hover:shadow-md transition-all flex gap-5 group overflow-hidden relative"
                         >
                             {/* 3D Mini Cover */}
                             <div className="shrink-0 w-24 perspective-1000 relative z-10">
@@ -169,8 +169,8 @@ export default function MyBooks() {
                             <div className="flex-1 min-w-0 py-1 flex flex-col">
                                 <div className="flex justify-between items-start gap-2">
                                     <div>
-                                        <h3 className="font-bold text-slate-800 text-lg leading-tight mb-1">{book.title}</h3>
-                                        <p className="text-sm font-medium text-slate-500">{book.author || 'Unknown Author'}</p>
+                                        <h3 className="font-bold text-slate-800 dark:text-white text-lg leading-tight mb-1 transition-colors">{book.title}</h3>
+                                        <p className="text-sm font-medium text-slate-500 dark:text-slate-400 transition-colors">{book.author || 'Unknown Author'}</p>
                                     </div>
                                     {/* Quick Actions / Status Icon */}
                                     {book.status === 'overdue' ? (
@@ -184,7 +184,7 @@ export default function MyBooks() {
                                 
                                 <div className="mt-auto space-y-2">
                                     {/* Dates Grid */}
-                                    <div className="grid grid-cols-2 gap-2 text-xs font-medium text-slate-500 bg-slate-50 p-2 rounded-lg">
+                                    <div className="grid grid-cols-2 gap-2 text-xs font-medium text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 p-2 rounded-lg transition-colors">
                                         <div>
                                             <span className="block text-[10px] uppercase text-slate-400 font-bold">Borrowed</span>
                                             {new Date(book.borrow_date || book.borrowed_date).toLocaleDateString()}
@@ -227,13 +227,13 @@ export default function MyBooks() {
 function MyBooksSkeleton() {
     return (
         <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
-            <div className="h-8 w-48 bg-slate-200 rounded-lg animate-pulse"></div>
+            <div className="h-8 w-48 bg-slate-200 dark:bg-slate-800 rounded-lg animate-pulse"></div>
             <div className="grid grid-cols-3 gap-4">
-                {[1,2,3].map(i => <div key={i} className="h-24 bg-slate-200 rounded-xl animate-pulse"></div>)}
+                {[1,2,3].map(i => <div key={i} className="h-24 bg-slate-200 dark:bg-slate-800 rounded-xl animate-pulse"></div>)}
             </div>
-            <div className="h-10 w-full bg-slate-200 rounded-xl animate-pulse"></div>
+            <div className="h-10 w-full bg-slate-200 dark:bg-slate-800 rounded-xl animate-pulse"></div>
             <div className="grid grid-cols-2 gap-6">
-                {[1,2,3,4].map(i => <div key={i} className="h-40 bg-slate-200 rounded-2xl animate-pulse"></div>)}
+                {[1,2,3,4].map(i => <div key={i} className="h-40 bg-slate-200 dark:bg-slate-800 rounded-2xl animate-pulse"></div>)}
             </div>
         </div>
     )

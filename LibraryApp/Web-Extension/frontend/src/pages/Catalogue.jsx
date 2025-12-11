@@ -105,40 +105,40 @@ export default function Catalogue() {
   if (error) return <div className="p-10"><ErrorMessage message={error} onRetry={fetchBooks} /></div>;
 
   return (
-    <div className="min-h-screen bg-slate-50/50 pb-20">
+    <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950 pb-20 transition-colors">
       
       {/* 1. Glass Header & Search */}
-      <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200/50">
+      <div className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200/50 dark:border-slate-800 transition-colors">
           <div className="max-w-7xl mx-auto px-4 py-4 md:py-6">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   
                   {/* Title & Stats */}
                   <div>
-                      <h1 className="text-2xl font-black text-slate-900 tracking-tight">Catalogue</h1>
-                      <p className="text-xs font-medium text-slate-500">{filteredBooks.length} titles available</p>
+                      <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight transition-colors">Catalogue</h1>
+                      <p className="text-xs font-medium text-slate-500 dark:text-slate-400 transition-colors">{filteredBooks.length} titles available</p>
                   </div>
 
                   {/* Search Bar */}
                   <div className="flex-1 max-w-2xl relative group">
-                      <div className="absolute inset-0 bg-blue-500/5 rounded-2xl blur-xl group-focus-within:bg-blue-500/10 transition-colors"></div>
-                      <div className="relative bg-white/50 backdrop-blur-sm border border-slate-200 rounded-2xl flex items-center px-4 py-3 shadow-sm focus-within:shadow-md focus-within:border-blue-300 transition-all">
+                      <div className="absolute inset-0 bg-blue-500/5 dark:bg-blue-500/20 rounded-2xl blur-xl group-focus-within:bg-blue-500/10 dark:group-focus-within:bg-blue-500/10 transition-colors"></div>
+                      <div className="relative bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm border border-slate-200 dark:border-slate-700 rounded-2xl flex items-center px-4 py-3 shadow-sm focus-within:shadow-md focus-within:border-blue-300 dark:focus-within:border-blue-500 transition-all">
                           <Search className="text-slate-400 mr-3 shrink-0" size={20} />
                           <input 
                               type="text" 
                               placeholder="Search titles, authors, ISBN..." 
-                              className="bg-transparent border-none outline-none text-slate-700 w-full placeholder:text-slate-400 font-medium"
+                              className="bg-transparent border-none outline-none text-slate-700 dark:text-white w-full placeholder:text-slate-400 font-medium"
                               value={searchTerm}
                               onChange={(e) => setSearchTerm(e.target.value)}
                           />
                           {searchTerm && (
-                              <button onClick={() => setSearchTerm('')} className="ml-2 text-slate-400 hover:text-slate-600">
+                              <button onClick={() => setSearchTerm('')} className="ml-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
                                   <XCircle size={16} />
                               </button>
                           )}
-                          <div className="h-6 w-px bg-slate-200 mx-3"></div>
+                          <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-3 transition-colors"></div>
                           <button 
                             onClick={() => setShowFilters(!showFilters)}
-                            className={`p-1.5 rounded-lg transition-colors ${showFilters || availabilityFilter !== 'all' ? 'bg-blue-100 text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+                            className={`p-1.5 rounded-lg transition-colors ${showFilters || availabilityFilter !== 'all' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
                           >
                               <SlidersHorizontal size={18} />
                           </button>
@@ -158,19 +158,19 @@ export default function Catalogue() {
                           <div className="pt-4 flex gap-4">
                               <button 
                                 onClick={() => setAvailabilityFilter('all')}
-                                className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${availabilityFilter === 'all' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}
+                                className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${availabilityFilter === 'all' ? 'bg-slate-800 dark:bg-white text-white dark:text-slate-900 border-slate-800 dark:border-white' : 'bg-white dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'}`}
                               >
                                 All Status
                               </button>
                               <button 
                                 onClick={() => setAvailabilityFilter('available')}
-                                className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${availabilityFilter === 'available' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}
+                                className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${availabilityFilter === 'available' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'}`}
                               >
                                 Available Now
                               </button>
                               <button 
                                 onClick={() => setAvailabilityFilter('out_of_stock')}
-                                className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${availabilityFilter === 'out_of_stock' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}
+                                className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${availabilityFilter === 'out_of_stock' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'}`}
                               >
                                 Out of Stock
                               </button>
@@ -191,7 +191,7 @@ export default function Catalogue() {
                               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all duration-300 ${
                                   isActive 
                                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 scale-105' 
-                                  : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+                                  : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 hover:border-slate-300'
                               }`}
                           >
                               <Icon size={16} className={isActive ? 'opacity-100' : 'opacity-70'} />
@@ -261,11 +261,11 @@ export default function Catalogue() {
                             
                             {/* Details Below */}
                             <div className="space-y-1 px-1">
-                                <h4 className="font-bold text-slate-800 text-sm leading-tight truncate px-1 group-hover:text-blue-600 transition-colors">
+                                <h4 className="font-bold text-slate-800 dark:text-white text-sm leading-tight truncate px-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                                     {book.title}
                                 </h4>
                                 <div className="flex items-center justify-between px-1">
-                                    <span className="text-xs text-slate-500 font-medium truncate max-w-[60%]">
+                                    <span className="text-xs text-slate-500 dark:text-slate-400 font-medium truncate max-w-[60%]">
                                         {book.author}
                                     </span>
                                     {book.available_copies > 0 ? (
@@ -314,22 +314,22 @@ export default function Catalogue() {
 
 function CatalogueSkeleton() {
     return (
-        <div className="min-h-screen bg-slate-50/50 pb-20">
-             <div className="bg-white/80 border-b border-slate-200/50 px-4 py-8 mb-8">
+        <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950 pb-20">
+             <div className="bg-white/80 dark:bg-slate-900/80 border-b border-slate-200/50 dark:border-slate-800 px-4 py-8 mb-8">
                  <div className="max-w-7xl mx-auto space-y-6">
-                     <div className="h-8 w-48 bg-slate-200 rounded-lg animate-pulse"></div>
-                     <div className="h-12 w-full max-w-2xl bg-slate-100 rounded-2xl animate-pulse"></div>
+                     <div className="h-8 w-48 bg-slate-200 dark:bg-slate-800 rounded-lg animate-pulse"></div>
+                     <div className="h-12 w-full max-w-2xl bg-slate-100 dark:bg-slate-900 rounded-2xl animate-pulse"></div>
                      <div className="flex gap-3">
-                         {[1,2,3,4,5].map(i => <div key={i} className="h-9 w-24 bg-slate-200 rounded-xl animate-pulse"></div>)}
+                         {[1,2,3,4,5].map(i => <div key={i} className="h-9 w-24 bg-slate-200 dark:bg-slate-800 rounded-xl animate-pulse"></div>)}
                      </div>
                  </div>
              </div>
              <div className="max-w-7xl mx-auto px-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8">
                  {[1,2,3,4,5,6,7,8,9,10].map(i => (
                      <div key={i} className="space-y-3">
-                         <div className="aspect-[2/3] bg-slate-200 rounded-md animate-pulse"></div>
-                         <div className="h-4 w-3/4 bg-slate-200 rounded animate-pulse"></div>
-                         <div className="h-3 w-1/2 bg-slate-200 rounded animate-pulse"></div>
+                         <div className="aspect-[2/3] bg-slate-200 dark:bg-slate-800 rounded-md animate-pulse"></div>
+                         <div className="h-4 w-3/4 bg-slate-200 dark:bg-slate-800 rounded animate-pulse"></div>
+                         <div className="h-3 w-1/2 bg-slate-200 dark:bg-slate-800 rounded animate-pulse"></div>
                      </div>
                  ))}
              </div>

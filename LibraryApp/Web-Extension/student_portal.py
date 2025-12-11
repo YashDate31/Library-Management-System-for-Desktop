@@ -77,6 +77,19 @@ def init_portal_db():
             FOREIGN KEY(student_id) REFERENCES students(enrollment_no)
         )
     ''')
+
+    # User Settings Table (Overrides & Preferences)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_settings (
+            enrollment_no TEXT PRIMARY KEY,
+            email TEXT,
+            library_alerts INTEGER DEFAULT 0,
+            loan_reminders INTEGER DEFAULT 1,
+            theme TEXT DEFAULT 'light',
+            language TEXT DEFAULT 'English',
+            data_consent INTEGER DEFAULT 1
+        )
+    """)
     
     conn.commit()
     conn.close()
@@ -245,6 +258,41 @@ def api_change_password():
     
     return jsonify({'status': 'success', 'message': 'Password updated successfully'})
 
+@app.route('/api/settings', methods=['POST'])
+def api_update_settings():
+    if 'student_id' not in session:
+        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+        
+    data = request.json
+    enrollment = session['student_id']
+    email = data.get('email')
+    library_alerts = 1 if data.get('libraryAlerts') else 0
+    loan_reminders = 1 if data.get('loanReminders') else 0
+    theme = data.get('theme', 'light') # 'light' or 'dark'
+    language = data.get('language', 'English')
+    data_consent = 1 if data.get('dataConsent') else 0
+    
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    
+    # Upsert Settings
+    cursor.execute("""
+        INSERT INTO user_settings (enrollment_no, email, library_alerts, loan_reminders, theme, language, data_consent)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(enrollment_no) DO UPDATE SET
+            email=excluded.email,
+            library_alerts=excluded.library_alerts,
+            loan_reminders=excluded.loan_reminders,
+            theme=excluded.theme,
+            language=excluded.language,
+            data_consent=excluded.data_consent
+    """, (enrollment, email, library_alerts, loan_reminders, theme, language, data_consent))
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'status': 'success', 'message': 'Settings updated successfully'})
+
 # --- Broadcast APIs ---
 
 @app.route('/api/notices', methods=['GET'])
@@ -315,13 +363,32 @@ def api_me():
     if student:
         # Get student's year properly
         student_year = student['year'] if student['year'] else '1st'
+        
+        # Fetch User Settings Override
+        conn_portal = get_portal_db()
+        cursor_p = conn_portal.cursor()
+        cursor_p.execute("SELECT * FROM user_settings WHERE enrollment_no = ?", (session['student_id'],))
+        settings = cursor_p.fetchone()
+        conn_portal.close()
+        
+        # Default Email logic
+        default_email = f"{student['name'].replace(' ', '.').lower()}@gpa.edu"
+        user_email = settings['email'] if settings and settings['email'] else dict(student).get('email', default_email)
+        
         return jsonify({'user': {
             'name': student['name'],
             'enrollment_no': student['enrollment_no'],
             'department': student['department'],
             'year': student_year,
-            'email': dict(student).get('email', f"{student['name'].replace(' ', '.').lower()}@gpa.edu"),
+            'email': user_email,
             'phone': dict(student).get('phone', 'N/A'),
+            'settings': {
+                'library_alerts': bool(settings['library_alerts']) if settings else False,
+                'loan_reminders': bool(settings['loan_reminders']) if settings else True,
+                'theme': settings['theme'] if settings else 'light',
+                'language': settings['language'] if settings else 'English',
+                'data_consent': bool(settings['data_consent']) if settings else True
+            },
             'privileges': {
                  'max_books': 5,
                  'loan_duration': '7 Days',
