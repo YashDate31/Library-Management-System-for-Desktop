@@ -235,19 +235,22 @@ def api_me():
     conn.close()
     
     if student:
+        # Get student's year properly
+        student_year = student['year'] if student['year'] else '1st'
         return jsonify({'user': {
             'name': student['name'],
             'enrollment_no': student['enrollment_no'],
             'department': student['department'],
-            'year': student['year'],
-            'email': dict(student).get('email', f"{student['name'].replace(' ', '.').lower()}@university.edu"), # Fallback generation
+            'year': student_year,
+            'email': dict(student).get('email', f"{student['name'].replace(' ', '.').lower()}@gpa.edu"),
+            'phone': dict(student).get('phone', 'N/A'),
             'privileges': {
                  'max_books': 5,
-                 'loan_duration': '21 Days',
+                 'loan_duration': '7 Days',
                  'renewal_limit': '2 Renewals per book'
             },
             'account_info': {
-                'password_last_changed': '12th Jan 2024' # Mock for now
+                'password_last_changed': 'Recently'
             }
         }})
     return jsonify({'user': None})
@@ -261,9 +264,9 @@ def api_user_policies():
     return jsonify({
         'policies': {
             'max_books': 5,
-            'loan_duration': '21 Days',
+            'loan_duration': '7 Days',
             'renewal_limit': '2 Renewals per book',
-            'password_last_changed': '12th Jan 2024'
+            'password_last_changed': 'Recently'
         }
     })
 

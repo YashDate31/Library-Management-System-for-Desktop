@@ -29,8 +29,17 @@ from PIL import ImageTk, Image
 
 # Add Web-Extension directory to path to allow import
 sys.path.append(os.path.join(os.path.dirname(__file__), 'Web-Extension'))
-from student_portal import app as flask_app
-from waitress import serve
+
+# Optional: Web Portal support
+try:
+    from student_portal import app as flask_app  # type: ignore
+    from waitress import serve  # type: ignore
+    WEB_PORTAL_AVAILABLE = True
+except Exception:
+    flask_app = None
+    serve = None
+    WEB_PORTAL_AVAILABLE = False
+    print("Web portal not available - student portal features will be disabled")
 
 # Optional: Word export support
 try:
@@ -2727,10 +2736,10 @@ Government Polytechnic Awasari (Kh)"""
             else:
                 academic_years.append(year)
         
-        academic_year_combo = ttk.Combobox(row2, textvariable=self.record_academic_year_var, 
+        self.academic_year_combo = ttk.Combobox(row2, textvariable=self.record_academic_year_var, 
                                           values=academic_years, state="readonly", width=15)
-        academic_year_combo.pack(side=tk.LEFT, padx=(5, 15))
-        academic_year_combo.bind('<<ComboboxSelected>>', lambda e: self.search_records())
+        self.academic_year_combo.pack(side=tk.LEFT, padx=(5, 15))
+        self.academic_year_combo.bind('<<ComboboxSelected>>', lambda e: self.search_records())
         
         filter_btn = tk.Button(
             row2,
@@ -3251,7 +3260,7 @@ Government Polytechnic Awasari (Kh)"""
         btn_frame.pack(pady=20)
         
         def save_book():
-            # Validate required fields
+            # Validate required fields (only book_id and title are required)
             required_fields = ['book_id', 'title']
             for field in required_fields:
                 if not entries[field].get().strip():
@@ -3281,7 +3290,7 @@ Government Polytechnic Awasari (Kh)"""
             success, message = self.db.add_book(
                 book_id_val,
                 entries['title'].get().strip(),
-                entries['author'].get().strip(),
+                entries['author'].get().strip() if entries['author'].get().strip() else '',
                 entries['isbn'].get().strip(),
                 entries['category'].get(),
                 copies
@@ -3706,6 +3715,31 @@ Government Polytechnic Awasari (Kh)"""
             filtered_records.append(record)
         
         self.populate_records_tree(filtered_records)
+    
+    def refresh_academic_year_filter(self):
+        """Refresh academic year dropdown with latest years from database"""
+        if hasattr(self, 'academic_year_combo'):
+            # Get academic years from database and convert format
+            academic_years_raw = self.db.get_all_academic_years()
+            academic_years = ["All"]
+            for year in academic_years_raw:
+                # Convert format from "2025-2026" to "25-26"
+                if "-" in year:
+                    years = year.split("-")
+                    if len(years) == 2:
+                        year1 = years[0][-2:]  # "2025" -> "25"
+                        year2 = years[1][-2:]  # "2026" -> "26"
+                        academic_years.append(f"{year1}-{year2}")
+                    else:
+                        academic_years.append(year)
+                else:
+                    academic_years.append(year)
+            
+            # Update combobox values
+            self.academic_year_combo['values'] = academic_years
+            # If current selection is not in list, reset to "All"
+            if self.record_academic_year_var.get() not in academic_years:
+                self.record_academic_year_var.set("All")
     
     def clear_record_filters(self):
         """Clear all record filters"""
@@ -5026,6 +5060,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 try:
                     self.refresh_students()
                     self.refresh_dashboard()
+                    self.refresh_academic_year_filter()  # Refresh academic year dropdown
                 except Exception:
                     pass
                     
@@ -5041,6 +5076,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     try:
                         self.refresh_students()
                         self.refresh_dashboard()
+                        self.refresh_academic_year_filter()  # Refresh academic year dropdown
                     except Exception:
                         pass
                 else:
@@ -9379,7 +9415,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 INNER JOIN borrow_records br ON b.book_id = br.book_id
                 WHERE br.borrow_date >= ?
                 GROUP BY b.book_id, b.title
-                ORDER BY borrow_count DESC
+                ORDER BY borrow_count DESC, b.title ASC
                 LIMIT 10
             """, (start_date,))
             
@@ -9441,7 +9477,8 @@ Note: This is an automated email. Please find the attached formal overdue letter
             
             start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
             
-            # Get books with lowest borrow count in the period (including zero borrows)
+            # Get books with lowest borrow count in the period (prioritize zero borrows)
+            # First get the minimum count that's been borrowed (to exclude books with higher counts)
             cursor.execute("""
                 SELECT 
                     b.title,
@@ -9449,9 +9486,17 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 FROM books b
                 LEFT JOIN borrow_records br ON b.book_id = br.book_id AND br.borrow_date >= ?
                 GROUP BY b.book_id, b.title
-                ORDER BY borrow_count ASC, b.title
+                HAVING borrow_count = (
+                    SELECT MIN(cnt) FROM (
+                        SELECT COALESCE(COUNT(br2.id), 0) as cnt
+                        FROM books b2
+                        LEFT JOIN borrow_records br2 ON b2.book_id = br2.book_id AND br2.borrow_date >= ?
+                        GROUP BY b2.book_id
+                    )
+                )
+                ORDER BY b.title ASC
                 LIMIT 10
-            """, (start_date,))
+            """, (start_date, start_date))
             
             results = cursor.fetchall()
             conn.close()
@@ -10084,6 +10129,10 @@ Note: This is an automated email. Please find the attached formal overdue letter
 
     def start_student_portal(self):
         """Start the Flask server in a daemon thread"""
+        if not WEB_PORTAL_AVAILABLE:
+            print("Web portal is not available. Install flask and waitress.")
+            return
+        
         if self.portal_thread and self.portal_thread.is_alive():
             return
 
@@ -10098,6 +10147,11 @@ Note: This is an automated email. Please find the attached formal overdue letter
 
     def show_qr_code(self):
         """Generate and show QR code for the student portal"""
+        if not WEB_PORTAL_AVAILABLE:
+            messagebox.showwarning("Web Portal Unavailable", 
+                                 "Web portal is not available.\n\nPlease install required packages: flask, waitress")
+            return
+        
         # Ensure server is running
         self.start_student_portal()
         
