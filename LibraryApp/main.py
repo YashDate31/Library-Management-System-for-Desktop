@@ -8603,35 +8603,100 @@ Note: This is an automated email. Please find the attached formal overdue letter
             messagebox.showerror("Error", f"Failed to {action} deletion: {str(e)}")
     
     def _create_password_reset_section(self, parent):
-        """Create password reset section"""
+        """Create password reset section with auth dashboard"""
+        # Main container
+        container = tk.Frame(parent, bg='white')
+        container.pack(fill=tk.BOTH, expand=True)
+        
         # Header
+        header_frame = tk.Frame(container, bg='white')
+        header_frame.pack(fill=tk.X, padx=20, pady=(20, 15))
+        
         tk.Label(
-            parent,
-            text="🔑 Reset Student Password",
+            header_frame,
+            text="🔑 Password Reset & Auth Status",
             font=('Segoe UI', 18, 'bold'),
             bg='white',
             fg=self.colors['accent']
-        ).pack(pady=(30, 10), padx=20, anchor='w')
+        ).pack(side=tk.LEFT)
+        
+        refresh_btn = tk.Button(
+            header_frame,
+            text="🔄 Refresh",
+            font=('Segoe UI', 10, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            padx=15,
+            pady=5,
+            cursor='hand2',
+            relief='flat',
+            command=self._refresh_auth_stats
+        )
+        refresh_btn.pack(side=tk.RIGHT)
+        
+        # Auth Stats Dashboard
+        stats_frame = tk.Frame(container, bg='#f8f9fa', relief='solid', bd=1)
+        stats_frame.pack(fill=tk.X, padx=20, pady=(0, 15))
+        
+        stats_inner = tk.Frame(stats_frame, bg='#f8f9fa')
+        stats_inner.pack(padx=20, pady=15)
+        
+        self.auth_stats_labels = {}
+        stat_items = [
+            ("📊 Total Registered", "#17a2b8", "total_registered"),
+            ("✅ Active Users", "#28a745", "active_users"),
+            ("⏳ Pending Change", "#fd7e14", "pending_change")
+        ]
+        
+        for label, color, key in stat_items:
+            stat_card = tk.Frame(stats_inner, bg='white', relief='solid', bd=1)
+            stat_card.pack(side=tk.LEFT, padx=10, ipadx=20, ipady=10)
+            
+            count_label = tk.Label(
+                stat_card,
+                text="0",
+                font=('Segoe UI', 24, 'bold'),
+                bg='white',
+                fg=color
+            )
+            count_label.pack()
+            self.auth_stats_labels[key] = count_label
+            
+            tk.Label(
+                stat_card,
+                text=label,
+                font=('Segoe UI', 9),
+                bg='white',
+                fg='#666'
+            ).pack()
+        
+        # Two column layout
+        columns_frame = tk.Frame(container, bg='white')
+        columns_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+        columns_frame.columnconfigure(0, weight=1)
+        columns_frame.columnconfigure(1, weight=1)
+        
+        # Left column - Reset form
+        form_card = tk.Frame(columns_frame, bg='#f8f9fa', relief='solid', bd=1)
+        form_card.grid(row=0, column=0, sticky='nsew', padx=(0, 10), pady=5)
         
         tk.Label(
-            parent,
-            text="Reset a student's password to their enrollment number (they'll be prompted to change it on next login)",
-            font=('Segoe UI', 10),
-            bg='white',
-            fg='#666'
-        ).pack(padx=20, anchor='w', pady=(0, 20))
+            form_card,
+            text="🔐 Reset Student Password",
+            font=('Segoe UI', 12, 'bold'),
+            bg='#f1f3f4',
+            fg='#333',
+            padx=15,
+            pady=10
+        ).pack(fill=tk.X)
         
-        # Reset form
-        form_frame = tk.Frame(parent, bg='#f8f9fa', relief='solid', bd=1)
-        form_frame.pack(fill=tk.X, padx=20, pady=10)
-        
-        inner = tk.Frame(form_frame, bg='#f8f9fa')
-        inner.pack(padx=30, pady=25)
+        inner = tk.Frame(form_card, bg='#f8f9fa')
+        inner.pack(padx=20, pady=20)
         
         tk.Label(
             inner,
-            text="Enter Student Enrollment Number:",
-            font=('Segoe UI', 11, 'bold'),
+            text="Enter Enrollment Number:",
+            font=('Segoe UI', 10, 'bold'),
             bg='#f8f9fa',
             fg='#333'
         ).pack(anchor='w')
@@ -8639,42 +8704,52 @@ Note: This is an automated email. Please find the attached formal overdue letter
         self.password_reset_enrollment = tk.Entry(
             inner,
             font=('Segoe UI', 12),
-            width=30,
+            width=25,
             relief='solid',
             bd=1
         )
-        self.password_reset_enrollment.pack(pady=(10, 15), ipady=6)
+        self.password_reset_enrollment.pack(pady=(8, 12), ipady=5)
         
-        reset_btn = tk.Button(
+        tk.Button(
             inner,
             text="🔑 Reset Password",
-            font=('Segoe UI', 11, 'bold'),
+            font=('Segoe UI', 10, 'bold'),
             bg='#fd7e14',
             fg='white',
-            padx=25,
-            pady=10,
+            padx=20,
+            pady=8,
             cursor='hand2',
             relief='flat',
             command=self._handle_password_reset
-        )
-        reset_btn.pack()
-        
-        # Note
-        note_frame = tk.Frame(parent, bg='#e7f3ff', relief='solid', bd=1)
-        note_frame.pack(fill=tk.X, padx=20, pady=20)
+        ).pack()
         
         tk.Label(
-            note_frame,
-            text="ℹ️ The student's password will be reset to their enrollment number. "
-                 "They will be required to change it upon their next login.",
-            font=('Segoe UI', 9),
-            bg='#e7f3ff',
-            fg='#0066cc',
-            wraplength=600,
-            justify=tk.LEFT,
+            inner,
+            text="Password will be reset to enrollment number",
+            font=('Segoe UI', 8, 'italic'),
+            bg='#f8f9fa',
+            fg='#888'
+        ).pack(pady=(10, 0))
+        
+        # Right column - Recent resets
+        resets_card = tk.Frame(columns_frame, bg='#f8f9fa', relief='solid', bd=1)
+        resets_card.grid(row=0, column=1, sticky='nsew', padx=(10, 0), pady=5)
+        
+        tk.Label(
+            resets_card,
+            text="📋 Recent Password Resets",
+            font=('Segoe UI', 12, 'bold'),
+            bg='#f1f3f4',
+            fg='#333',
             padx=15,
-            pady=12
-        ).pack()
+            pady=10
+        ).pack(fill=tk.X)
+        
+        self.recent_resets_container = tk.Frame(resets_card, bg='#f8f9fa')
+        self.recent_resets_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        
+        # Load initial stats
+        self._refresh_auth_stats()
     
     def _handle_password_reset(self):
         """Handle password reset action"""
@@ -8704,6 +8779,76 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     messagebox.showerror("Error", result.get('message', 'Reset failed'))
         except Exception as e:
             messagebox.showerror("Error", f"Failed to reset password: {str(e)}")
+        
+        # Refresh stats after reset
+        self._refresh_auth_stats()
+    
+    def _refresh_auth_stats(self):
+        """Fetch and display auth statistics and recent password resets"""
+        try:
+            import urllib.request
+            
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/auth-stats"
+            req = urllib.request.Request(url)
+            
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode())
+                stats = data.get('stats', {})
+                resets = data.get('recent_resets', [])
+                
+                # Update stats labels
+                if hasattr(self, 'auth_stats_labels'):
+                    self.auth_stats_labels['total_registered'].config(text=str(stats.get('total_registered', 0)))
+                    self.auth_stats_labels['active_users'].config(text=str(stats.get('active_users', 0)))
+                    self.auth_stats_labels['pending_change'].config(text=str(stats.get('pending_change', 0)))
+                
+                # Update recent resets list
+                if hasattr(self, 'recent_resets_container'):
+                    for w in self.recent_resets_container.winfo_children():
+                        w.destroy()
+                    
+                    if not resets:
+                        tk.Label(
+                            self.recent_resets_container,
+                            text="No recent password resets",
+                            font=('Segoe UI', 10),
+                            bg='#f8f9fa',
+                            fg='#888'
+                        ).pack(pady=20)
+                    else:
+                        for reset in resets[:8]:  # Show max 8
+                            row = tk.Frame(self.recent_resets_container, bg='#f8f9fa')
+                            row.pack(fill=tk.X, pady=3)
+                            
+                            tk.Label(
+                                row,
+                                text=f"👤 {reset.get('student_name', 'Unknown')}",
+                                font=('Segoe UI', 9),
+                                bg='#f8f9fa',
+                                fg='#333'
+                            ).pack(side=tk.LEFT)
+                            
+                            tk.Label(
+                                row,
+                                text=f"({reset.get('enrollment_no', '')})",
+                                font=('Segoe UI', 8),
+                                bg='#f8f9fa',
+                                fg='#666'
+                            ).pack(side=tk.LEFT, padx=5)
+                            
+                            timestamp = reset.get('last_changed', '')
+                            if timestamp:
+                                tk.Label(
+                                    row,
+                                    text=timestamp[:16],  # Trim to date/time
+                                    font=('Segoe UI', 8),
+                                    bg='#f8f9fa',
+                                    fg='#888'
+                                ).pack(side=tk.RIGHT)
+                    
+        except Exception as e:
+            # Silently fail - stats will just show 0
+            pass
     
     def _show_empty_message(self, container, title, message):
         """Show empty state message"""
