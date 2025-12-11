@@ -89,7 +89,7 @@ export default function Dashboard({ user }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 pb-24 md:pb-10">
+    <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950 pb-24 md:pb-10 transition-colors">
 
       <div className="px-4 py-6 space-y-8 max-w-4xl mx-auto">
         
@@ -148,34 +148,34 @@ export default function Dashboard({ user }) {
 
             {/* Quick Stats Grid */}
             <div className="grid grid-cols-1 gap-3 content-start">
-                  <Card className="p-4 flex items-center justify-between hover:shadow-md transition-shadow">
+                  <Card className="p-4 flex items-center justify-between hover:shadow-md transition-shadow bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
                       <div>
-                          <p className="text-xs text-slate-500 font-bold uppercase tracking-wide">Borrowed</p>
-                          <p className="text-2xl font-black text-slate-800 mt-0.5">{activeBorrows.length}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wide">Borrowed</p>
+                          <p className="text-2xl font-black text-slate-800 dark:text-white mt-0.5">{activeBorrows.length}</p>
                       </div>
-                      <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center">
+                      <div className="w-10 h-10 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center">
                           <Book size={20} />
                       </div>
                   </Card>
                   
-                  <Card className="p-4 flex items-center justify-between hover:shadow-md transition-shadow">
+                  <Card className="p-4 flex items-center justify-between hover:shadow-md transition-shadow bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
                       <div>
-                          <p className="text-xs text-slate-500 font-bold uppercase tracking-wide">Returned</p>
-                          <p className="text-2xl font-black text-emerald-600 mt-0.5">{data.history?.length || 0}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wide">Returned</p>
+                          <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5">{data.history?.length || 0}</p>
                       </div>
-                      <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center">
+                      <div className="w-10 h-10 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center">
                            <CheckCircle2 size={20} />
                       </div>
                   </Card>
 
-                   <Card className="p-4 flex items-center justify-between hover:shadow-md transition-shadow">
+                   <Card className="p-4 flex items-center justify-between hover:shadow-md transition-shadow bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
                       <div>
-                          <p className="text-xs text-slate-500 font-bold uppercase tracking-wide">Overdue</p>
-                          <p className={`text-2xl font-black mt-0.5 ${overdueBooks.length > 0 ? 'text-red-600' : 'text-slate-400'}`}>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wide">Overdue</p>
+                          <p className={`text-2xl font-black mt-0.5 ${overdueBooks.length > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400 dark:text-slate-600'}`}>
                               {overdueBooks.length}
                           </p>
                       </div>
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${overdueBooks.length > 0 ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-400'}`}>
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${overdueBooks.length > 0 ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500'}`}>
                            <AlertCircle size={20} />
                       </div>
                   </Card>
@@ -187,21 +187,21 @@ export default function Dashboard({ user }) {
            <div className="space-y-4">
              <div className="flex items-center gap-2 px-1">
                 <Megaphone className="w-5 h-5 text-amber-500" />
-                <h3 className="text-lg font-bold text-slate-800">Announcements</h3>
+                <h3 className="text-lg font-bold text-slate-800 dark:text-white transition-colors">Announcements</h3>
              </div>
              <div className="grid gap-4">
                {data.notices.map((notice) => (
-                 <div key={notice.id} className="group relative bg-white border border-slate-200 p-5 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 border-l-4 border-l-amber-400">
-                     <span className="absolute top-4 right-4 text-[10px] font-bold tracking-wider text-slate-400 uppercase bg-slate-100 px-2 py-1 rounded-md">
+                 <div key={notice.id} className="group relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 border-l-4 border-l-amber-400 dark:border-l-amber-500">
+                     <span className="absolute top-4 right-4 text-[10px] font-bold tracking-wider text-slate-400 uppercase bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md">
                         {notice.title === 'Repo Update' ? 'System' : 'Notice'}
                      </span>
-                     <h4 className="font-bold text-slate-800 text-lg mb-2 pr-12 group-hover:text-amber-600 transition-colors">
+                     <h4 className="font-bold text-slate-800 dark:text-white text-lg mb-2 pr-12 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
                         {notice.title}
                      </h4>
-                     <p className="text-slate-600 text-sm leading-relaxed mb-3">
+                     <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed mb-3">
                         {notice.content}
                      </p>
-                     <div className="flex items-center gap-2 text-xs text-slate-400 font-medium border-t border-slate-100 pt-3 mt-1">
+                     <div className="flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500 font-medium border-t border-slate-100 dark:border-slate-800 pt-3 mt-1">
                         <Clock size={12} />
                         <span>Posted on {formatDate(notice.date)}</span>
                      </div>
@@ -232,8 +232,8 @@ export default function Dashboard({ user }) {
         {/* 4. Currently Borrowed */}
         <div>
            <div className="flex items-center justify-between mb-5 px-1">
-             <h3 className="text-lg font-heading font-bold text-slate-800 flex items-center gap-2">
-                <Book className="w-5 h-5 text-blue-600" />
+             <h3 className="text-lg font-heading font-bold text-slate-800 dark:text-white flex items-center gap-2 transition-colors">
+                <Book className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 Current Reads
              </h3>
              <Button variant="ghost" size="sm" className="text-blue-600 hover:bg-blue-50" onClick={() => navigate('/history')}>

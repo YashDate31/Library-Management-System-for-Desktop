@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import Catalogue from './pages/Catalogue';
 import BookDetails from './pages/BookDetails';
 import Settings from './pages/Settings';
+import Notifications from './pages/Notifications';
 import Profile from './pages/Profile';
 import History from './pages/History';
 import MyBooks from './pages/MyBooks';
@@ -61,6 +62,7 @@ function App() {
               <Route path="/requests" element={user ? <Services /> : <Navigate to="/login" />} />
               <Route path="/profile" element={user ? <Profile user={user} /> : <Navigate to="/login" />} />
               <Route path="/settings" element={user ? <Settings user={user} setUser={setUser} /> : <Navigate to="/login" />} />
+              <Route path="/notifications" element={user ? <Notifications /> : <Navigate to="/login" />} />
             </Route>
           </Routes>
         </ErrorBoundary>
