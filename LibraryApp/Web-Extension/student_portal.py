@@ -1251,6 +1251,10 @@ def api_admin_approve_request(req_id):
         VALUES (?, 'request_update', 'Request Approved', ?, '/requests', ?)
     """, (req['enrollment_no'], message, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
     
+    # Email Trigger
+    email_body = f"Hello,\n\n{message}\n\nPlease visit the library to collect your book (if applicable).\n\nGPA Library System"
+    trigger_notification_email(req['enrollment_no'], f"Request Approved: {req['request_type']}", email_body)
+    
     conn.commit()
     conn.close()
     
@@ -1285,6 +1289,10 @@ def api_admin_reject_request(req_id):
             INSERT INTO user_notifications (enrollment_no, type, title, message, link, created_at)
             VALUES (?, 'request_update', 'Request Rejected', ?, '/requests', ?)
         """, (req['enrollment_no'], message, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+
+         # Email Trigger
+         email_body = f"Hello,\n\n{message}\n\nPlease contact the librarian for more details.\n\nGPA Library System"
+         trigger_notification_email(req['enrollment_no'], f"Request Rejected: {req['request_type']}", email_body)
 
     conn.commit()
     conn.close()
