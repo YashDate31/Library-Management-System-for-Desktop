@@ -4,6 +4,10 @@ import os
 import json
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
+import smtplib
+import threading
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # --- Configuration ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -110,6 +114,73 @@ def init_portal_db():
 
 # Initialize on Import
 init_portal_db()
+
+# --- Helper Functions for Email ---
+
+def send_email_bg(recipient, subject, body):
+    """Background task to send email using shared settings"""
+    if not recipient:
+        return
+        
+    try:
+        # Path to email_settings.json (One level up from Web-Extension)
+        # student_portal.py is in LibraryApp/Web-Extension
+        # email_settings.json is in LibraryApp/
+        settings_path = os.path.join(os.path.dirname(BASE_DIR), 'email_settings.json')
+        
+        if not os.path.exists(settings_path):
+            print(f"Email settings not found at {settings_path}")
+            return
+
+        with open(settings_path, 'r') as f:
+            settings = json.load(f)
+
+        if not settings.get('enabled'):
+            return
+
+        msg = MIMEMultipart()
+        msg['From'] = settings['sender_email']
+        msg['To'] = recipient
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+
+        # Standard SMTP (Gmail/Outlook)
+        server = smtplib.SMTP(settings['smtp_server'], settings['smtp_port'])
+        server.starttls()
+        server.login(settings['sender_email'], settings['sender_password'])
+        server.send_message(msg)
+        server.quit()
+        print(f"Email sent to {recipient}")
+        
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+
+def trigger_notification_email(enrollment_no, subject, body):
+    """Fetches user email and triggers background send"""
+    try:
+        # 1. Check User Settings (Portal DB)
+        conn_portal = get_portal_db()
+        cursor_portal = conn_portal.cursor()
+        cursor_portal.execute("SELECT email FROM user_settings WHERE enrollment_no = ?", (enrollment_no,))
+        setting = cursor_portal.fetchone()
+        conn_portal.close()
+        
+        email = setting['email'] if setting and setting['email'] else None
+        
+        # 2. If no custom email, check College Records (Library DB)
+        if not email:
+            conn_lib = get_library_db()
+            cursor_lib = conn_lib.cursor()
+            cursor_lib.execute("SELECT email FROM students WHERE enrollment_no = ?", (enrollment_no,))
+            student = cursor_lib.fetchone()
+            conn_lib.close()
+            email = student['email'] if student else None
+            
+        if email:
+            threading.Thread(target=send_email_bg, args=(email, subject, body)).start()
+            
+    except Exception as e:
+        print(f"Error triggering email: {e}")
 
 # --- Auth Endpoints ---
 
@@ -889,6 +960,11 @@ def api_submit_request():
                        (session['student_id'], req_type, json.dumps(details)))
         conn.commit()
         conn.close()
+        
+        # Send Email Notification
+        email_body = f"Hello,\n\nWe have received your '{req_type}' request.\nDetails: {details}\n\nThe librarian will review this shortly.\n\nGPA Library System"
+        trigger_notification_email(session['student_id'], f"Request Received: {req_type}", email_body)
+        
         return jsonify({'status': 'success', 'message': 'Request submitted to librarian'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
