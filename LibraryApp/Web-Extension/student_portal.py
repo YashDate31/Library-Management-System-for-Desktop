@@ -3,6 +3,7 @@ import sqlite3
 import os
 import json
 from datetime import datetime
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # --- Configuration ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -48,9 +49,22 @@ def init_portal_db():
             enrollment_no TEXT PRIMARY KEY,
             password TEXT NOT NULL,
             is_first_login INTEGER DEFAULT 1, -- 1=True, 0=False
-            last_changed DATETIME DEFAULT CURRENT_TIMESTAMP
+            last_changed DATETIME
         )
     """)
+    
+    # Notices Table (Broadcast System)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS notices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+
     
     # Create Deletion Requests Table
     cursor.execute('''
@@ -156,67 +170,131 @@ def api_login():
         # FIRST LOGIN ATTEMPT EVER for this user
         # Default behavior: Password MUST be enrollment number
         if password == enrollment:
-            # Create auth record
+            # Create auth record with HASHED password
+            hashed_pw = generate_password_hash(enrollment)
             cursor_p.execute("INSERT INTO student_auth (enrollment_no, password, is_first_login) VALUES (?, ?, 1)", 
-                             (enrollment, enrollment)) # In prod, use HASH!
+                             (enrollment, hashed_pw))
             conn_portal.commit()
             require_change = True
         else:
             conn_portal.close()
-            return jsonify({'status': 'error', 'message': 'Invalid credentials. For first login, use enrollment number as password.'}), 401
+            return jsonify({'status': 'error', 'message': 'Invalid password (First login? Use Enrollment No.)'}), 401
     else:
-        # Subsequent Logins
-        stored_password = auth_record['password']
-        is_first = auth_record['is_first_login']
+        # Existing auth record
+        stored_pw = auth_record['password']
         
-        if password == stored_password:
-            if is_first:
-                require_change = True
-        else:
+        # 1. Try verifying hash
+        is_valid = False
+        try:
+            if check_password_hash(stored_pw, password):
+                is_valid = True
+        except:
+            # Not a hash (legacy plain text)
+            if stored_pw == password:
+                is_valid = True
+                # MIGRATION: Upgrade to hash immediatey
+                new_hash = generate_password_hash(password)
+                cursor_p.execute("UPDATE student_auth SET password = ? WHERE enrollment_no = ?", (new_hash, enrollment))
+                conn_portal.commit()
+        
+        if not is_valid:
             conn_portal.close()
             return jsonify({'status': 'error', 'message': 'Invalid password'}), 401
             
+        if auth_record['is_first_login']:
+            require_change = True
+
+    # Login Success - Create Session
+    session['student_id'] = enrollment
+    session['logged_in'] = True
+    
     conn_portal.close()
-    
-    # Login Successful
-    session['student_id'] = student['enrollment_no']
-    session['name'] = student['name']
-    
     return jsonify({
-        'status': 'success',
-        'require_change': require_change,
-        'user': {
-            'name': student['name'],
-            'enrollment_no': student['enrollment_no'],
-            'department': student['department'],
-            'year': student['year'],
-        }
+        'status': 'success', 
+        'enrollment_no': enrollment,
+        'name': student['name'],
+        'require_change': require_change
     })
 
-@app.route('/api/change-password', methods=['POST'])
+@app.route('/api/change_password', methods=['POST'])
 def api_change_password():
-    if 'student_id' not in session:
-        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+    if not session.get('logged_in'):
+        return jsonify({'status': 'error', 'message': 'Not logged in'}), 401
         
     data = request.json
     new_password = data.get('new_password')
+    enrollment = session.get('student_id')
     
-    if not new_password or len(new_password) < 4:
-        return jsonify({'status': 'error', 'message': 'Password too short'}), 400
+    if not new_password or len(new_password) < 6:
+        return jsonify({'status': 'error', 'message': 'Password must be at least 6 characters'}), 400
         
-    enrollment = session['student_id']
-    
     conn = get_portal_db()
     cursor = conn.cursor()
+    
+    # Hash the new password
+    hashed_pw = generate_password_hash(new_password)
+    
     cursor.execute("""
         UPDATE student_auth 
         SET password = ?, is_first_login = 0, last_changed = CURRENT_TIMESTAMP
         WHERE enrollment_no = ?
-    """, (new_password, enrollment))
+    """, (hashed_pw, enrollment))
+    
     conn.commit()
     conn.close()
     
     return jsonify({'status': 'success', 'message': 'Password updated successfully'})
+
+# --- Broadcast APIs ---
+
+@app.route('/api/notices', methods=['GET'])
+def api_public_notices():
+    """Get active notices for students"""
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, title, message, created_at FROM notices WHERE active = 1 ORDER BY created_at DESC")
+    notices = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return jsonify({'notices': notices})
+
+@app.route('/api/admin/notices', methods=['GET', 'POST', 'DELETE'])
+def api_admin_notices():
+    """Admin management for notices"""
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    
+    if request.method == 'GET':
+        # List all notices (active and inactive)
+        cursor.execute("SELECT * FROM notices ORDER BY created_at DESC")
+        notices = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify({'notices': notices})
+        
+    elif request.method == 'POST':
+        # Create new notice
+        data = request.json
+        title = data.get('title')
+        message = data.get('message')
+        
+        if not title or not message:
+            conn.close()
+            return jsonify({'status': 'error', 'message': 'Title and message required'}), 400
+            
+        cursor.execute("INSERT INTO notices (title, message) VALUES (?, ?)", (title, message))
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'success', 'message': 'Notice posted'})
+
+@app.route('/api/admin/notices/<int:notice_id>', methods=['DELETE'])
+def api_delete_notice(notice_id):
+    """Deactivate a notice"""
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE notices SET active = 0 WHERE id = ?", (notice_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'success', 'message': 'Notice deleted'})
+
 
 @app.route('/api/logout', methods=['POST'])
 def api_logout():
@@ -496,11 +574,12 @@ def api_dashboard():
     if not has_overdues and stats['total_books'] > 2:
         badges.append({'id': 'clean_sheet', 'label': 'Clean Sheet', 'icon': '🛡️', 'color': 'bg-blue-100 text-blue-700'})
 
-    # 4. Library Notices (Mock/Static for now)
-    notices = [
-        {"id": 1, "title": "Repo Update", "date": "2025-12-09", "content": "System maintenance scheduled for Sunday."},
-        {"id": 2, "title": "New Arrivals", "date": "2025-12-08", "content": "Check out the new AI section in Isle 4."}
-    ]
+    # 4. Library Notices (Active Broadcasts)
+    conn_portal = get_portal_db()
+    cursor_p = conn_portal.cursor()
+    cursor_p.execute("SELECT id, title, message as content, created_at as date FROM notices WHERE active = 1 ORDER BY created_at DESC")
+    notices = [dict(row) for row in cursor_p.fetchall()]
+    conn_portal.close()
 
     return jsonify({
         'borrows': borrows,
@@ -904,19 +983,22 @@ def api_admin_reset_password(enrollment_no):
     cursor.execute("SELECT * FROM student_auth WHERE enrollment_no = ?", (enrollment_no,))
     auth = cursor.fetchone()
     
+    # Hash the enrollment number for reset
+    hashed_pw = generate_password_hash(enrollment_no)
+    
     if auth:
         # Reset to enrollment number and mark as first login
         cursor.execute("""
             UPDATE student_auth 
             SET password = ?, is_first_login = 1, last_changed = CURRENT_TIMESTAMP
             WHERE enrollment_no = ?
-        """, (enrollment_no, enrollment_no))
+        """, (hashed_pw, enrollment_no))
     else:
         # Create new auth record with default password
         cursor.execute("""
             INSERT INTO student_auth (enrollment_no, password, is_first_login)
             VALUES (?, ?, 1)
-        """, (enrollment_no, enrollment_no))
+        """, (enrollment_no, hashed_pw))
     
     conn.commit()
     conn.close()
