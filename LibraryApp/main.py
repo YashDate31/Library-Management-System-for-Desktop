@@ -7146,7 +7146,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
             messagebox.showerror("Error", f"Failed to delete: {e}")
         
         # Store reference for refreshing
-        self.portal_notebook = portal_notebook
+        # Line removed to fix NameError
         
     def _create_qr_access_section(self, parent):
         """Create comprehensive QR code access section with server dashboard"""
@@ -10461,7 +10461,8 @@ Note: This is an automated email. Please find the attached formal overdue letter
             # Use waitress for production-ready stable server
             # Listen on all interfaces (0.0.0.0) so other devices can access
             print(f"Starting Student Portal on port {self.portal_port}...")
-            serve(flask_app, host='0.0.0.0', port=self.portal_port, threads=4)
+            # increased threads to 50 to handle concurrent requests (approx 500 users @ 10% active)
+            serve(flask_app, host='0.0.0.0', port=self.portal_port, threads=50)
 
         self.portal_thread = threading.Thread(target=run_server, daemon=True)
         self.portal_thread.start()

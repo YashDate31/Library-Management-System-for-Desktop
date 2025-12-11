@@ -284,7 +284,7 @@ export default function Settings({ user, setUser }) {
                 initial={{ y: 100, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 exit={{ y: 100, opacity: 0 }}
-                className="fixed bottom-32 md:bottom-8 left-1/2 -translate-x-1/2 bg-slate-900/90 dark:bg-blue-600/90 text-white p-2 pl-6 pr-2 rounded-full shadow-2xl flex items-center gap-6 z-[100] border border-slate-700/50 dark:border-blue-500/50 backdrop-blur-md w-[calc(100%-2rem)] md:w-auto justify-between md:justify-start"
+                className="fixed bottom-24 md:bottom-8 left-4 right-4 md:left-1/2 md:right-auto md:-translate-x-1/2 bg-slate-900/95 dark:bg-blue-600/95 text-white p-2 pl-4 md:pl-6 pr-2 rounded-full shadow-2xl flex items-center gap-2 md:gap-6 z-[200] border border-slate-700/50 dark:border-blue-500/50 backdrop-blur-md justify-between md:justify-start"
             >
                 <span className="font-bold text-sm text-slate-200 whitespace-nowrap">Unsaved changes</span>
                 <div className="flex items-center gap-2">
