@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { BookOpen } from 'lucide-react';
+import { BookOpen, Key } from 'lucide-react';
 
 // Custom Input Component to match the design (Green focus)
 const CustomInput = ({ label, type, value, onChange, placeholder, required = true }) => (
@@ -29,6 +29,9 @@ export default function Login({ setUser }) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+  // View State: 'login', 'forgot', 'change_password'
+  const [view, setView] = useState('login');
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -41,9 +44,7 @@ export default function Login({ setUser }) {
       });
       
       if (data.status === 'success') {
-        // Updated Logic: Always allow login, dashboard will show alert if password change is needed
         setUser(data.user);
-        // We ignore data.require_change for blocking now
       } else {
         setError(data.message);
       }
@@ -53,10 +54,31 @@ export default function Login({ setUser }) {
       setLoading(false);
     }
   };
+  
+  const handleForgotSubmit = async (e) => {
+      e.preventDefault();
+      setLoading(true);
+      setError('');
+      
+      try {
+          const { data } = await axios.post('/api/public/forgot-password', { enrollment_no: enrollment });
+          if(data.status === 'success') {
+              alert('Request Sent! The librarian will review your request.');
+              setView('login');
+              setPassword('');
+          } else {
+              setError(data.message);
+          }
+      } catch (err) {
+          setError(err.response?.data?.message || 'Failed to send request');
+      } finally {
+          setLoading(false);
+      }
+  };
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
-    // Logic preserved for Settings page or future use, but not for login blocking
+    // Logic preserved
   };
 
   return (
@@ -79,12 +101,16 @@ export default function Login({ setUser }) {
             {/* Divider */}
             <div className="w-16 h-1 bg-blue-100 rounded-full mb-8"></div>
            
-           <h2 className="text-2xl font-bold text-slate-900 mb-2">
-             {requireChange ? "Set New Password" : "Welcome Back"}
-           </h2>
-           <p className="text-sm text-slate-500 font-medium">
-             {requireChange ? "Secure your account by verifying your details" : "Access your digital library portal"}
-           </p>
+           {view !== 'forgot' && (
+             <>
+               <h2 className="text-2xl font-bold text-slate-900 mb-2">
+                 {requireChange ? "Set New Password" : "Welcome Back"}
+               </h2>
+               <p className="text-sm text-slate-500 font-medium">
+                 {requireChange ? "Secure your account by verifying your details" : "Access your digital library portal"}
+               </p>
+             </>
+           )}
         </div>
 
         {error && (
@@ -93,7 +119,41 @@ export default function Login({ setUser }) {
           </div>
         )}
 
-        {!requireChange ? (
+        {view === 'forgot' ? (
+           <form onSubmit={handleForgotSubmit} className="space-y-5 animate-fade-in">
+             <div className="text-center mb-4">
+                <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-2">
+                    <Key size={24} />
+                </div>
+                <h3 className="text-lg font-bold text-slate-800">Reset Password</h3>
+                <p className="text-sm text-slate-500">Enter your enrollment number to request a reset.</p>
+             </div>
+             
+             <CustomInput 
+              label="Enrollment Number"
+              type="text"
+              value={enrollment}
+              onChange={(e) => setEnrollment(e.target.value)}
+              placeholder="e.g. 210101"
+            />
+
+            <button 
+              type="submit" 
+              disabled={loading}
+              className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20 active:scale-[0.98] disabled:opacity-70 disabled:scale-100 mt-2"
+            >
+              {loading ? 'Sending Request...' : 'Send Request'}
+            </button>
+            
+            <button 
+                type="button"
+                onClick={() => { setView('login'); setError(''); }}
+                className="w-full py-2 text-slate-500 font-medium text-sm hover:text-slate-700"
+              >
+                Back to Login
+              </button>
+           </form>
+        ) : !requireChange ? (
           <form onSubmit={handleSubmit} className="space-y-5">
             <CustomInput 
               label="Enrollment Number"
@@ -119,7 +179,17 @@ export default function Login({ setUser }) {
               {loading ? 'Verifying...' : 'Login'}
             </button>
             
-            <p className="text-xs text-center text-slate-400 mt-4">
+          <div className="text-center mt-4">
+              <button 
+                type="button"
+                onClick={() => setView('forgot')}
+                className="text-sm text-blue-600 font-medium hover:underline"
+              >
+                Forgot Password?
+              </button>
+            </div>
+
+            <p className="text-xs text-center text-slate-400 mt-2">
               First time? Use your enrollment number as password.
             </p>
           </form>
