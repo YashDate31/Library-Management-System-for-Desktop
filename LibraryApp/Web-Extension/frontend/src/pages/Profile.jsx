@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { Camera } from 'lucide-react';
-import Skeleton from '../components/ui/Skeleton';
+import { Camera, Mail, GraduationCap, Building2, Calendar, Book, Clock, RefreshCw, Key, ShieldCheck, CheckCircle2, Shield } from 'lucide-react';
+import { SkeletonCard } from '../components/ui/Skeleton';
 import ErrorMessage from '../components/ui/ErrorMessage';
-import ImageWithSkeleton from '../components/ui/ImageWithSkeleton';
+import { motion } from 'framer-motion';
 
 export default function Profile({ user }) {
   const [policies, setPolicies] = useState(null);
@@ -27,11 +27,9 @@ export default function Profile({ user }) {
       }
     };
     
-    // Load saved profile photo from localStorage
+    // Load saved profile photo
     const savedPhoto = localStorage.getItem('profilePhoto');
-    if (savedPhoto) {
-      setProfilePhoto(savedPhoto);
-    }
+    if (savedPhoto) setProfilePhoto(savedPhoto);
     
     fetchPolicies();
   }, []);
@@ -40,13 +38,11 @@ export default function Profile({ user }) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Check file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       alert('File size must be less than 5MB');
       return;
     }
 
-    // Check file type
     if (!file.type.startsWith('image/')) {
       alert('Please select an image file');
       return;
@@ -60,14 +56,9 @@ export default function Profile({ user }) {
       localStorage.setItem('profilePhoto', photoData);
       setUploadingPhoto(false);
     };
-    reader.onerror = () => {
-      alert('Failed to read file');
-      setUploadingPhoto(false);
-    };
     reader.readAsDataURL(file);
   };
 
-  // Base profile uses props for immediate display
   const profile = {
     name: user?.name || "Student",
     id: user?.enrollment_no || "N/A",
@@ -76,138 +67,163 @@ export default function Profile({ user }) {
     email: user?.email || "N/A",
   };
 
+  const InfoRow = ({ icon: Icon, label, value, loading }) => (
+    <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-slate-100 dark:border-slate-800/50">
+        <div className="bg-white dark:bg-slate-800 p-2.5 rounded-full shadow-sm text-slate-500 dark:text-slate-400 shrink-0 transition-colors">
+            <Icon size={20} />
+        </div>
+        <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-0.5 transition-colors">{label}</p>
+            <p className="text-slate-900 dark:text-white font-semibold truncate transition-colors">
+                {loading ? <div className="h-5 w-24 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"/> : value}
+            </p>
+        </div>
+    </div>
+  );
+
   return (
-    <div className="max-w-6xl mx-auto pb-10 font-sans">
+    <div className="max-w-7xl mx-auto px-4 pb-20 font-sans">
       
-      {/* Grid Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Page Title */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight mb-1 transition-colors">Student Profile</h1>
+        <p className="text-slate-500 dark:text-slate-400 transition-colors">Manage your account settings and preferences.</p>
+      </div>
+
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="grid grid-cols-1 lg:grid-cols-3 gap-8"
+      >
         
-        {/* Left Column */}
+        {/* Left Column: Digital ID Card */}
         <div className="space-y-6">
           
-          {/* Profile Card */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 flex flex-col items-center text-center">
-            <div className="w-32 h-32 rounded-full overflow-hidden mb-6 border-4 border-slate-50 relative group">
-               <img
-                 src={profilePhoto || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name)}&background=2563eb&color=fff&size=256`}
-                 alt={profile.name}
-                 className="w-full h-full object-cover"
-               />
-               <button
-                 onClick={() => fileInputRef.current?.click()}
-                 disabled={uploadingPhoto}
-                 className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-               >
-                 <Camera className="w-6 h-6 text-white" />
-               </button>
-               <input
-                 ref={fileInputRef}
-                 type="file"
-                 accept="image/*"
-                 onChange={handlePhotoUpload}
-                 className="hidden"
-               />
-            </div>
-            
-            <h2 className="text-2xl font-bold text-slate-800 mb-1">{profile.name}</h2>
-            <p className="text-slate-500 font-medium mb-6">{profile.id}</p>
-            
-            <Link 
-              to="/settings" 
-              className="w-full py-2.5 bg-brand-blue hover:bg-blue-600 text-white font-semibold rounded-lg transition-colors"
-            >
-              Edit Profile
-            </Link>
+          {/* Main ID Card */}
+          <div className="relative group perspective-1000">
+             <div className="absolute inset-0 bg-blue-600 rounded-3xl blur-xl opacity-20 group-hover:opacity-30 transition-opacity duration-500"></div>
+             <div className="relative bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-8 text-white shadow-2xl overflow-hidden flex flex-col items-center text-center">
+                
+                {/* Decorative Pattern */}
+                <div className="absolute top-0 left-0 w-full h-full opacity-10">
+                    <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+                        <defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="white" strokeWidth="1"/></pattern></defs>
+                        <rect width="100%" height="100%" fill="url(#grid)" />
+                    </svg>
+                </div>
+
+                {/* Avatar */}
+                <div className="relative mb-4 group-hover:scale-105 transition-transform duration-300">
+                    <div className="w-28 h-28 rounded-full border-4 border-white/30 shadow-lg overflow-hidden relative z-10 bg-white">
+                        <img
+                            src={profilePhoto || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name)}&background=random&color=fff&size=256`}
+                            alt={profile.name}
+                            className="w-full h-full object-cover"
+                        />
+                        <button
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={uploadingPhoto}
+                            className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
+                        >
+                            <Camera className="w-8 h-8 text-white drop-shadow-md" />
+                        </button>
+                         <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={handlePhotoUpload}
+                            className="hidden"
+                        />
+                    </div>
+                </div>
+
+                {/* Name & ID */}
+                <div className="relative z-10">
+                    <h2 className="text-2xl font-bold mb-1">{profile.name}</h2>
+                    <p className="text-blue-200 font-mono tracking-wider text-sm opacity-90">{profile.id}</p>
+                </div>
+
+                {/* Department Badge */}
+                <div className="relative z-10 mt-6 bg-white/10 backdrop-blur-md border border-white/20 px-4 py-1.5 rounded-full">
+                    <span className="text-xs font-bold tracking-wide uppercase">{profile.department} • Year {profile.year}</span>
+                </div>
+
+             </div>
           </div>
           
-          {/* Library Status */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-            <h3 className="text-base font-bold text-slate-900 mb-4">Library Status</h3>
-            <div className="space-y-3">
-              <div className="bg-green-100/60 text-green-700 px-4 py-2 rounded-lg text-sm font-semibold flex items-center justify-center">
-                Active Membership
-              </div>
-              <div className="bg-blue-100/60 text-blue-700 px-4 py-2 rounded-lg text-sm font-semibold flex items-center justify-center">
-                No Outstanding Fines
-              </div>
-            </div>
+          {/* Status Pills */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 transition-colors">
+             <h3 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-4 transition-colors">Current Status</h3>
+             <div className="space-y-3">
+               <div className="flex items-center gap-3 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 px-4 py-3 rounded-xl border border-emerald-100 dark:border-emerald-900/30 transition-colors">
+                 <div className="bg-emerald-100 dark:bg-emerald-800/50 p-1.5 rounded-full"><CheckCircle2 size={16} /></div>
+                 <span className="font-semibold text-sm">Active Membership</span>
+               </div>
+               <div className="flex items-center gap-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 px-4 py-3 rounded-xl border border-blue-100 dark:border-blue-900/30 transition-colors">
+                 <div className="bg-blue-100 dark:bg-blue-800/50 p-1.5 rounded-full"><ShieldCheck size={16} /></div>
+                 <span className="font-semibold text-sm">No Outstanding Fines</span>
+               </div>
+             </div>
           </div>
           
         </div>
         
-        {/* Right Column */}
-        <div className="lg:col-span-2 space-y-6">
+        {/* Right Column: Info Grids */}
+        <div className="lg:col-span-2 space-y-8">
           
-          {/* Academic Information */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8">
-            <h3 className="text-lg font-bold text-slate-900 mb-6">Academic Information</h3>
-            
-            <div className="space-y-0">
-              <div className="flex flex-col sm:flex-row sm:items-center py-4 border-b border-slate-100 last:border-0 last:pb-0 font-medium">
-                <span className="text-slate-400 w-48 shrink-0">Department</span>
-                <span className="text-slate-800">{profile.department}</span>
-              </div>
-              
-              <div className="flex flex-col sm:flex-row sm:items-center py-4 border-b border-slate-100 last:border-0 last:pb-0 font-medium">
-                <span className="text-slate-400 w-48 shrink-0">Year of Study</span>
-                <span className="text-slate-800">{profile.year}</span>
-              </div>
-              
-              <div className="flex flex-col sm:flex-row sm:items-center py-4 border-b border-slate-100 last:border-0 last:pb-0 font-medium">
-                <span className="text-slate-400 w-48 shrink-0">Email Address</span>
-                <span className="text-slate-800">{profile.email}</span>
-              </div>
+          {/* Academic Info */}
+          <section>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2 transition-colors">
+                <GraduationCap className="text-blue-500" /> Academic Information
+            </h3>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 p-6 grid grid-cols-1 md:grid-cols-2 gap-4 transition-colors">
+                <InfoRow icon={Building2} label="Department" value={profile.department} />
+                <InfoRow icon={Calendar} label="Current Year" value={profile.year} />
+                <InfoRow icon={Mail} label="Email Address" value={profile.email} />
+                <InfoRow icon={Shield} label="Student ID" value={profile.id} />
             </div>
-          </div>
+          </section>
           
-          {/* Borrowing Privileges */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8">
-            <h3 className="text-lg font-bold text-slate-900 mb-6">Borrowing Privileges</h3>
-            
-            <div className="space-y-0">
-              <div className="flex flex-col sm:flex-row sm:items-center py-4 border-b border-slate-100 last:border-0 last:pb-0 font-medium">
-                <span className="text-slate-400 w-48 shrink-0">Max Books Allowed</span>
-                <span className="text-slate-800">
-                   {loading ? <Skeleton className="h-5 w-24" /> : error ? <span className="text-red-400 text-sm">Error</span> : `${policies?.max_books} Books`}
-                </span>
-              </div>
-              
-              <div className="flex flex-col sm:flex-row sm:items-center py-4 border-b border-slate-100 last:border-0 last:pb-0 font-medium">
-                <span className="text-slate-400 w-48 shrink-0">Loan Duration</span>
-                <span className="text-slate-800">
-                   {loading ? <Skeleton className="h-5 w-20" /> : error ? <span className="text-red-400 text-sm">Error</span> : policies?.loan_duration}
-                </span>
-              </div>
-              
-              <div className="flex flex-col sm:flex-row sm:items-center py-4 border-b border-slate-100 last:border-0 last:pb-0 font-medium">
-                <span className="text-slate-400 w-48 shrink-0">Renewal Limits</span>
-                <span className="text-slate-800">
-                   {loading ? <Skeleton className="h-5 w-40" /> : error ? <span className="text-red-400 text-sm">Error</span> : policies?.renewal_limit}
-                </span>
-              </div>
+          {/* Library Privileges */}
+          <section>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2 transition-colors">
+                <Book className="text-purple-500" /> Borrowing Privileges
+            </h3>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 p-6 grid grid-cols-1 md:grid-cols-3 gap-4 transition-colors">
+                <InfoRow icon={Book} label="Max Books" value={`${policies?.max_books || 0} Books`} loading={loading} />
+                <InfoRow icon={Clock} label="Loan Duration" value={`${policies?.loan_duration || 0} Days`} loading={loading} />
+                <InfoRow icon={RefreshCw} label="Renewals" value={`${policies?.renewal_limit || 0} Times`} loading={loading} />
             </div>
-          </div>
-          
-           {/* Account & Security */}
-           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8">
-            <h3 className="text-lg font-bold text-slate-900 mb-6">Account & Security</h3>
-            
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-2">
-              <div>
-                <span className="text-slate-800 font-medium block mb-1">Password</span>
-                <span className="text-slate-400 text-sm flex items-center gap-2">
-                   Last changed on 
-                   {loading ? <Skeleton className="h-4 w-24 translate-y-0.5" /> : error ? 'Unknown' : policies?.password_last_changed}
-                </span>
-              </div>
-              <Link to="/settings" className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-colors text-sm">
-                Change Password
-              </Link>
+          </section>
+
+          {/* Account Settings */}
+          <section>
+             <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2 transition-colors">
+                <Key className="text-slate-500 dark:text-slate-400" /> Security
+            </h3>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 p-6 flex flex-col md:flex-row items-center justify-between gap-4 transition-colors">
+                 <div className="flex items-center gap-4">
+                     <div className="bg-orange-50 dark:bg-orange-900/20 p-3 rounded-full text-orange-600 dark:text-orange-400">
+                         <Key size={24} />
+                     </div>
+                     <div>
+                         <h4 className="font-bold text-slate-900 dark:text-white transition-colors">Password</h4>
+                         <p className="text-sm text-slate-500 dark:text-slate-400 transition-colors">
+                             Last changed: {loading ? 'Loading...' : policies?.password_last_changed || 'Unknown'}
+                         </p>
+                     </div>
+                 </div>
+                 <Link 
+                   to="/settings" 
+                   className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-blue-600 dark:hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-slate-200 dark:shadow-blue-900/30"
+                 >
+                   Change Password
+                 </Link>
             </div>
-          </div>
+          </section>
           
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }
