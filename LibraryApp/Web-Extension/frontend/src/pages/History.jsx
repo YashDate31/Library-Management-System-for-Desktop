@@ -4,7 +4,7 @@ import { CheckCircle, AlertTriangle, Award, BookOpen, DollarSign, Calendar, Hist
 import EmptyState from '../components/ui/EmptyState';
 import { Link } from 'react-router-dom';
 
-export default function History() {
+export default function History({ user }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -117,13 +117,13 @@ export default function History() {
             {/* Total Fines Paid */}
             <div className="bg-white rounded-xl p-5 border border-slate-100 text-center">
               <p className="text-slate-600 font-medium text-sm mb-2">Total Fines Paid</p>
-              <p className="text-4xl font-black text-slate-900">${stats.total_fines || 0}.00</p>
+              <p className="text-4xl font-black text-slate-900">{stats.total_fines || 0}</p>
             </div>
 
             {/* Academic Year */}
             <div className="bg-white rounded-xl p-5 border border-slate-100 text-center">
               <p className="text-slate-600 font-medium text-sm mb-2">Academic Year</p>
-              <p className="text-4xl font-black text-slate-900">3rd</p>
+              <p className="text-4xl font-black text-slate-900">{user?.year || 'N/A'}</p>
             </div>
           </div>
 

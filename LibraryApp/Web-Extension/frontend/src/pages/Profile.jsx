@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
+import { Camera } from 'lucide-react';
 import Skeleton from '../components/ui/Skeleton';
 import ErrorMessage from '../components/ui/ErrorMessage';
 import ImageWithSkeleton from '../components/ui/ImageWithSkeleton';
@@ -9,6 +10,9 @@ export default function Profile({ user }) {
   const [policies, setPolicies] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [profilePhoto, setProfilePhoto] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     const fetchPolicies = async () => {
@@ -23,8 +27,45 @@ export default function Profile({ user }) {
       }
     };
     
+    // Load saved profile photo from localStorage
+    const savedPhoto = localStorage.getItem('profilePhoto');
+    if (savedPhoto) {
+      setProfilePhoto(savedPhoto);
+    }
+    
     fetchPolicies();
   }, []);
+
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Check file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('File size must be less than 5MB');
+      return;
+    }
+
+    // Check file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+
+    setUploadingPhoto(true);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const photoData = event.target.result;
+      setProfilePhoto(photoData);
+      localStorage.setItem('profilePhoto', photoData);
+      setUploadingPhoto(false);
+    };
+    reader.onerror = () => {
+      alert('Failed to read file');
+      setUploadingPhoto(false);
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Base profile uses props for immediate display
   const profile = {
@@ -46,12 +87,25 @@ export default function Profile({ user }) {
           
           {/* Profile Card */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 flex flex-col items-center text-center">
-            <div className="w-32 h-32 rounded-full overflow-hidden mb-6 border-4 border-slate-50 relative">
-               <ImageWithSkeleton
-                 src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=687&q=80"
-                 alt="Profile"
-                 className="w-full h-full"
-                 skeletonClassName="bg-slate-200"
+            <div className="w-32 h-32 rounded-full overflow-hidden mb-6 border-4 border-slate-50 relative group">
+               <img
+                 src={profilePhoto || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name)}&background=2563eb&color=fff&size=256`}
+                 alt={profile.name}
+                 className="w-full h-full object-cover"
+               />
+               <button
+                 onClick={() => fileInputRef.current?.click()}
+                 disabled={uploadingPhoto}
+                 className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+               >
+                 <Camera className="w-6 h-6 text-white" />
+               </button>
+               <input
+                 ref={fileInputRef}
+                 type="file"
+                 accept="image/*"
+                 onChange={handlePhotoUpload}
+                 className="hidden"
                />
             </div>
             

@@ -6,6 +6,7 @@ import BookDetails from './pages/BookDetails';
 import Settings from './pages/Settings';
 import Profile from './pages/Profile';
 import History from './pages/History';
+import MyBooks from './pages/MyBooks';
 import Services from './pages/Services';
 import Layout from './components/Layout';
 import { useState, useEffect } from 'react';
@@ -54,7 +55,8 @@ function App() {
               <Route path="/" element={user ? <Dashboard user={user} /> : <Navigate to="/login" />} />
               <Route path="/books" element={user ? <Catalogue /> : <Navigate to="/login" />} />
               <Route path="/books/:bookId" element={user ? <BookDetails /> : <Navigate to="/login" />} />
-              <Route path="/history" element={user ? <History /> : <Navigate to="/login" />} />
+              <Route path="/my-books" element={user ? <MyBooks user={user} /> : <Navigate to="/login" />} />
+              <Route path="/history" element={user ? <History user={user} /> : <Navigate to="/login" />} />
               <Route path="/services" element={user ? <Services /> : <Navigate to="/login" />} />
               <Route path="/requests" element={user ? <Services /> : <Navigate to="/login" />} />
               <Route path="/profile" element={user ? <Profile user={user} /> : <Navigate to="/login" />} />

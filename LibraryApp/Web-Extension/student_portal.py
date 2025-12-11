@@ -676,18 +676,30 @@ def api_admin_all_requests():
 
 @app.route('/api/admin/request-history')
 def api_admin_request_history():
-    """Fetch processed (approved/rejected) requests for history view"""
+    """Fetch processed (approved/rejected) requests with search and filter"""
     conn = get_portal_db()
     cursor = conn.cursor()
     
-    # Fetch approved and rejected requests
-    cursor.execute("""
+    # Get filter params
+    q = request.args.get('q', '').strip()
+    days = request.args.get('days')
+    
+    # Base query
+    query = """
         SELECT id as req_id, enrollment_no, request_type, details, status, created_at
         FROM requests
         WHERE status IN ('approved', 'rejected')
-        ORDER BY created_at DESC
-        LIMIT 50
-    """)
+    """
+    params = []
+    
+    # Date filter
+    if days and days.isdigit():
+        query += " AND created_at >= date('now', '-' || ? || ' days')"
+        params.append(days)
+    
+    query += " ORDER BY created_at DESC LIMIT 100"
+    
+    cursor.execute(query, params)
     processed_requests = []
     for row in cursor.fetchall():
         req = dict(row)
@@ -699,68 +711,105 @@ def api_admin_request_history():
     
     conn.close()
     
-    # Get student names from library DB
+    # Get student names and filter by search query
     conn_lib = get_library_db()
     cursor_lib = conn_lib.cursor()
+    
+    filtered_requests = []
     
     for req in processed_requests:
         cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (req['enrollment_no'],))
         student = cursor_lib.fetchone()
-        req['student_name'] = student['name'] if student else 'Unknown'
+        student_name = student['name'] if student else 'Unknown'
+        req['student_name'] = student_name
+        
+        # Apply search filter (if search query exists)
+        if q:
+            search_str = q.lower()
+            if (search_str in req['enrollment_no'].lower() or 
+                search_str in student_name.lower() or 
+                search_str in req['request_type'].lower()):
+                filtered_requests.append(req)
+        else:
+            filtered_requests.append(req)
     
     conn_lib.close()
     
-    # Count by status
-    approved_count = len([r for r in processed_requests if r['status'] == 'approved'])
-    rejected_count = len([r for r in processed_requests if r['status'] == 'rejected'])
+    # Count by status (of filtered results)
+    approved_count = len([r for r in filtered_requests if r['status'] == 'approved'])
+    rejected_count = len([r for r in filtered_requests if r['status'] == 'rejected'])
     
     return jsonify({
-        'history': processed_requests,
+        'history': filtered_requests,
         'counts': {
             'approved': approved_count,
             'rejected': rejected_count,
-            'total': len(processed_requests)
+            'total': len(filtered_requests)
         }
     })
 
 @app.route('/api/admin/deletion-history')
 def api_admin_deletion_history():
-    """Fetch processed deletion requests for history view"""
+    """Fetch processed deletion requests with search and filter"""
     conn = get_portal_db()
     cursor = conn.cursor()
     
-    # Fetch approved and rejected deletions
-    cursor.execute("""
+    # Get filter params
+    q = request.args.get('q', '').strip()
+    days = request.args.get('days')
+    
+    # Base query
+    query = """
         SELECT id, student_id, reason, status, timestamp
         FROM deletion_requests
         WHERE status IN ('approved', 'rejected')
-        ORDER BY timestamp DESC
-        LIMIT 50
-    """)
+    """
+    params = []
+    
+    # Date filter
+    if days and days.isdigit():
+        query += " AND timestamp >= date('now', '-' || ? || ' days')"
+        params.append(days)
+    
+    query += " ORDER BY timestamp DESC LIMIT 100"
+    
+    cursor.execute(query, params)
     processed_deletions = [dict(row) for row in cursor.fetchall()]
     conn.close()
     
-    # Get student names from library DB
+    # Get student names and filter
     conn_lib = get_library_db()
     cursor_lib = conn_lib.cursor()
+    
+    filtered_deletions = []
     
     for req in processed_deletions:
         cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (req['student_id'],))
         student = cursor_lib.fetchone()
-        req['student_name'] = student['name'] if student else 'Deleted Account'
+        student_name = student['name'] if student else 'Deleted Account'
+        req['student_name'] = student_name
+        
+        # Apply search filter
+        if q:
+            search_str = q.lower()
+            if (search_str in req['student_id'].lower() or 
+                search_str in student_name.lower()):
+                filtered_deletions.append(req)
+        else:
+            filtered_deletions.append(req)
     
     conn_lib.close()
     
-    # Count by status
-    approved_count = len([r for r in processed_deletions if r['status'] == 'approved'])
-    rejected_count = len([r for r in processed_deletions if r['status'] == 'rejected'])
+    # Count by status (of filtered results)
+    approved_count = len([r for r in filtered_deletions if r['status'] == 'approved'])
+    rejected_count = len([r for r in filtered_deletions if r['status'] == 'rejected'])
     
     return jsonify({
-        'history': processed_deletions,
+        'history': filtered_deletions,
         'counts': {
             'approved': approved_count,
             'rejected': rejected_count,
-            'total': len(processed_deletions)
+            'total': len(filtered_deletions)
         }
     })
 

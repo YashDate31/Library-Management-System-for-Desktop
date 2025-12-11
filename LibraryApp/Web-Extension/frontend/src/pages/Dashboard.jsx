@@ -20,13 +20,22 @@ export default function Dashboard({ user }) {
     analytics: { badges: [], stats: {} }
   });
   const [loading, setLoading] = useState(true);
+  const [profilePhoto, setProfilePhoto] = useState(null);
 
-  // Mock data fallback if API fails (for development robustness)
-  const mockUser = {
-    name: user?.name || "Student Name",
-    year: user?.year || "3rd Year",
-    department: user?.department || "Computer Science",
-    avatar: "https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&auto=format&fit=crop&w=687&q=80"
+  // Load profile photo from localStorage
+  useEffect(() => {
+    const savedPhoto = localStorage.getItem('profilePhoto');
+    if (savedPhoto) {
+      setProfilePhoto(savedPhoto);
+    }
+  }, []);
+
+  // Use actual user data from session
+  const displayUser = {
+    name: user?.name || "Student",
+    year: user?.year || "N/A",
+    department: user?.department || "Computer Department",
+    avatar: profilePhoto || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'Student')}&background=2563eb&color=fff&size=128`
   };
 
   useEffect(() => {
@@ -51,8 +60,8 @@ export default function Dashboard({ user }) {
     </div>
   );
 
-  const overdueBooks = data.borrows.filter(b => b.status === 'overdue');
-  const activeBorrows = data.borrows;
+  const overdueBooks = (data.borrows || []).filter(b => b.status === 'overdue');
+  const activeBorrows = data.borrows || [];
 
   const getLoanStatus = (book) => {
     if (book.status === 'overdue') return 'overdue';
@@ -71,24 +80,44 @@ export default function Dashboard({ user }) {
         <Card className="flex items-center gap-4 bg-gradient-to-br from-blue-600 to-blue-700 text-white border-none shadow-blue-200 shadow-xl">
           <div className="shrink-0 relative">
              <img 
-               src={mockUser.avatar} 
+               src={displayUser.avatar} 
                alt="Profile" 
                className="w-16 h-16 rounded-full border-2 border-white/30 object-cover shadow-sm"
              />
              <div className="absolute bottom-0 right-0 w-4 h-4 bg-emerald-400 border-2 border-blue-700 rounded-full"></div>
           </div>
           <div className="flex-1 min-w-0">
-             <h2 className="text-xl font-heading font-bold truncate">{mockUser.name}</h2>
+             <h2 className="text-xl font-heading font-bold truncate">{displayUser.name}</h2>
              <div className="flex items-center text-blue-100 text-sm gap-2">
-               <span>{mockUser.year}</span>
+               <span>{displayUser.year}</span>
                <span>•</span>
-               <span className="truncate">{mockUser.department}</span>
+               <span className="truncate">{displayUser.department}</span>
              </div>
+          </div>
+          <div className="text-right">
+            <div className="text-2xl font-black">{activeBorrows.length}</div>
+            <div className="text-xs text-blue-100">Books</div>
           </div>
         </Card>
 
+        {/* Quick Stats */}
+        <div className="grid grid-cols-3 gap-3">
+          <Card className="text-center p-4">
+            <div className="text-2xl font-black text-blue-600">{activeBorrows.length}</div>
+            <div className="text-xs text-slate-600 mt-1">Active</div>
+          </Card>
+          <Card className="text-center p-4">
+            <div className="text-2xl font-black text-amber-600">{overdueBooks.length}</div>
+            <div className="text-xs text-slate-600 mt-1">Overdue</div>
+          </Card>
+          <Card className="text-center p-4">
+            <div className="text-2xl font-black text-green-600">{data.history?.length || 0}</div>
+            <div className="text-xs text-slate-600 mt-1">Returned</div>
+          </Card>
+        </div>
+
         {/* 2.5 Security Alert Card */}
-        {data.notifications.some(n => n.type === 'danger' && n.title === 'Security Alert') && (
+        {data.notifications?.some(n => n.type === 'danger' && n.title === 'Security Alert') && (
           <div className="animate-fade-in">
              <Card className="bg-red-50 border-red-100 shadow-sm relative overflow-hidden">
                <div className="absolute top-0 right-0 w-20 h-20 bg-red-100 rounded-bl-full -mr-10 -mt-10 opacity-50"></div>

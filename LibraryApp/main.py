@@ -7710,9 +7710,32 @@ Note: This is an automated email. Please find the attached formal overdue letter
             fg='#666'
         ).pack(anchor='w', padx=20, pady=(0, 10))
         
+        # History Filter Frame (Hidden by default)
+        self.request_filters_frame = tk.Frame(container, bg='white')
+        
+        filter_inner = tk.Frame(self.request_filters_frame, bg='#f8f9fa', relief='solid', bd=1)
+        filter_inner.pack(fill=tk.X, padx=1)
+        
+        tk.Label(filter_inner, text="🔍 Search:", font=('Segoe UI', 9), bg='#f8f9fa').pack(side=tk.LEFT, padx=(10, 5), pady=8)
+        
+        self.request_search_var = tk.StringVar()
+        self.request_search_var.trace("w", lambda *args: self.root.after(500, self._refresh_request_history))
+        tk.Entry(filter_inner, textvariable=self.request_search_var, width=25, font=('Segoe UI', 9)).pack(side=tk.LEFT, padx=5)
+        
+        tk.Label(filter_inner, text="📅 Period:", font=('Segoe UI', 9), bg='#f8f9fa').pack(side=tk.LEFT, padx=(15, 5))
+        
+        self.request_days_var = tk.StringVar(value="All Time")
+        days_combo = ttk.Combobox(filter_inner, textvariable=self.request_days_var, state="readonly", width=12, font=('Segoe UI', 9))
+        days_combo['values'] = ("Last 7 Days", "Last 30 Days", "Last 90 Days", "All Time")
+        days_combo.pack(side=tk.LEFT, padx=5)
+        days_combo.bind("<<ComboboxSelected>>", lambda e: self._refresh_request_history())
+        
         # Scrollable request list
-        list_frame = tk.Frame(container, bg='white', relief='solid', bd=1)
-        list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+        self.requests_list_frame = tk.Frame(container, bg='white', relief='solid', bd=1)
+        self.requests_list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+        
+        # Helper for canvas (use the new instance variable)
+        list_frame = self.requests_list_frame
         
         # Canvas for scrolling
         self.requests_canvas = tk.Canvas(list_frame, bg='white', highlightthickness=0)
@@ -7806,14 +7829,18 @@ Note: This is an automated email. Please find the attached formal overdue letter
         if self.show_request_history.get():
             # Switch to history mode
             self.history_toggle_btn.config(text="📋 View Pending", bg='#28a745')
+            if hasattr(self, 'request_filters_frame') and hasattr(self, 'requests_list_frame'):
+                self.request_filters_frame.pack(fill=tk.X, padx=20, pady=(0, 10), before=self.requests_list_frame)
             self._refresh_request_history()
         else:
             # Switch to pending mode
             self.history_toggle_btn.config(text="📜 View History", bg='#6c757d')
+            if hasattr(self, 'request_filters_frame'):
+                self.request_filters_frame.pack_forget()
             self._refresh_portal_requests()
     
     def _refresh_request_history(self):
-        """Fetch and display processed request history"""
+        """Fetch and display processed request history with filters"""
         # Clear existing
         for w in self.requests_container.winfo_children():
             w.destroy()
@@ -7821,8 +7848,19 @@ Note: This is an automated email. Please find the attached formal overdue letter
         try:
             import urllib.request
             import urllib.error
+            import urllib.parse
             
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/request-history"
+            # Prepare params
+            days_map = {
+                "Last 7 Days": "7",
+                "Last 30 Days": "30",
+                "Last 90 Days": "90",
+                "All Time": ""
+            }
+            days = days_map.get(self.request_days_var.get(), "") if hasattr(self, 'request_days_var') else ""
+            q = urllib.parse.quote(self.request_search_var.get().strip()) if hasattr(self, 'request_search_var') else ""
+            
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/request-history?q={q}&days={days}"
             req = urllib.request.Request(url)
             
             with urllib.request.urlopen(req, timeout=5) as response:
@@ -8256,9 +8294,31 @@ Note: This is an automated email. Please find the attached formal overdue letter
             pady=8
         ).pack(anchor='w')
         
+        # History Filter Frame (Hidden by default)
+        self.deletion_filters_frame = tk.Frame(container, bg='white')
+        
+        filter_inner = tk.Frame(self.deletion_filters_frame, bg='#f8f9fa', relief='solid', bd=1)
+        filter_inner.pack(fill=tk.X, padx=1)
+        
+        tk.Label(filter_inner, text="🔍 Search:", font=('Segoe UI', 9), bg='#f8f9fa').pack(side=tk.LEFT, padx=(10, 5), pady=8)
+        
+        self.deletion_search_var = tk.StringVar()
+        self.deletion_search_var.trace("w", lambda *args: self.root.after(500, self._refresh_deletion_history))
+        tk.Entry(filter_inner, textvariable=self.deletion_search_var, width=25, font=('Segoe UI', 9)).pack(side=tk.LEFT, padx=5)
+        
+        tk.Label(filter_inner, text="📅 Period:", font=('Segoe UI', 9), bg='#f8f9fa').pack(side=tk.LEFT, padx=(15, 5))
+        
+        self.deletion_days_var = tk.StringVar(value="All Time")
+        days_combo = ttk.Combobox(filter_inner, textvariable=self.deletion_days_var, state="readonly", width=12, font=('Segoe UI', 9))
+        days_combo['values'] = ("Last 7 Days", "Last 30 Days", "Last 90 Days", "All Time")
+        days_combo.pack(side=tk.LEFT, padx=5)
+        days_combo.bind("<<ComboboxSelected>>", lambda e: self._refresh_deletion_history())
+        
         # Scrollable list with proper width binding
-        list_frame = tk.Frame(container, bg='white', relief='solid', bd=1)
-        list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+        self.deletion_list_frame = tk.Frame(container, bg='white', relief='solid', bd=1)
+        self.deletion_list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+        
+        list_frame = self.deletion_list_frame
         
         self.deletion_canvas = tk.Canvas(list_frame, bg='white', highlightthickness=0)
         scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.deletion_canvas.yview)
@@ -8332,7 +8392,6 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     
         except Exception as e:
             self._show_empty_message(self.deletion_container, "Could not load requests", str(e))
-    
     def _toggle_deletion_history(self):
         """Toggle between pending deletions and history view"""
         current = self.show_deletion_history.get()
@@ -8341,14 +8400,18 @@ Note: This is an automated email. Please find the attached formal overdue letter
         if self.show_deletion_history.get():
             # Switch to history mode
             self.deletion_history_toggle_btn.config(text="📋 View Pending", bg='#28a745')
+            if hasattr(self, 'deletion_filters_frame') and hasattr(self, 'deletion_list_frame'):
+                self.deletion_filters_frame.pack(fill=tk.X, padx=20, pady=(0, 10), before=self.deletion_list_frame)
             self._refresh_deletion_history()
         else:
             # Switch to pending mode
             self.deletion_history_toggle_btn.config(text="📜 View History", bg='#6c757d')
+            if hasattr(self, 'deletion_filters_frame'):
+                self.deletion_filters_frame.pack_forget()
             self._refresh_deletion_requests()
     
     def _refresh_deletion_history(self):
-        """Fetch and display processed deletion history"""
+        """Fetch and display processed deletion history with filters"""
         # Clear existing
         for w in self.deletion_container.winfo_children():
             w.destroy()
@@ -8356,8 +8419,19 @@ Note: This is an automated email. Please find the attached formal overdue letter
         try:
             import urllib.request
             import urllib.error
+            import urllib.parse
             
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/deletion-history"
+            # Prepare params
+            days_map = {
+                "Last 7 Days": "7",
+                "Last 30 Days": "30",
+                "Last 90 Days": "90",
+                "All Time": ""
+            }
+            days = days_map.get(self.deletion_days_var.get(), "") if hasattr(self, 'deletion_days_var') else ""
+            q = urllib.parse.quote(self.deletion_search_var.get().strip()) if hasattr(self, 'deletion_search_var') else ""
+            
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/deletion-history?q={q}&days={days}"
             req = urllib.request.Request(url)
             
             with urllib.request.urlopen(req, timeout=5) as response:
