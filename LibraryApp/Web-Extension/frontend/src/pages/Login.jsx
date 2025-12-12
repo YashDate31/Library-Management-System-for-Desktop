@@ -19,6 +19,7 @@ const CustomInput = ({ label, type, value, onChange, placeholder, required = tru
 );
 
 export default function Login({ setUser }) {
+  const navigate = useNavigate();
   const [enrollment, setEnrollment] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -43,6 +44,7 @@ export default function Login({ setUser }) {
       if (data.status === 'success') {
         // Updated Logic: Always allow login, dashboard will show alert if password change is needed
         setUser(data.user);
+        navigate('/');
         // We ignore data.require_change for blocking now
       } else {
         setError(data.message);

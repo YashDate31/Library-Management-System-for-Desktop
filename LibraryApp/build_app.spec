@@ -1,4 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
 
@@ -10,17 +11,21 @@ a = Analysis(
         ('library.db', '.'),
         ('requirements.txt', '.'),
         ('logo.png', '.'),
+        ('Web-Extension/student_portal.py', 'Web-Extension'),
+        ('Web-Extension/portal.db', 'Web-Extension'),
+        ('Web-Extension/frontend/dist', 'Web-Extension/frontend/dist'),
     ],
     hiddenimports=[
         'pandas', 'openpyxl', 'docx', 'tkcalendar',
         'tkinter', 'tkinter.ttk', 'tkinter.messagebox', 'tkinter.filedialog',
         'matplotlib', 'matplotlib.pyplot', 'matplotlib.backends.backend_tkagg',
-        'matplotlib.figure', 'matplotlib.patches', 'numpy', 'xlsxwriter'
+        'matplotlib.figure', 'matplotlib.patches', 'numpy', 'xlsxwriter',
+        'flask', 'werkzeug', 'jinja2', 'click', 'itsdangerous', 'markupsafe'
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['Web-Extension/frontend/node_modules', 'Web-Extension/frontend/src'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,

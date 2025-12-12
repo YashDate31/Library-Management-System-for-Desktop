@@ -22,13 +22,15 @@ export default function Dashboard({ user }) {
   const [loading, setLoading] = useState(true);
   const [profilePhoto, setProfilePhoto] = useState(null);
 
-  // Load profile photo from localStorage
+  // Load profile photo from localStorage (user-specific)
   useEffect(() => {
-    const savedPhoto = localStorage.getItem('profilePhoto');
-    if (savedPhoto) {
-      setProfilePhoto(savedPhoto);
+    if (user?.enrollment_no) {
+      const savedPhoto = localStorage.getItem(`profilePhoto_${user.enrollment_no}`);
+      if (savedPhoto) {
+        setProfilePhoto(savedPhoto);
+      }
     }
-  }, []);
+  }, [user]);
 
   // Use actual user data from session
   const displayUser = {
