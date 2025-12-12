@@ -16,6 +16,47 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder='frontend/dist')
 app.secret_key = 'LIBRARY_PORTAL_SECRET_KEY_YASH_MVP'
 
+# --- Observability: Logging Middleware ---
+@app.after_request
+def log_request(response):
+    """Log every request to the access_logs table"""
+    if request.path.startswith('/static') or request.path.startswith('/assets'):
+        return response
+    
+    try:
+        # Use a separate thread to avoid slowing down the response
+        def write_log(endpoint, method, status):
+            try:
+                conn = get_portal_db()
+                cursor = conn.cursor()
+                cursor.execute("INSERT INTO access_logs (endpoint, method, status) VALUES (?, ?, ?)",
+                               (endpoint, method, status))
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                print(f"Logging failed: {e}")
+
+        threading.Thread(target=write_log, args=(request.path, request.method, response.status_code)).start()
+    except Exception:
+        pass
+        
+    return response
+
+def cleanup_logs():
+    """Delete logs older than 7 days"""
+    try:
+        conn = get_portal_db()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM access_logs WHERE timestamp < date('now', '-7 days')")
+        conn.commit()
+        conn.close()
+        print("System: Cleaned up old access logs.")
+    except Exception as e:
+        print(f"Log cleanup failed: {e}")
+
+# Run cleanup on startup
+threading.Thread(target=cleanup_logs).start()
+
 def get_library_db():
     """Read-Only Connection to Core Data"""
     db_path = os.path.join(os.path.dirname(BASE_DIR), 'library.db')
@@ -106,6 +147,17 @@ def init_portal_db():
             link TEXT,              -- Optional action link
             is_read INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # Access Logs Table (Observability)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS access_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            endpoint TEXT,
+            method TEXT,
+            status INTEGER,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
     
