@@ -6925,6 +6925,11 @@ Note: This is an automated email. Please find the attached formal overdue letter
         portal_notebook.add(broadcast_tab, text="📢 Broadcasts")
         self._create_broadcast_section(broadcast_tab)
 
+        # Sub-tab 6: Observability
+        observability_tab = tk.Frame(portal_notebook, bg='white')
+        portal_notebook.add(observability_tab, text="📈 Observability")
+        self._create_observability_section(observability_tab)
+
     def _create_broadcast_section(self, parent):
         """Create broadcast notice management section"""
         # Header
@@ -7148,6 +7153,143 @@ Note: This is an automated email. Please find the attached formal overdue letter
         # Store reference for refreshing
         # Line removed to fix NameError
         
+    def _create_observability_section(self, parent):
+        """Create observability section with Traffic Pulse graph"""
+        if not MATPLOTLIB_AVAILABLE:
+            self.create_analysis_unavailable_message(parent)
+            return
+
+        # Header
+        header_frame = tk.Frame(parent, bg='white')
+        header_frame.pack(fill=tk.X, padx=20, pady=(20, 10))
+        
+        tk.Label(
+            header_frame,
+            text="📈 Traffic Pulse",
+            font=('Segoe UI', 18, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        ).pack(side=tk.LEFT)
+        
+        # Refresh Button
+        tk.Button(
+            header_frame,
+            text="🔄 Refresh",
+            font=('Segoe UI', 9, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            relief='flat',
+            padx=12,
+            pady=4,
+            cursor='hand2',
+            command=lambda: self._refresh_traffic_graph(parent)
+        ).pack(side=tk.RIGHT)
+        
+        # Description
+        tk.Label(
+            parent,
+            text="Real-time visualization of server traffic and request load.",
+            font=('Segoe UI', 10),
+            bg='white',
+            fg='#666'
+        ).pack(padx=20, anchor='w', pady=(0, 20))
+
+        # Graph Container
+        self.traffic_graph_container = tk.Frame(parent, bg='white')
+        self.traffic_graph_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        
+        # Initial Plot
+        self._refresh_traffic_graph(parent)
+
+    def _refresh_traffic_graph(self, parent):
+        """Fetch logs and plot traffic"""
+        # Clear previous
+        for widget in self.traffic_graph_container.winfo_children():
+            widget.destroy()
+            
+        try:
+            # Connect to portal DB
+            portal_db_path = os.path.join(os.path.dirname(__file__), 'Web-Extension', 'portal.db')
+            if not os.path.exists(portal_db_path):
+                tk.Label(self.traffic_graph_container, text="Portal Database not found.\nStart the server to generate logs.", font=('Segoe UI', 12), bg='white', fg='#dc3545').pack(pady=50)
+                return
+                
+            conn = sqlite3.connect(portal_db_path)
+            cursor = conn.cursor()
+            
+            # Query requests per hour for the last 24 hours
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='access_logs'")
+            if not cursor.fetchone():
+               tk.Label(self.traffic_graph_container, text="Access Logs table not found.\nServer update required.", font=('Segoe UI', 12), bg='white', fg='#dc3545').pack(pady=50)
+               conn.close()
+               return
+
+            # Get recent traffic (last 24h) by hour
+            # Note: strftime('%H', timestamp) requires timestamp to be a valid string
+            cursor.execute("""
+                SELECT strftime('%H', timestamp) as hour, COUNT(*) as count
+                FROM access_logs
+                WHERE timestamp >= datetime('now', '-24 hours')
+                GROUP BY hour
+                ORDER BY hour
+            """)
+            data = cursor.fetchall()
+            conn.close()
+            
+            # Process data
+            hours_map = {row[0]: row[1] for row in data}
+            
+            # Generate full 24h timeline (last 24 hours from now) or just 00-23?
+            # Let's do a simple 00-23 plot for "Today" or just mapped to hours which is simpler
+            # A 24-hour rolling window might be complex to label.
+            # Let's stick to 00-23 clock hours for simplicity as typically used in such dashboards
+            
+            full_hours = [f"{h:02d}" for h in range(24)]
+            full_counts = [hours_map.get(h, 0) for h in full_hours]
+            
+            # Create Plot
+            fig = Figure(figsize=(8, 4), dpi=100)
+            fig.patch.set_facecolor('white')
+            ax = fig.add_subplot(111)
+            
+            # Plot bar chart
+            # Use a nice blue color
+            bars = ax.bar(full_hours, full_counts, color=self.colors['secondary'], alpha=0.8, width=0.6)
+            
+            # Styling
+            ax.set_title("Request Volume by Hour (Last 24 Hours)", fontsize=12, fontweight='bold', color=self.colors['accent'], pad=15)
+            ax.set_xlabel("Hour of Day (00-23)", fontsize=10, color='#555')
+            ax.set_ylabel("Number of Requests", fontsize=10, color='#555')
+            
+            # Ticks styling
+            ax.tick_params(axis='x', colors='#666', labelsize=8)
+            ax.tick_params(axis='y', colors='#666', labelsize=8)
+            
+            # Grid
+            ax.grid(True, axis='y', linestyle='--', alpha=0.2, color='#999')
+            
+            # Remove top and right spines
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_color('#ddd')
+            ax.spines['bottom'].set_color('#ddd')
+            
+            # Annotate non-zero bars
+            for bar in bars:
+                height = bar.get_height()
+                if height > 0:
+                    ax.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                            f'{int(height)}',
+                            ha='center', va='bottom', fontsize=8, color=self.colors['accent'])
+
+            # Embed in Tkinter
+            canvas = FigureCanvasTkAgg(fig, master=self.traffic_graph_container)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+            
+        except Exception as e:
+            tk.Label(self.traffic_graph_container, text=f"Error loading traffic graph: {e}", bg='white', fg='red').pack(pady=50)
+
     def _create_qr_access_section(self, parent):
         """Create comprehensive QR code access section with server dashboard"""
         # Main container - fill entire space
