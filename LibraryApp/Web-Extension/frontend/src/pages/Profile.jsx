@@ -53,7 +53,10 @@ export default function Profile({ user }) {
     reader.onload = (event) => {
       const photoData = event.target.result;
       setProfilePhoto(photoData);
-      localStorage.setItem('profilePhoto', photoData);
+      // Save with user-specific key
+      if (user?.enrollment_no) {
+        localStorage.setItem(`profilePhoto_${user.enrollment_no}`, photoData);
+      }
       setUploadingPhoto(false);
     };
     reader.readAsDataURL(file);
