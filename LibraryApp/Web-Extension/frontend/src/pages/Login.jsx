@@ -91,8 +91,43 @@ export default function Login({ setUser }) {
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
-    // Logic preserved
+    
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+    
+    setLoading(true);
+    setError('');
+    
+    try {
+      const { data } = await axios.post('/api/change_password', { 
+        new_password: newPassword 
+      });
+      
+      if (data.status === 'success') {
+        // Password changed successfully, now complete login
+        const userObj = {
+          enrollment_no: data.enrollment_no || enrollment,
+          name: data.name
+        };
+        setUser(userObj);
+      } else {
+
+        setError(data.message || 'Failed to change password');
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to change password');
+    } finally {
+      setLoading(false);
+    }
   };
+
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-blue-50/50 text-slate-800">
