@@ -8,13 +8,97 @@ import smtplib
 import threading
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from functools import wraps
+import time
+from collections import defaultdict
 
 # --- Configuration ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Serve React Build
-# Serve React Build
 app = Flask(__name__, static_folder='frontend/dist')
 app.secret_key = 'LIBRARY_PORTAL_SECRET_KEY_YASH_MVP'
+
+# --- Rate Limiter (Custom Implementation - No External Dependencies) ---
+class RateLimiter:
+    """In-memory sliding window rate limiter"""
+    def __init__(self):
+        self.requests = defaultdict(list)  # {key: [timestamps]}
+        self.lock = threading.Lock()
+        
+        # Rate limit configurations: {endpoint_pattern: (max_requests, window_seconds)}
+        self.limits = {
+            '/api/login': (5, 60),           # 5 attempts per minute
+            '/api/public/forgot-password': (3, 300),  # 3 requests per 5 minutes
+            '/api/change_password': (3, 60),  # 3 attempts per minute
+            'default': (60, 60)               # 60 requests per minute (default)
+        }
+    
+    def _get_client_key(self, endpoint):
+        """Generate unique key for client + endpoint"""
+        # Use IP address as identifier
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr) or 'unknown'
+        return f"{client_ip}:{endpoint}"
+    
+    def _cleanup_old_requests(self, key, window_seconds):
+        """Remove requests outside the time window"""
+        cutoff = time.time() - window_seconds
+        self.requests[key] = [ts for ts in self.requests[key] if ts > cutoff]
+    
+    def is_rate_limited(self, endpoint):
+        """Check if request should be rate limited"""
+        # Get limit config for endpoint
+        limit_config = self.limits.get(endpoint, self.limits['default'])
+        max_requests, window_seconds = limit_config
+        
+        key = self._get_client_key(endpoint)
+        current_time = time.time()
+        
+        with self.lock:
+            self._cleanup_old_requests(key, window_seconds)
+            
+            if len(self.requests[key]) >= max_requests:
+                return True, max_requests, window_seconds
+            
+            # Record this request
+            self.requests[key].append(current_time)
+            return False, max_requests, window_seconds
+    
+    def get_retry_after(self, endpoint):
+        """Get seconds until rate limit resets"""
+        limit_config = self.limits.get(endpoint, self.limits['default'])
+        _, window_seconds = limit_config
+        key = self._get_client_key(endpoint)
+        
+        if self.requests[key]:
+            oldest = min(self.requests[key])
+            return int(window_seconds - (time.time() - oldest)) + 1
+        return window_seconds
+
+# Initialize rate limiter
+rate_limiter = RateLimiter()
+
+def rate_limit(f):
+    """Decorator to apply rate limiting to an endpoint"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        endpoint = request.path
+        is_limited, max_req, window = rate_limiter.is_rate_limited(endpoint)
+        
+        if is_limited:
+            retry_after = rate_limiter.get_retry_after(endpoint)
+            response = jsonify({
+                'status': 'error',
+                'message': f'Too many requests. Please try again in {retry_after} seconds.',
+                'retry_after': retry_after
+            })
+            response.status_code = 429
+            response.headers['Retry-After'] = str(retry_after)
+            return response
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 
 # --- Observability: Logging Middleware ---
 @app.after_request
@@ -298,6 +382,7 @@ def request_deletion():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/api/login', methods=['POST'])
+@rate_limit
 def api_login():
     data = request.json
     enrollment = data.get('enrollment_no')
@@ -375,6 +460,7 @@ def api_login():
     })
 
 @app.route('/api/public/forgot-password', methods=['POST'])
+@rate_limit
 def api_forgot_password():
     data = request.json
     enrollment = data.get('enrollment_no')
@@ -429,6 +515,7 @@ def api_forgot_password():
         return jsonify({'status': 'error', 'message': 'Internal Server Error'}), 500
 
 @app.route('/api/change_password', methods=['POST'])
+@rate_limit
 def api_change_password():
     if not session.get('logged_in'):
         return jsonify({'status': 'error', 'message': 'Not logged in'}), 401
