@@ -132,11 +132,13 @@ def generate_csrf_token():
     import secrets
     return secrets.token_hex(32)
 
-# Endpoints excluded from CSRF protection (login needs cookie first, public endpoints)
+# Endpoints excluded from CSRF protection (login flow needs cookie first)
 CSRF_EXCLUDED_ENDPOINTS = [
     '/api/login',
     '/api/public/forgot-password',
+    '/api/change_password',  # Part of first-time login flow
 ]
+
 
 @app.before_request
 def csrf_protect():
@@ -607,7 +609,16 @@ def api_change_password():
     
     if not new_password or len(new_password) < 6:
         return jsonify({'status': 'error', 'message': 'Password must be at least 6 characters'}), 400
-        
+    
+    # Get student name from library.db
+    conn_lib = get_library_db()
+    cursor_lib = conn_lib.cursor()
+    cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (enrollment,))
+    student = cursor_lib.fetchone()
+    conn_lib.close()
+    student_name = student['name'] if student else enrollment
+    
+    # Update password in portal.db
     conn = get_portal_db()
     cursor = conn.cursor()
     
@@ -623,7 +634,13 @@ def api_change_password():
     conn.commit()
     conn.close()
     
-    return jsonify({'status': 'success', 'message': 'Password updated successfully'})
+    return jsonify({
+        'status': 'success', 
+        'message': 'Password updated successfully',
+        'name': student_name,
+        'enrollment_no': enrollment
+    })
+
 
 @app.route('/api/settings', methods=['POST'])
 def api_update_settings():
