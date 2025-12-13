@@ -33,6 +33,13 @@ Thumbs.db
 library.db
 LibraryApp/library.db
 
+# Portal sandbox database
+LibraryApp/Web-Extension/portal.db
+
+# Secret keys (security)
+.secret_key
+LibraryApp/Web-Extension/.secret_key
+
 # Executables and installers
 *.exe
 *.msi
