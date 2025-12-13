@@ -9469,149 +9469,323 @@ Note: This is an automated email. Please find the attached formal overdue letter
             messagebox.showerror("Error", f"Failed to {action} deletion: {str(e)}")
     
     def _create_password_reset_section(self, parent):
-        """Create password reset section with auth dashboard"""
-        # Main container
+        """Create password reset section with auth dashboard - PREMIUM UI"""
+        # Main container with subtle gradient effect
         container = tk.Frame(parent, bg='white')
         container.pack(fill=tk.BOTH, expand=True)
         
-        # Header
+        # ════════════════════════════════════════════════════════════════
+        # HEADER SECTION - Clean and Modern
+        # ════════════════════════════════════════════════════════════════
         header_frame = tk.Frame(container, bg='white')
-        header_frame.pack(fill=tk.X, padx=20, pady=(20, 15))
+        header_frame.pack(fill=tk.X, padx=25, pady=(20, 20))
+        
+        # Title with icon
+        title_frame = tk.Frame(header_frame, bg='white')
+        title_frame.pack(side=tk.LEFT)
         
         tk.Label(
-            header_frame,
-            text="🔑 Password Reset & Auth Status",
-            font=('Segoe UI', 18, 'bold'),
-            bg='white',
-            fg=self.colors['accent']
-        ).pack(side=tk.LEFT)
+            title_frame,
+            text="🔐",
+            font=('Segoe UI', 22),
+            bg='white'
+        ).pack(side=tk.LEFT, padx=(0, 10))
         
+        title_text_frame = tk.Frame(title_frame, bg='white')
+        title_text_frame.pack(side=tk.LEFT)
+        
+        tk.Label(
+            title_text_frame,
+            text="Password & Authentication",
+            font=('Segoe UI', 16, 'bold'),
+            bg='white',
+            fg='#1a1a2e'
+        ).pack(anchor='w')
+        
+        tk.Label(
+            title_text_frame,
+            text="Manage student credentials and access",
+            font=('Segoe UI', 9),
+            bg='white',
+            fg='#888'
+        ).pack(anchor='w')
+        
+        # Refresh button - Premium styling
         refresh_btn = tk.Button(
             header_frame,
-            text="🔄 Refresh",
+            text="⟳ Sync Data",
             font=('Segoe UI', 10, 'bold'),
-            bg=self.colors['secondary'],
+            bg='#4f46e5',
             fg='white',
-            padx=15,
-            pady=5,
+            padx=18,
+            pady=8,
             cursor='hand2',
             relief='flat',
+            activebackground='#4338ca',
+            activeforeground='white',
             command=self._refresh_auth_stats
         )
         refresh_btn.pack(side=tk.RIGHT)
         
-        # Auth Stats Dashboard
-        stats_frame = tk.Frame(container, bg='#f8f9fa', relief='solid', bd=1)
-        stats_frame.pack(fill=tk.X, padx=20, pady=(0, 15))
-        
-        stats_inner = tk.Frame(stats_frame, bg='#f8f9fa')
-        stats_inner.pack(padx=20, pady=15)
+        # ════════════════════════════════════════════════════════════════
+        # STATS DASHBOARD - Premium Cards
+        # ════════════════════════════════════════════════════════════════
+        stats_frame = tk.Frame(container, bg='white')
+        stats_frame.pack(fill=tk.X, padx=25, pady=(0, 20))
         
         self.auth_stats_labels = {}
-        stat_items = [
-            ("📊 Total Registered", "#17a2b8", "total_registered"),
-            ("✅ Active Users", "#28a745", "active_users"),
-            ("⏳ Pending Change", "#fd7e14", "pending_change")
+        stat_configs = [
+            ("Total Registered", "#0ea5e9", "#e0f2fe", "total_registered", "📊"),
+            ("Active Users", "#10b981", "#d1fae5", "active_users", "✅"),
+            ("Pending Change", "#f59e0b", "#fef3c7", "pending_change", "⏳")
         ]
         
-        for label, color, key in stat_items:
-            stat_card = tk.Frame(stats_inner, bg='white', relief='solid', bd=1)
-            stat_card.pack(side=tk.LEFT, padx=10, ipadx=20, ipady=10)
+        for i, (label, accent, bg_color, key, icon) in enumerate(stat_configs):
+            card = tk.Frame(stats_frame, bg=bg_color, relief='flat', bd=0)
+            card.pack(side=tk.LEFT, padx=(0 if i == 0 else 12, 0), ipadx=25, ipady=12)
             
+            # Icon
+            tk.Label(card, text=icon, font=('Segoe UI', 16), bg=bg_color).pack(anchor='w', padx=(10, 0))
+            
+            # Value
             count_label = tk.Label(
-                stat_card,
+                card,
                 text="0",
-                font=('Segoe UI', 24, 'bold'),
-                bg='white',
-                fg=color
+                font=('Segoe UI', 28, 'bold'),
+                bg=bg_color,
+                fg=accent
             )
-            count_label.pack()
+            count_label.pack(anchor='w', padx=(10, 0))
             self.auth_stats_labels[key] = count_label
             
+            # Label
             tk.Label(
-                stat_card,
+                card,
                 text=label,
-                font=('Segoe UI', 9),
-                bg='white',
-                fg='#666'
-            ).pack()
+                font=('Segoe UI', 9, 'bold'),
+                bg=bg_color,
+                fg='#555'
+            ).pack(anchor='w', padx=(10, 10))
         
-        # Two column layout
+        # ════════════════════════════════════════════════════════════════
+        # TWO COLUMN LAYOUT
+        # ════════════════════════════════════════════════════════════════
         columns_frame = tk.Frame(container, bg='white')
-        columns_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
-        columns_frame.columnconfigure(0, weight=1)
-        columns_frame.columnconfigure(1, weight=1)
+        columns_frame.pack(fill=tk.BOTH, expand=True, padx=25, pady=(0, 20))
+        columns_frame.columnconfigure(0, weight=1, minsize=350)
+        columns_frame.columnconfigure(1, weight=1, minsize=350)
+        columns_frame.rowconfigure(0, weight=1)
         
-        # Left column - Reset form
-        form_card = tk.Frame(columns_frame, bg='#f8f9fa', relief='solid', bd=1)
-        form_card.grid(row=0, column=0, sticky='nsew', padx=(0, 10), pady=5)
+        # ════════════════════════════════════════════════════════════════
+        # LEFT COLUMN - Password Tools
+        # ════════════════════════════════════════════════════════════════
+        left_card = tk.Frame(columns_frame, bg='#f8fafc', relief='flat', bd=0)
+        left_card.grid(row=0, column=0, sticky='nsew', padx=(0, 12), pady=0)
         
+        # Card Header
+        left_header = tk.Frame(left_card, bg='#0f172a')
+        left_header.pack(fill=tk.X)
         tk.Label(
-            form_card,
-            text="🔐 Reset Student Password",
-            font=('Segoe UI', 12, 'bold'),
-            bg='#f1f3f4',
-            fg='#333',
+            left_header,
+            text="🛠️ Password Management",
+            font=('Segoe UI', 11, 'bold'),
+            bg='#0f172a',
+            fg='white',
             padx=15,
-            pady=10
-        ).pack(fill=tk.X)
-        
-        inner = tk.Frame(form_card, bg='#f8f9fa')
-        inner.pack(padx=20, pady=20)
-        
-        tk.Label(
-            inner,
-            text="Enter Enrollment Number:",
-            font=('Segoe UI', 10, 'bold'),
-            bg='#f8f9fa',
-            fg='#333'
+            pady=12
         ).pack(anchor='w')
         
+        left_inner = tk.Frame(left_card, bg='#f8fafc')
+        left_inner.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        
+        # ─────────────────────────────────────────
+        # TOOL 1: Student Search
+        # ─────────────────────────────────────────
+        search_card = tk.Frame(left_inner, bg='white', relief='flat', bd=0)
+        search_card.pack(fill=tk.X, pady=(0, 12))
+        
+        # Search header with accent bar
+        search_accent = tk.Frame(search_card, bg='#3b82f6', height=4)
+        search_accent.pack(fill=tk.X)
+        
+        search_content = tk.Frame(search_card, bg='white')
+        search_content.pack(fill=tk.X, padx=12, pady=12)
+        
+        tk.Label(
+            search_content,
+            text="🔍 Find Student",
+            font=('Segoe UI', 10, 'bold'),
+            bg='white',
+            fg='#1e40af'
+        ).pack(anchor='w')
+        
+        tk.Label(
+            search_content,
+            text="Search by name or enrollment to reset password",
+            font=('Segoe UI', 8),
+            bg='white',
+            fg='#888'
+        ).pack(anchor='w', pady=(0, 8))
+        
+        search_row = tk.Frame(search_content, bg='white')
+        search_row.pack(fill=tk.X)
+        
+        self.student_search_entry = tk.Entry(
+            search_row,
+            font=('Segoe UI', 10),
+            relief='solid',
+            bd=1,
+            fg='#666'
+        )
+        self.student_search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=6)
+        self.student_search_entry.insert(0, "Type name or ID...")
+        self.student_search_entry.bind("<FocusIn>", lambda e: (self.student_search_entry.delete(0, tk.END), self.student_search_entry.config(fg='#333')) if self.student_search_entry.get() == "Type name or ID..." else None)
+        self.student_search_entry.bind("<Return>", lambda e: self._search_student_for_reset())
+        
+        search_btn = tk.Button(
+            search_row,
+            text="Search",
+            font=('Segoe UI', 9, 'bold'),
+            bg='#3b82f6',
+            fg='white',
+            padx=14,
+            pady=4,
+            cursor='hand2',
+            relief='flat',
+            activebackground='#2563eb',
+            command=self._search_student_for_reset
+        )
+        search_btn.pack(side=tk.LEFT, padx=(8, 0))
+        
+        # Search results container
+        self.search_results_container = tk.Frame(search_content, bg='white')
+        self.search_results_container.pack(fill=tk.X, pady=(8, 0))
+        
+        # ─────────────────────────────────────────
+        # TOOL 2: Quick Reset
+        # ─────────────────────────────────────────
+        reset_card = tk.Frame(left_inner, bg='white', relief='flat', bd=0)
+        reset_card.pack(fill=tk.X, pady=(0, 12))
+        
+        reset_accent = tk.Frame(reset_card, bg='#f59e0b', height=4)
+        reset_accent.pack(fill=tk.X)
+        
+        reset_content = tk.Frame(reset_card, bg='white')
+        reset_content.pack(fill=tk.X, padx=12, pady=12)
+        
+        tk.Label(
+            reset_content,
+            text="⚡ Quick Reset",
+            font=('Segoe UI', 10, 'bold'),
+            bg='white',
+            fg='#b45309'
+        ).pack(anchor='w')
+        
+        tk.Label(
+            reset_content,
+            text="Directly reset using enrollment number",
+            font=('Segoe UI', 8),
+            bg='white',
+            fg='#888'
+        ).pack(anchor='w', pady=(0, 8))
+        
+        reset_row = tk.Frame(reset_content, bg='white')
+        reset_row.pack(fill=tk.X)
+        
         self.password_reset_enrollment = tk.Entry(
-            inner,
-            font=('Segoe UI', 12),
-            width=25,
+            reset_row,
+            font=('Segoe UI', 10),
             relief='solid',
             bd=1
         )
-        self.password_reset_enrollment.pack(pady=(8, 12), ipady=5)
+        self.password_reset_enrollment.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=6)
         
-        tk.Button(
-            inner,
-            text="🔑 Reset Password",
-            font=('Segoe UI', 10, 'bold'),
-            bg='#fd7e14',
+        reset_btn = tk.Button(
+            reset_row,
+            text="Reset",
+            font=('Segoe UI', 9, 'bold'),
+            bg='#f59e0b',
             fg='white',
-            padx=20,
-            pady=8,
+            padx=14,
+            pady=4,
             cursor='hand2',
             relief='flat',
+            activebackground='#d97706',
             command=self._handle_password_reset
-        ).pack()
+        )
+        reset_btn.pack(side=tk.LEFT, padx=(8, 0))
+        
+        # ─────────────────────────────────────────
+        # TOOL 3: Bulk Reset (Danger Zone)
+        # ─────────────────────────────────────────
+        danger_card = tk.Frame(left_inner, bg='#fef2f2', relief='flat', bd=0)
+        danger_card.pack(fill=tk.X)
+        
+        danger_accent = tk.Frame(danger_card, bg='#dc2626', height=4)
+        danger_accent.pack(fill=tk.X)
+        
+        danger_content = tk.Frame(danger_card, bg='#fef2f2')
+        danger_content.pack(fill=tk.X, padx=12, pady=12)
         
         tk.Label(
-            inner,
-            text="Password will be reset to enrollment number",
-            font=('Segoe UI', 8, 'italic'),
-            bg='#f8f9fa',
+            danger_content,
+            text="⚠️ Batch Reset",
+            font=('Segoe UI', 10, 'bold'),
+            bg='#fef2f2',
+            fg='#b91c1c'
+        ).pack(anchor='w')
+        
+        tk.Label(
+            danger_content,
+            text="Reset ALL students in a year. Use with extreme caution!",
+            font=('Segoe UI', 8),
+            bg='#fef2f2',
             fg='#888'
-        ).pack(pady=(10, 0))
+        ).pack(anchor='w', pady=(0, 8))
         
-        # Right column - Recent resets
-        resets_card = tk.Frame(columns_frame, bg='#f8f9fa', relief='solid', bd=1)
-        resets_card.grid(row=0, column=1, sticky='nsew', padx=(10, 0), pady=5)
+        danger_row = tk.Frame(danger_content, bg='#fef2f2')
+        danger_row.pack(fill=tk.X)
         
+        self.bulk_reset_year_var = tk.StringVar(value="Select Year...")
+        year_combo = ttk.Combobox(danger_row, textvariable=self.bulk_reset_year_var, state="readonly", width=18, font=('Segoe UI', 10))
+        year_combo['values'] = ("1st Year", "2nd Year", "3rd Year", "All Years")
+        year_combo.pack(side=tk.LEFT, ipady=3)
+        
+        danger_btn = tk.Button(
+            danger_row,
+            text="⚠ Reset All",
+            font=('Segoe UI', 9, 'bold'),
+            bg='#dc2626',
+            fg='white',
+            padx=12,
+            pady=4,
+            cursor='hand2',
+            relief='flat',
+            activebackground='#b91c1c',
+            command=self._handle_bulk_reset
+        )
+        danger_btn.pack(side=tk.LEFT, padx=(8, 0))
+        
+        # ════════════════════════════════════════════════════════════════
+        # RIGHT COLUMN - Recent Activity
+        # ════════════════════════════════════════════════════════════════
+        right_card = tk.Frame(columns_frame, bg='#f8fafc', relief='flat', bd=0)
+        right_card.grid(row=0, column=1, sticky='nsew', padx=(12, 0), pady=0)
+        
+        # Card Header
+        right_header = tk.Frame(right_card, bg='#0f172a')
+        right_header.pack(fill=tk.X)
         tk.Label(
-            resets_card,
-            text="📋 Recent Password Resets",
-            font=('Segoe UI', 12, 'bold'),
-            bg='#f1f3f4',
-            fg='#333',
+            right_header,
+            text="📜 Recent Password Resets",
+            font=('Segoe UI', 11, 'bold'),
+            bg='#0f172a',
+            fg='white',
             padx=15,
-            pady=10
-        ).pack(fill=tk.X)
+            pady=12
+        ).pack(anchor='w')
         
-        self.recent_resets_container = tk.Frame(resets_card, bg='#f8f9fa')
+        self.recent_resets_container = tk.Frame(right_card, bg='#f8fafc')
         self.recent_resets_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
         
         # Load initial stats
@@ -9619,6 +9793,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
     
     def _handle_password_reset(self):
         """Handle password reset action"""
+
         enrollment = self.password_reset_enrollment.get().strip()
         
         if not enrollment:
@@ -9649,10 +9824,188 @@ Note: This is an automated email. Please find the attached formal overdue letter
         # Refresh stats after reset
         self._refresh_auth_stats()
     
+    def _search_student_for_reset(self):
+        """Search for student by name or enrollment number"""
+        query = self.student_search_entry.get().strip()
+        
+        if not query or query == "Name or Enrollment...":
+            messagebox.showwarning("Search", "Please enter a name or enrollment number to search.")
+            return
+        
+        # Clear previous results
+        for w in self.search_results_container.winfo_children():
+            w.destroy()
+        
+        try:
+            # Search in local database
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            # Search by name or enrollment (case-insensitive)
+            cursor.execute("""
+                SELECT enrollment_no, name, year, department 
+                FROM students 
+                WHERE LOWER(name) LIKE ? OR enrollment_no LIKE ?
+                LIMIT 5
+            """, (f"%{query.lower()}%", f"%{query}%"))
+            
+            results = cursor.fetchall()
+            conn.close()
+            
+            if not results:
+                tk.Label(
+                    self.search_results_container,
+                    text="No students found",
+                    font=('Segoe UI', 9, 'italic'),
+                    bg='#e8f4fd',
+                    fg='#888'
+                ).pack(anchor='w')
+                return
+            
+            # Display results as clickable items
+            for student in results:
+                row = tk.Frame(self.search_results_container, bg='white', relief='solid', bd=1)
+                row.pack(fill=tk.X, pady=2)
+                
+                info_frame = tk.Frame(row, bg='white')
+                info_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=3)
+                
+                tk.Label(
+                    info_frame,
+                    text=f"{student[1]}",  # Name
+                    font=('Segoe UI', 9, 'bold'),
+                    bg='white',
+                    fg='#333'
+                ).pack(anchor='w')
+                
+                tk.Label(
+                    info_frame,
+                    text=f"{student[0]} | {student[2] or 'N/A'} | {student[3] or 'N/A'}",
+                    font=('Segoe UI', 7),
+                    bg='white',
+                    fg='#888'
+                ).pack(anchor='w')
+                
+                # Reset button for this student
+                reset_btn = tk.Button(
+                    row,
+                    text="Reset",
+                    font=('Segoe UI', 8, 'bold'),
+                    bg='#fd7e14',
+                    fg='white',
+                    padx=6,
+                    pady=1,
+                    cursor='hand2',
+                    relief='flat',
+                    command=lambda e=student[0]: self._reset_student_password(e)
+                )
+                reset_btn.pack(side=tk.RIGHT, padx=5, pady=3)
+                
+        except Exception as e:
+            tk.Label(
+                self.search_results_container,
+                text=f"Search error: {str(e)[:30]}",
+                font=('Segoe UI', 8),
+                bg='#e8f4fd',
+                fg='#dc3545'
+            ).pack(anchor='w')
+    
+    def _reset_student_password(self, enrollment):
+        """Reset a specific student's password (from search results)"""
+        if not messagebox.askyesno("Confirm Reset", 
+            f"Reset password for: {enrollment}?\n\nPassword will be set to enrollment number."):
+            return
+        
+        try:
+            import urllib.request
+            
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/password-reset/{enrollment}"
+            req = urllib.request.Request(url, method='POST', data=b'')
+            
+            with urllib.request.urlopen(req, timeout=5) as response:
+                result = json.loads(response.read().decode())
+                if result.get('status') == 'success':
+                    messagebox.showinfo("Success", f"Password reset for {enrollment}!")
+                    self._refresh_auth_stats()
+                else:
+                    messagebox.showerror("Error", result.get('message', 'Reset failed'))
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed: {str(e)}")
+    
+    def _handle_bulk_reset(self):
+        """Handle bulk password reset for a year group"""
+        year = self.bulk_reset_year_var.get()
+        
+        if year == "Select Year":
+            messagebox.showwarning("Select Year", "Please select a year group first.")
+            return
+        
+        # Map display value to database year value
+        year_map = {
+            "1st Year": "1st",
+            "2nd Year": "2nd", 
+            "3rd Year": "3rd",
+            "All Years": None  # None means all years
+        }
+        db_year = year_map.get(year)
+        
+        # Get count of students affected
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            if db_year:
+                cursor.execute("SELECT COUNT(*) FROM students WHERE year = ?", (db_year,))
+            else:
+                cursor.execute("SELECT COUNT(*) FROM students")
+            
+            count = cursor.fetchone()[0]
+            conn.close()
+            
+            if count == 0:
+                messagebox.showinfo("No Students", f"No students found for {year}.")
+                return
+            
+            # Confirmation with student count
+            if not messagebox.askyesno("⚠️ Bulk Reset Warning", 
+                f"This will reset passwords for {count} students in {year}!\n\n"
+                "All their passwords will be set to their enrollment numbers.\n\n"
+                "Are you absolutely sure?"):
+                return
+            
+            # Second confirmation
+            if not messagebox.askyesno("Final Confirmation", 
+                f"LAST CHANCE: Reset {count} passwords?\n\nThis action cannot be undone!"):
+                return
+            
+            # Perform bulk reset via API
+            import urllib.request
+            import urllib.parse
+            
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/bulk-password-reset"
+            data = json.dumps({'year': db_year}).encode('utf-8')
+            req = urllib.request.Request(url, method='POST', data=data, 
+                                         headers={'Content-Type': 'application/json'})
+            
+            with urllib.request.urlopen(req, timeout=30) as response:
+                result = json.loads(response.read().decode())
+                if result.get('status') == 'success':
+                    reset_count = result.get('count', count)
+                    messagebox.showinfo("✅ Bulk Reset Complete", 
+                        f"Successfully reset {reset_count} passwords!\n\n"
+                        "Students will be prompted to change on next login.")
+                    self._refresh_auth_stats()
+                else:
+                    messagebox.showerror("Error", result.get('message', 'Bulk reset failed'))
+                    
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to perform bulk reset: {str(e)}")
+    
     def _refresh_auth_stats(self):
         """Fetch and display auth statistics and recent password resets"""
         if not WEB_PORTAL_AVAILABLE:
             return
+
 
         try:
             import urllib.request
