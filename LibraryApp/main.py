@@ -7164,12 +7164,18 @@ Note: This is an automated email. Please find the attached formal overdue letter
         v_scrollbar = ttk.Scrollbar(parent, orient='vertical', command=main_canvas.yview)
         scrollable_frame = tk.Frame(main_canvas, bg='white')
         
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: main_canvas.configure(scrollregion=main_canvas.bbox("all"))
-        )
+        # Store window id for width updates
+        window_id = main_canvas.create_window((0, 0), window=scrollable_frame, anchor='nw')
         
-        main_canvas.create_window((0, 0), window=scrollable_frame, anchor='nw')
+        def _on_frame_configure(e):
+            main_canvas.configure(scrollregion=main_canvas.bbox("all"))
+        
+        def _on_canvas_configure(e):
+            # Make scrollable_frame fill the full canvas width
+            main_canvas.itemconfig(window_id, width=e.width)
+        
+        scrollable_frame.bind("<Configure>", _on_frame_configure)
+        main_canvas.bind("<Configure>", _on_canvas_configure)
         main_canvas.configure(yscrollcommand=v_scrollbar.set)
         
         v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -7179,6 +7185,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
             main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         main_canvas.bind_all("<MouseWheel>", _on_mousewheel)
         parent.bind("<Destroy>", lambda e: main_canvas.unbind_all("<MouseWheel>"), add='+')
+
 
         # Header Section
         header_frame = tk.Frame(scrollable_frame, bg='white')
