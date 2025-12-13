@@ -44,9 +44,21 @@ export default function Login({ setUser }) {
       });
       
       if (data.status === 'success') {
-        setUser(data.user);
+        // Check if password change is required (first login)
+        if (data.require_change) {
+          setRequireChange(true);
+          setLoading(false);
+          return;
+        }
+        
+        // Construct user object from API response
+        const userObj = {
+          enrollment_no: data.enrollment_no,
+          name: data.name
+        };
+        setUser(userObj);
       } else {
-        setError(data.message);
+        setError(data.message || 'Login failed');
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed');
@@ -54,6 +66,7 @@ export default function Login({ setUser }) {
       setLoading(false);
     }
   };
+
   
   const handleForgotSubmit = async (e) => {
       e.preventDefault();
