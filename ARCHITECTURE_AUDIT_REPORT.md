@@ -843,7 +843,7 @@ CREATE TABLE academic_years (
 | **Login Mechanism**    | Hardcoded credentials | Session + Password hash     | ⚠️/✅              |
 | **Password Storage**   | N/A (admin only)      | Werkzeug hash               | ✅ Excellent       |
 | **Session Management** | N/A                   | Flask session + secure key  | ✅ Good            |
-| **CSRF Protection**    | N/A                   | Not implemented             | ⚠️ Pending         |
+| **CSRF Protection**    | N/A                   | ✅ Double-submit cookie     | ✅ **IMPLEMENTED** |
 | **Rate Limiting**      | None                  | ✅ Custom sliding window    | ✅ **IMPLEMENTED** |
 | **Input Validation**   | Basic checks          | Basic checks                | ⚠️ Partial         |
 | **Secret Key**         | N/A                   | Auto-generated + persistent | ✅ **IMPLEMENTED** |
@@ -881,13 +881,16 @@ CLEAR_WIPE_PASSWORD = "clear123"
    - Persisted to `.secret_key` file (gitignored)
    - Environment variable override supported
 
-3. **No CSRF Protection** ⚠️ PENDING
-   - Flask-WTF not implemented
-   - State-changing operations still vulnerable
+3. **~~No CSRF Protection~~** ✅ IMPLEMENTED
+   - Double-submit cookie pattern (no Flask-WTF dependency)
+   - Backend: `@app.before_request` validates X-CSRF-Token header
+   - Frontend: axios interceptor adds token to POST/PUT/DELETE
+   - Cookie: `csrf_token` with SameSite=Lax, 24h expiry
+   - Excluded: `/api/login`, `/api/public/forgot-password`
 
-4. **Session Configuration** ⚠️ PARTIAL
+4. **Session Configuration** ✅ RESOLVED
    - Secret key now secure
-   - Consider server-side sessions for enhanced security
+   - CSRF protection adds extra layer
 
 #### 6.2.3 SQL Injection Analysis
 
