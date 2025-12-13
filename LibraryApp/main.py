@@ -7154,54 +7154,391 @@ Note: This is an automated email. Please find the attached formal overdue letter
         # Line removed to fix NameError
         
     def _create_observability_section(self, parent):
-        """Create observability section with Traffic Pulse graph"""
+        """Create comprehensive observability dashboard with multiple charts and insights"""
         if not MATPLOTLIB_AVAILABLE:
             self.create_analysis_unavailable_message(parent)
             return
 
-        # Header
-        header_frame = tk.Frame(parent, bg='white')
+        # Create scrollable container
+        main_canvas = tk.Canvas(parent, bg='white', highlightthickness=0)
+        v_scrollbar = ttk.Scrollbar(parent, orient='vertical', command=main_canvas.yview)
+        scrollable_frame = tk.Frame(main_canvas, bg='white')
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: main_canvas.configure(scrollregion=main_canvas.bbox("all"))
+        )
+        
+        main_canvas.create_window((0, 0), window=scrollable_frame, anchor='nw')
+        main_canvas.configure(yscrollcommand=v_scrollbar.set)
+        
+        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        main_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        def _on_mousewheel(event):
+            main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        main_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        parent.bind("<Destroy>", lambda e: main_canvas.unbind_all("<MouseWheel>"), add='+')
+
+        # Header Section
+        header_frame = tk.Frame(scrollable_frame, bg='white')
         header_frame.pack(fill=tk.X, padx=20, pady=(20, 10))
         
-        tk.Label(
-            header_frame,
-            text="📈 Traffic Pulse",
-            font=('Segoe UI', 18, 'bold'),
-            bg='white',
-            fg=self.colors['accent']
-        ).pack(side=tk.LEFT)
+        title_container = tk.Frame(header_frame, bg='white')
+        title_container.pack(side=tk.LEFT)
         
-        # Refresh Button
-        tk.Button(
-            header_frame,
-            text="🔄 Refresh",
-            font=('Segoe UI', 9, 'bold'),
-            bg=self.colors['secondary'],
-            fg='white',
-            relief='flat',
-            padx=12,
-            pady=4,
-            cursor='hand2',
-            command=lambda: self._refresh_traffic_graph(parent)
-        ).pack(side=tk.RIGHT)
+        tk.Label(title_container, text="📈 Observability Dashboard",
+            font=('Segoe UI', 20, 'bold'), bg='white', fg=self.colors['accent']).pack(anchor='w')
+        tk.Label(title_container, text="Real-time server traffic analytics and performance insights",
+            font=('Segoe UI', 10), bg='white', fg='#666').pack(anchor='w')
         
-        # Description
-        tk.Label(
-            parent,
-            text="Real-time visualization of server traffic and request load.",
-            font=('Segoe UI', 10),
-            bg='white',
-            fg='#666'
-        ).pack(padx=20, anchor='w', pady=(0, 20))
+        tk.Button(header_frame, text="🔄 Refresh All", font=('Segoe UI', 10, 'bold'),
+            bg=self.colors['secondary'], fg='white', relief='flat', padx=15, pady=6, cursor='hand2',
+            command=lambda: self._refresh_observability_dashboard(scrollable_frame)).pack(side=tk.RIGHT)
+        
+        self.obs_last_updated = tk.Label(header_frame, text="", font=('Segoe UI', 9), bg='white', fg='#888')
+        self.obs_last_updated.pack(side=tk.RIGHT, padx=15)
+        
+        ttk.Separator(scrollable_frame, orient='horizontal').pack(fill=tk.X, padx=20, pady=10)
+        
+        # KPI Cards, Charts, and Insights containers
+        self.obs_kpi_container = tk.Frame(scrollable_frame, bg='white')
+        self.obs_kpi_container.pack(fill=tk.X, padx=20, pady=(5, 15))
+        
+        self.obs_charts_row1 = tk.Frame(scrollable_frame, bg='white')
+        self.obs_charts_row1.pack(fill=tk.X, padx=20, pady=10)
+        
+        self.obs_charts_row2 = tk.Frame(scrollable_frame, bg='white')
+        self.obs_charts_row2.pack(fill=tk.X, padx=20, pady=10)
+        
+        self.obs_trend_container = tk.Frame(scrollable_frame, bg='white')
+        self.obs_trend_container.pack(fill=tk.X, padx=20, pady=10)
+        
+        self.obs_insights_container = tk.Frame(scrollable_frame, bg='#f0f8ff', relief='solid', bd=1)
+        self.obs_insights_container.pack(fill=tk.X, padx=20, pady=(10, 20))
+        
+        self.obs_scrollable_frame = scrollable_frame
+        self.traffic_graph_container = self.obs_charts_row1
+        
+        self._refresh_observability_dashboard(scrollable_frame)
 
-        # Graph Container
-        self.traffic_graph_container = tk.Frame(parent, bg='white')
-        self.traffic_graph_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+    def _refresh_observability_dashboard(self, parent):
+        """Refresh all observability components with comprehensive analytics"""
+        # Clear all containers
+        for container in [self.obs_kpi_container, self.obs_charts_row1, 
+                          self.obs_charts_row2, self.obs_trend_container, self.obs_insights_container]:
+            for widget in container.winfo_children():
+                widget.destroy()
         
-        # Initial Plot
-        self._refresh_traffic_graph(parent)
+        try:
+            # Connect to portal DB
+            portal_db_path = os.path.join(os.path.dirname(__file__), 'Web-Extension', 'portal.db')
+            if not os.path.exists(portal_db_path):
+                tk.Label(self.obs_kpi_container, text="⚠️ Portal Database not found. Start the server to generate logs.",
+                    font=('Segoe UI', 12), bg='white', fg='#dc3545').pack(pady=30)
+                return
+            
+            conn = sqlite3.connect(portal_db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            # Check if table exists
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='access_logs'")
+            if not cursor.fetchone():
+                tk.Label(self.obs_kpi_container, text="⚠️ Access Logs table not found.",
+                    font=('Segoe UI', 12), bg='white', fg='#dc3545').pack(pady=30)
+                conn.close()
+                return
+
+            # ═══════════════════════════════════════════════════════════════
+            # FETCH ALL METRICS
+            # ═══════════════════════════════════════════════════════════════
+            
+            # Total requests (24h)
+            cursor.execute("SELECT COUNT(*) FROM access_logs WHERE timestamp >= datetime('now', '-24 hours')")
+            total_24h = cursor.fetchone()[0] or 0
+            
+            # Total requests (7 days)
+            cursor.execute("SELECT COUNT(*) FROM access_logs WHERE timestamp >= datetime('now', '-7 days')")
+            total_7d = cursor.fetchone()[0] or 0
+            
+            # Success rate (2xx)
+            cursor.execute("SELECT COUNT(*) FROM access_logs WHERE status >= 200 AND status < 300 AND timestamp >= datetime('now', '-24 hours')")
+            success_24h = cursor.fetchone()[0] or 0
+            success_rate = (success_24h / total_24h * 100) if total_24h > 0 else 0
+            
+            # Error count (4xx, 5xx)
+            cursor.execute("SELECT COUNT(*) FROM access_logs WHERE status >= 400 AND timestamp >= datetime('now', '-24 hours')")
+            errors_24h = cursor.fetchone()[0] or 0
+            
+            # Peak hour
+            cursor.execute("""
+                SELECT strftime('%H', timestamp) as hour, COUNT(*) as cnt
+                FROM access_logs WHERE timestamp >= datetime('now', '-24 hours')
+                GROUP BY hour ORDER BY cnt DESC LIMIT 1
+            """)
+            peak_row = cursor.fetchone()
+            peak_hour = f"{peak_row['hour']}:00" if peak_row else "N/A"
+            peak_count = peak_row['cnt'] if peak_row else 0
+            
+            # Requests per hour (last 24h)
+            cursor.execute("""
+                SELECT strftime('%H', timestamp) as hour, COUNT(*) as count
+                FROM access_logs WHERE timestamp >= datetime('now', '-24 hours')
+                GROUP BY hour ORDER BY hour
+            """)
+            hourly_data = {row['hour']: row['count'] for row in cursor.fetchall()}
+            
+            # Top endpoints
+            cursor.execute("""
+                SELECT endpoint, COUNT(*) as count FROM access_logs
+                WHERE timestamp >= datetime('now', '-24 hours')
+                GROUP BY endpoint ORDER BY count DESC LIMIT 8
+            """)
+            endpoint_data = [(row['endpoint'], row['count']) for row in cursor.fetchall()]
+            
+            # Status code distribution
+            cursor.execute("""
+                SELECT 
+                    CASE 
+                        WHEN status >= 200 AND status < 300 THEN '2xx Success'
+                        WHEN status >= 300 AND status < 400 THEN '3xx Redirect'
+                        WHEN status >= 400 AND status < 500 THEN '4xx Client Error'
+                        WHEN status >= 500 THEN '5xx Server Error'
+                        ELSE 'Other'
+                    END as category, COUNT(*) as count
+                FROM access_logs WHERE timestamp >= datetime('now', '-24 hours')
+                GROUP BY category
+            """)
+            status_data = {row['category']: row['count'] for row in cursor.fetchall()}
+            
+            # 7-day trend
+            cursor.execute("""
+                SELECT date(timestamp) as day, COUNT(*) as count
+                FROM access_logs WHERE timestamp >= datetime('now', '-7 days')
+                GROUP BY day ORDER BY day
+            """)
+            trend_data = [(row['day'], row['count']) for row in cursor.fetchall()]
+            
+            conn.close()
+            
+            # ═══════════════════════════════════════════════════════════════
+            # BUILD KPI CARDS
+            # ═══════════════════════════════════════════════════════════════
+            kpis = [
+                ("📊 Total Requests", f"{total_24h:,}", "Last 24 Hours", self.colors['secondary']),
+                ("✅ Success Rate", f"{success_rate:.1f}%", f"{success_24h:,} successful", '#28a745' if success_rate > 95 else '#ffc107' if success_rate > 80 else '#dc3545'),
+                ("⏰ Peak Hour", peak_hour, f"{peak_count:,} requests", '#6f42c1'),
+                ("⚠️ Errors", f"{errors_24h:,}", "4xx + 5xx responses", '#dc3545' if errors_24h > 10 else '#28a745'),
+                ("📈 Weekly Total", f"{total_7d:,}", "Last 7 Days", '#17a2b8'),
+            ]
+            
+            for i, (title, value, subtitle, color) in enumerate(kpis):
+                card = tk.Frame(self.obs_kpi_container, bg=color, relief='flat', bd=0)
+                card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+                
+                inner = tk.Frame(card, bg='white', relief='flat')
+                inner.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+                
+                tk.Label(inner, text=title, font=('Segoe UI', 9), bg='white', fg='#666').pack(pady=(10, 2))
+                tk.Label(inner, text=value, font=('Segoe UI', 22, 'bold'), bg='white', fg=color).pack()
+                tk.Label(inner, text=subtitle, font=('Segoe UI', 8), bg='white', fg='#888').pack(pady=(2, 10))
+            
+            # ═══════════════════════════════════════════════════════════════
+            # CHART 1: Hourly Traffic (Bar Chart)
+            # ═══════════════════════════════════════════════════════════════
+            chart1_frame = tk.LabelFrame(self.obs_charts_row1, text=" 📊 Requests by Hour (24h) ", 
+                font=('Segoe UI', 10, 'bold'), bg='white', fg=self.colors['accent'])
+            chart1_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+            
+            fig1 = Figure(figsize=(5, 3), dpi=100)
+            fig1.patch.set_facecolor('white')
+            ax1 = fig1.add_subplot(111)
+            
+            hours = [f"{h:02d}" for h in range(24)]
+            counts = [hourly_data.get(h, 0) for h in hours]
+            colors_bars = [self.colors['secondary'] if c < peak_count else '#28a745' for c in counts]
+            
+            ax1.bar(hours, counts, color=colors_bars, alpha=0.85, width=0.7)
+            ax1.set_xlabel("Hour", fontsize=8)
+            ax1.set_ylabel("Requests", fontsize=8)
+            ax1.tick_params(axis='both', labelsize=7)
+            ax1.spines['top'].set_visible(False)
+            ax1.spines['right'].set_visible(False)
+            ax1.grid(axis='y', alpha=0.3, linestyle='--')
+            fig1.tight_layout()
+            
+            canvas1 = FigureCanvasTkAgg(fig1, chart1_frame)
+            canvas1.draw()
+            canvas1.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+            
+            # ═══════════════════════════════════════════════════════════════
+            # CHART 2: Top Endpoints (Horizontal Bar)
+            # ═══════════════════════════════════════════════════════════════
+            chart2_frame = tk.LabelFrame(self.obs_charts_row1, text=" 🔗 Top Endpoints ", 
+                font=('Segoe UI', 10, 'bold'), bg='white', fg=self.colors['accent'])
+            chart2_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            
+            fig2 = Figure(figsize=(5, 3), dpi=100)
+            fig2.patch.set_facecolor('white')
+            ax2 = fig2.add_subplot(111)
+            
+            if endpoint_data:
+                endpoints = [e[0][-25:] for e in reversed(endpoint_data)]  # Truncate long names
+                ep_counts = [e[1] for e in reversed(endpoint_data)]
+                ax2.barh(endpoints, ep_counts, color='#6f42c1', alpha=0.8)
+                ax2.set_xlabel("Requests", fontsize=8)
+                ax2.tick_params(axis='both', labelsize=7)
+            else:
+                ax2.text(0.5, 0.5, "No data", ha='center', va='center')
+            ax2.spines['top'].set_visible(False)
+            ax2.spines['right'].set_visible(False)
+            fig2.tight_layout()
+            
+            canvas2 = FigureCanvasTkAgg(fig2, chart2_frame)
+            canvas2.draw()
+            canvas2.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+            
+            # ═══════════════════════════════════════════════════════════════
+            # CHART 3: Status Code Pie
+            # ═══════════════════════════════════════════════════════════════
+            chart3_frame = tk.LabelFrame(self.obs_charts_row2, text=" 🎯 Response Status Distribution ", 
+                font=('Segoe UI', 10, 'bold'), bg='white', fg=self.colors['accent'])
+            chart3_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+            
+            fig3 = Figure(figsize=(4, 3), dpi=100)
+            fig3.patch.set_facecolor('white')
+            ax3 = fig3.add_subplot(111)
+            
+            if status_data:
+                labels = list(status_data.keys())
+                sizes = list(status_data.values())
+                colors_pie = ['#28a745', '#17a2b8', '#ffc107', '#dc3545', '#6c757d'][:len(labels)]
+                wedges, texts, autotexts = ax3.pie(sizes, labels=labels, autopct='%1.0f%%', 
+                    colors=colors_pie, startangle=90, textprops={'fontsize': 8})
+                for autotext in autotexts:
+                    autotext.set_fontsize(8)
+                    autotext.set_fontweight('bold')
+            else:
+                ax3.text(0.5, 0.5, "No data", ha='center', va='center')
+            ax3.axis('equal')
+            fig3.tight_layout()
+            
+            canvas3 = FigureCanvasTkAgg(fig3, chart3_frame)
+            canvas3.draw()
+            canvas3.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+            
+            # ═══════════════════════════════════════════════════════════════
+            # CHART 4: Live Metrics Panel
+            # ═══════════════════════════════════════════════════════════════
+            chart4_frame = tk.LabelFrame(self.obs_charts_row2, text=" 📈 Quick Stats ", 
+                font=('Segoe UI', 10, 'bold'), bg='white', fg=self.colors['accent'])
+            chart4_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            
+            stats_inner = tk.Frame(chart4_frame, bg='white')
+            stats_inner.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+            
+            avg_per_hour = total_24h / 24 if total_24h else 0
+            unique_endpoints = len(endpoint_data)
+            
+            quick_stats = [
+                ("📊 Avg Requests/Hour", f"{avg_per_hour:.1f}"),
+                ("🔗 Unique Endpoints", f"{unique_endpoints}"),
+                ("🟢 2xx Responses", f"{status_data.get('2xx Success', 0):,}"),
+                ("🟡 4xx Responses", f"{status_data.get('4xx Client Error', 0):,}"),
+                ("🔴 5xx Responses", f"{status_data.get('5xx Server Error', 0):,}"),
+            ]
+            
+            for label, val in quick_stats:
+                row = tk.Frame(stats_inner, bg='white')
+                row.pack(fill=tk.X, pady=3)
+                tk.Label(row, text=label, font=('Segoe UI', 9), bg='white', fg='#555', anchor='w').pack(side=tk.LEFT)
+                tk.Label(row, text=val, font=('Segoe UI', 10, 'bold'), bg='white', fg=self.colors['accent'], anchor='e').pack(side=tk.RIGHT)
+            
+            # ═══════════════════════════════════════════════════════════════
+            # CHART 5: 7-Day Trend (Line Chart)
+            # ═══════════════════════════════════════════════════════════════
+            trend_frame = tk.LabelFrame(self.obs_trend_container, text=" 📅 7-Day Traffic Trend ", 
+                font=('Segoe UI', 10, 'bold'), bg='white', fg=self.colors['accent'])
+            trend_frame.pack(fill=tk.BOTH, expand=True)
+            
+            fig5 = Figure(figsize=(10, 2.5), dpi=100)
+            fig5.patch.set_facecolor('white')
+            ax5 = fig5.add_subplot(111)
+            
+            if trend_data:
+                days = [t[0][-5:] for t in trend_data]  # MM-DD format
+                day_counts = [t[1] for t in trend_data]
+                ax5.fill_between(range(len(days)), day_counts, alpha=0.3, color=self.colors['secondary'])
+                ax5.plot(range(len(days)), day_counts, color=self.colors['secondary'], linewidth=2, marker='o', markersize=6)
+                ax5.set_xticks(range(len(days)))
+                ax5.set_xticklabels(days, fontsize=8)
+                ax5.set_ylabel("Requests", fontsize=9)
+                for i, v in enumerate(day_counts):
+                    ax5.annotate(str(v), (i, v), textcoords="offset points", xytext=(0, 8), ha='center', fontsize=8, fontweight='bold')
+            else:
+                ax5.text(0.5, 0.5, "No trend data available", ha='center', va='center')
+            ax5.spines['top'].set_visible(False)
+            ax5.spines['right'].set_visible(False)
+            ax5.grid(axis='y', alpha=0.3, linestyle='--')
+            fig5.tight_layout()
+            
+            canvas5 = FigureCanvasTkAgg(fig5, trend_frame)
+            canvas5.draw()
+            canvas5.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+            
+            # ═══════════════════════════════════════════════════════════════
+            # INSIGHTS PANEL
+            # ═══════════════════════════════════════════════════════════════
+            insights_header = tk.Frame(self.obs_insights_container, bg='#f0f8ff')
+            insights_header.pack(fill=tk.X, padx=15, pady=(10, 5))
+            
+            tk.Label(insights_header, text="💡 Intelligent Insights", 
+                font=('Segoe UI', 12, 'bold'), bg='#f0f8ff', fg=self.colors['accent']).pack(side=tk.LEFT)
+            
+            insights_content = tk.Frame(self.obs_insights_container, bg='#f0f8ff')
+            insights_content.pack(fill=tk.X, padx=15, pady=(0, 15))
+            
+            # Generate insights
+            insights = []
+            if peak_hour != "N/A":
+                insights.append(f"⏰ Peak traffic occurs at {peak_hour} with {peak_count:,} requests")
+            if success_rate < 95:
+                insights.append(f"⚠️ Success rate is {success_rate:.1f}% - investigate error responses")
+            elif success_rate >= 99:
+                insights.append(f"✅ Excellent success rate of {success_rate:.1f}%!")
+            if errors_24h > 0:
+                error_pct = (errors_24h / total_24h * 100) if total_24h > 0 else 0
+                insights.append(f"🔴 {errors_24h} errors detected ({error_pct:.1f}% of traffic)")
+            if avg_per_hour < 5:
+                insights.append("📉 Low traffic volume - server is underutilized")
+            elif avg_per_hour > 100:
+                insights.append("📈 High traffic volume - monitor server performance")
+            if total_7d > 0 and total_24h > 0:
+                daily_avg = total_7d / 7
+                if total_24h > daily_avg * 1.5:
+                    insights.append("🚀 Today's traffic is 50%+ higher than the weekly average!")
+                elif total_24h < daily_avg * 0.5:
+                    insights.append("📉 Today's traffic is below the weekly average")
+            
+            if not insights:
+                insights.append("ℹ️ Collecting more data for actionable insights...")
+            
+            for insight in insights:
+                tk.Label(insights_content, text=f"  • {insight}", 
+                    font=('Segoe UI', 10), bg='#f0f8ff', fg='#333', anchor='w').pack(fill=tk.X, pady=2)
+            
+            # Update timestamp
+            self.obs_last_updated.config(text=f"Last updated: {datetime.now().strftime('%H:%M:%S')}")
+            
+        except Exception as e:
+            tk.Label(self.obs_kpi_container, text=f"Error loading observability data: {e}",
+                font=('Segoe UI', 11), bg='white', fg='#dc3545').pack(pady=30)
+            import traceback
+            traceback.print_exc()
 
     def _refresh_traffic_graph(self, parent):
+
         """Fetch logs and plot traffic"""
         # Clear previous
         for widget in self.traffic_graph_container.winfo_children():
