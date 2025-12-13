@@ -111,14 +111,18 @@ export default function Login({ setUser }) {
       });
       
       if (data.status === 'success') {
-        // Password changed successfully, now complete login
-        const userObj = {
-          enrollment_no: data.enrollment_no || enrollment,
-          name: data.name
-        };
-        setUser(userObj);
+        // Password changed successfully - now fetch full user data from /api/me
+        const { data: meData } = await axios.get('/api/me');
+        if (meData.user) {
+          setUser(meData.user);
+        } else {
+          // Fallback: use data from change_password response
+          setUser({
+            enrollment_no: data.enrollment_no || enrollment,
+            name: data.name
+          });
+        }
       } else {
-
         setError(data.message || 'Failed to change password');
       }
     } catch (err) {
