@@ -14,9 +14,36 @@ from collections import defaultdict
 
 # --- Configuration ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# --- Secure Secret Key Management ---
+def get_or_create_secret_key():
+    """Get secret key from env variable, or generate and persist one locally"""
+    # 1. Check environment variable first
+    env_key = os.environ.get('FLASK_SECRET_KEY')
+    if env_key:
+        return env_key
+    
+    # 2. Check for persisted key file
+    key_file = os.path.join(BASE_DIR, '.secret_key')
+    if os.path.exists(key_file):
+        with open(key_file, 'r') as f:
+            return f.read().strip()
+    
+    # 3. Generate new key and persist it
+    import secrets
+    new_key = secrets.token_hex(32)
+    try:
+        with open(key_file, 'w') as f:
+            f.write(new_key)
+        print(f"[Security] Generated new secret key and saved to {key_file}")
+    except Exception as e:
+        print(f"[Security] Warning: Could not persist secret key: {e}")
+    return new_key
+
 # Serve React Build
 app = Flask(__name__, static_folder='frontend/dist')
-app.secret_key = 'LIBRARY_PORTAL_SECRET_KEY_YASH_MVP'
+app.secret_key = get_or_create_secret_key()
+
 
 # --- Rate Limiter (Custom Implementation - No External Dependencies) ---
 class RateLimiter:
