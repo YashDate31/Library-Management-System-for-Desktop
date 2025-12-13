@@ -7701,17 +7701,18 @@ Note: This is an automated email. Please find the attached formal overdue letter
         left_frame = tk.Frame(main_content, bg='white')
         left_frame.grid(row=0, column=0, sticky='nsew', padx=(0, 15))
         
-        # QR Card - full height
+        # QR Card
         qr_card = tk.Frame(left_frame, bg='#f8f9fa', relief='solid', bd=1)
-        qr_card.pack(fill=tk.BOTH, expand=True)
+        qr_card.pack(fill=tk.X)  # Don't expand, just fit content
         
         qr_inner = tk.Frame(qr_card, bg='#f8f9fa')
-        qr_inner.pack(expand=True, pady=25, padx=20)
-        
+        qr_inner.pack(pady=15, padx=15)
+
+        # QR Card Header
         tk.Label(
             qr_inner,
             text="📲 Scan to Access",
-            font=('Segoe UI', 14, 'bold'),
+            font=('Segoe UI', 12, 'bold'),
             bg='#f8f9fa',
             fg='#333'
         ).pack()
@@ -7719,49 +7720,74 @@ Note: This is an automated email. Please find the attached formal overdue letter
         tk.Label(
             qr_inner,
             text="Point your phone camera at this QR code",
-            font=('Segoe UI', 10),
+            font=('Segoe UI', 9),
             bg='#f8f9fa',
             fg='#666'
-        ).pack(pady=(5, 20))
+        ).pack(pady=(2, 10))
         
-        # QR Code Container - Larger
+        # QR Code Container
         self.portal_qr_container = tk.Frame(qr_inner, bg='white', relief='solid', bd=2)
-        self.portal_qr_container.pack(pady=10)
+        self.portal_qr_container.pack(pady=5)
+        
+        # URL and Buttons - OUTSIDE the card for visibility
+        url_btn_frame = tk.Frame(left_frame, bg='white')
+        url_btn_frame.pack(fill=tk.X, pady=(10, 0))
         
         # Current URL Display
         self.portal_current_url_label = tk.Label(
-            qr_inner,
+            url_btn_frame,
             text="Loading...",
-            font=('Consolas', 13, 'bold'),
-            bg='#f8f9fa',
+            font=('Consolas', 10, 'bold'),
+            bg='white',
             fg=self.colors['secondary']
         )
-        self.portal_current_url_label.pack(pady=(20, 10))
+        self.portal_current_url_label.pack(pady=(0, 8))
+        
+        # Button frame for Copy and Save buttons
+        btn_frame = tk.Frame(url_btn_frame, bg='white')
+        btn_frame.pack()
         
         # Copy URL button
         copy_btn = tk.Button(
-            qr_inner,
+            btn_frame,
             text="📋 Copy URL",
-            font=('Segoe UI', 10, 'bold'),
-            bg='white',
-            fg='#333',
-            padx=20,
-            pady=6,
+            font=('Segoe UI', 9, 'bold'),
+            bg='#28a745',
+            fg='white',
+            padx=15,
+            pady=5,
             cursor='hand2',
-            relief='solid',
-            bd=1,
+            relief='flat',
             command=self._copy_portal_url
         )
-        copy_btn.pack(pady=10)
+        copy_btn.pack(side=tk.LEFT, padx=(0, 8))
+        
+        # Save QR as PNG button
+        save_qr_btn = tk.Button(
+            btn_frame,
+            text="💾 Save QR",
+            font=('Segoe UI', 9, 'bold'),
+            bg='#17a2b8',
+            fg='white',
+            padx=15,
+            pady=5,
+            cursor='hand2',
+            relief='flat',
+            command=self._save_qr_as_image
+        )
+        save_qr_btn.pack(side=tk.LEFT)
         
         # WiFi Note
         tk.Label(
-            qr_inner,
+            url_btn_frame,
             text="⚡ Both devices must be on the same network",
-            font=('Segoe UI', 9, 'italic'),
-            bg='#f8f9fa',
+            font=('Segoe UI', 8, 'italic'),
+            bg='white',
             fg='#888'
-        ).pack(pady=(15, 5))
+        ).pack(pady=(8, 5))
+
+
+
         
         # ═══════════════════════════════════════════════════════════════
         # RIGHT COLUMN: Status Dashboard
