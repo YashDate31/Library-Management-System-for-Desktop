@@ -54,9 +54,6 @@ def cleanup_logs():
     except Exception as e:
         print(f"Log cleanup failed: {e}")
 
-# Run cleanup on startup
-threading.Thread(target=cleanup_logs).start()
-
 def get_library_db():
     """Read-Only Connection to Core Data"""
     db_path = os.path.join(os.path.dirname(BASE_DIR), 'library.db')
@@ -166,6 +163,9 @@ def init_portal_db():
 
 # Initialize on Import
 init_portal_db()
+
+# Run cleanup on startup (after all functions are defined)
+threading.Thread(target=cleanup_logs, daemon=True).start()
 
 # --- Helper Functions for Email ---
 
