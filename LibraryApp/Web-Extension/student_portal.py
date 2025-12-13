@@ -126,6 +126,60 @@ def rate_limit(f):
     return decorated_function
 
 
+# --- CSRF Protection (Double-Submit Cookie Pattern) ---
+def generate_csrf_token():
+    """Generate a secure random CSRF token"""
+    import secrets
+    return secrets.token_hex(32)
+
+# Endpoints excluded from CSRF protection (login needs cookie first, public endpoints)
+CSRF_EXCLUDED_ENDPOINTS = [
+    '/api/login',
+    '/api/public/forgot-password',
+]
+
+@app.before_request
+def csrf_protect():
+    """Validate CSRF token for state-changing requests"""
+    # Skip for safe methods (GET, HEAD, OPTIONS)
+    if request.method in ['GET', 'HEAD', 'OPTIONS']:
+        return
+    
+    # Skip for excluded endpoints
+    if request.path in CSRF_EXCLUDED_ENDPOINTS:
+        return
+    
+    # Skip for static files
+    if request.path.startswith('/static') or request.path.startswith('/assets'):
+        return
+    
+    # Get token from header and cookie
+    header_token = request.headers.get('X-CSRF-Token')
+    cookie_token = request.cookies.get('csrf_token')
+    
+    # Validate both exist and match
+    if not header_token or not cookie_token or header_token != cookie_token:
+        return jsonify({
+            'status': 'error', 
+            'message': 'CSRF token missing or invalid. Please refresh the page.'
+        }), 403
+
+@app.after_request
+def set_csrf_cookie(response):
+    """Set CSRF token cookie on every response if not present"""
+    if 'csrf_token' not in request.cookies:
+        token = generate_csrf_token()
+        # httponly=False so JavaScript can read it
+        # samesite='Lax' for balance of security and usability
+        response.set_cookie(
+            'csrf_token', 
+            token, 
+            httponly=False, 
+            samesite='Lax',
+            max_age=86400  # 24 hours
+        )
+    return response
+
 
 # --- Observability: Logging Middleware ---
 @app.after_request
