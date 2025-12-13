@@ -1985,7 +1985,71 @@ def api_admin_reset_password(enrollment_no):
         'message': f'Password reset to enrollment number. Student will be prompted to change on next login.'
     })
 
+@app.route('/api/admin/bulk-password-reset', methods=['POST'])
+def api_admin_bulk_password_reset():
+    """Reset passwords for all students in a year group or all students"""
+    data = request.json
+    year = data.get('year')  # '1st', '2nd', '3rd', or None for all
+    
+    try:
+        # Get students from library.db
+        conn_lib = get_library_db()
+        cursor_lib = conn_lib.cursor()
+        
+        if year:
+            cursor_lib.execute("SELECT enrollment_no FROM students WHERE year = ?", (year,))
+        else:
+            cursor_lib.execute("SELECT enrollment_no FROM students")
+        
+        students = cursor_lib.fetchall()
+        conn_lib.close()
+        
+        if not students:
+            return jsonify({'status': 'error', 'message': 'No students found'}), 404
+        
+        # Reset each student's password in portal.db
+        conn_portal = get_portal_db()
+        cursor_portal = conn_portal.cursor()
+        
+        reset_count = 0
+        for student in students:
+            enrollment_no = student['enrollment_no']
+            hashed_pw = generate_password_hash(enrollment_no)
+            
+            # Check if auth record exists
+            cursor_portal.execute("SELECT * FROM student_auth WHERE enrollment_no = ?", (enrollment_no,))
+            auth = cursor_portal.fetchone()
+            
+            if auth:
+                cursor_portal.execute("""
+                    UPDATE student_auth 
+                    SET password = ?, is_first_login = 1, last_changed = CURRENT_TIMESTAMP
+                    WHERE enrollment_no = ?
+                """, (hashed_pw, enrollment_no))
+            else:
+                cursor_portal.execute("""
+                    INSERT INTO student_auth (enrollment_no, password, is_first_login)
+                    VALUES (?, ?, 1)
+                """, (enrollment_no, hashed_pw))
+            
+            reset_count += 1
+        
+        conn_portal.commit()
+        conn_portal.close()
+        
+        year_label = f"{year} Year" if year else "All Years"
+        return jsonify({
+            'status': 'success',
+            'message': f'Password reset for {reset_count} students in {year_label}',
+            'count': reset_count
+        })
+        
+    except Exception as e:
+        print(f"Bulk reset error: {e}")
+        return jsonify({'status': 'error', 'message': 'Bulk reset failed'}), 500
+
 @app.route('/api/admin/auth-stats')
+
 def api_admin_auth_stats():
     """Get auth statistics and recent password resets for dashboard"""
     conn = get_portal_db()
