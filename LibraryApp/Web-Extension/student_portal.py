@@ -8,13 +8,180 @@ import smtplib
 import threading
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from functools import wraps
+import time
+from collections import defaultdict
 
 # --- Configuration ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Serve React Build
+
+# --- Secure Secret Key Management ---
+def get_or_create_secret_key():
+    """Get secret key from env variable, or generate and persist one locally"""
+    # 1. Check environment variable first
+    env_key = os.environ.get('FLASK_SECRET_KEY')
+    if env_key:
+        return env_key
+    
+    # 2. Check for persisted key file
+    key_file = os.path.join(BASE_DIR, '.secret_key')
+    if os.path.exists(key_file):
+        with open(key_file, 'r') as f:
+            return f.read().strip()
+    
+    # 3. Generate new key and persist it
+    import secrets
+    new_key = secrets.token_hex(32)
+    try:
+        with open(key_file, 'w') as f:
+            f.write(new_key)
+        print(f"[Security] Generated new secret key and saved to {key_file}")
+    except Exception as e:
+        print(f"[Security] Warning: Could not persist secret key: {e}")
+    return new_key
+
 # Serve React Build
 app = Flask(__name__, static_folder='frontend/dist')
-app.secret_key = 'LIBRARY_PORTAL_SECRET_KEY_YASH_MVP'
+app.secret_key = get_or_create_secret_key()
+
+
+# --- Rate Limiter (Custom Implementation - No External Dependencies) ---
+class RateLimiter:
+    """In-memory sliding window rate limiter"""
+    def __init__(self):
+        self.requests = defaultdict(list)  # {key: [timestamps]}
+        self.lock = threading.Lock()
+        
+        # Rate limit configurations: {endpoint_pattern: (max_requests, window_seconds)}
+        self.limits = {
+            '/api/login': (5, 60),           # 5 attempts per minute
+            '/api/public/forgot-password': (3, 300),  # 3 requests per 5 minutes
+            '/api/change_password': (3, 60),  # 3 attempts per minute
+            'default': (60, 60)               # 60 requests per minute (default)
+        }
+    
+    def _get_client_key(self, endpoint):
+        """Generate unique key for client + endpoint"""
+        # Use IP address as identifier
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr) or 'unknown'
+        return f"{client_ip}:{endpoint}"
+    
+    def _cleanup_old_requests(self, key, window_seconds):
+        """Remove requests outside the time window"""
+        cutoff = time.time() - window_seconds
+        self.requests[key] = [ts for ts in self.requests[key] if ts > cutoff]
+    
+    def is_rate_limited(self, endpoint):
+        """Check if request should be rate limited"""
+        # Get limit config for endpoint
+        limit_config = self.limits.get(endpoint, self.limits['default'])
+        max_requests, window_seconds = limit_config
+        
+        key = self._get_client_key(endpoint)
+        current_time = time.time()
+        
+        with self.lock:
+            self._cleanup_old_requests(key, window_seconds)
+            
+            if len(self.requests[key]) >= max_requests:
+                return True, max_requests, window_seconds
+            
+            # Record this request
+            self.requests[key].append(current_time)
+            return False, max_requests, window_seconds
+    
+    def get_retry_after(self, endpoint):
+        """Get seconds until rate limit resets"""
+        limit_config = self.limits.get(endpoint, self.limits['default'])
+        _, window_seconds = limit_config
+        key = self._get_client_key(endpoint)
+        
+        if self.requests[key]:
+            oldest = min(self.requests[key])
+            return int(window_seconds - (time.time() - oldest)) + 1
+        return window_seconds
+
+# Initialize rate limiter
+rate_limiter = RateLimiter()
+
+def rate_limit(f):
+    """Decorator to apply rate limiting to an endpoint"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        endpoint = request.path
+        is_limited, max_req, window = rate_limiter.is_rate_limited(endpoint)
+        
+        if is_limited:
+            retry_after = rate_limiter.get_retry_after(endpoint)
+            response = jsonify({
+                'status': 'error',
+                'message': f'Too many requests. Please try again in {retry_after} seconds.',
+                'retry_after': retry_after
+            })
+            response.status_code = 429
+            response.headers['Retry-After'] = str(retry_after)
+            return response
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+# --- CSRF Protection (Double-Submit Cookie Pattern) ---
+def generate_csrf_token():
+    """Generate a secure random CSRF token"""
+    import secrets
+    return secrets.token_hex(32)
+
+# Endpoints excluded from CSRF protection (login flow needs cookie first)
+CSRF_EXCLUDED_ENDPOINTS = [
+    '/api/login',
+    '/api/public/forgot-password',
+    '/api/change_password',  # Part of first-time login flow
+]
+
+
+@app.before_request
+def csrf_protect():
+    """Validate CSRF token for state-changing requests"""
+    # Skip for safe methods (GET, HEAD, OPTIONS)
+    if request.method in ['GET', 'HEAD', 'OPTIONS']:
+        return
+    
+    # Skip for excluded endpoints
+    if request.path in CSRF_EXCLUDED_ENDPOINTS:
+        return
+    
+    # Skip for static files
+    if request.path.startswith('/static') or request.path.startswith('/assets'):
+        return
+    
+    # Get token from header and cookie
+    header_token = request.headers.get('X-CSRF-Token')
+    cookie_token = request.cookies.get('csrf_token')
+    
+    # Validate both exist and match
+    if not header_token or not cookie_token or header_token != cookie_token:
+        return jsonify({
+            'status': 'error', 
+            'message': 'CSRF token missing or invalid. Please refresh the page.'
+        }), 403
+
+@app.after_request
+def set_csrf_cookie(response):
+    """Set CSRF token cookie on every response if not present"""
+    if 'csrf_token' not in request.cookies:
+        token = generate_csrf_token()
+        # httponly=False so JavaScript can read it
+        # samesite='Lax' for balance of security and usability
+        response.set_cookie(
+            'csrf_token', 
+            token, 
+            httponly=False, 
+            samesite='Lax',
+            max_age=86400  # 24 hours
+        )
+    return response
+
 
 # --- Observability: Logging Middleware ---
 @app.after_request
@@ -53,9 +220,6 @@ def cleanup_logs():
         print("System: Cleaned up old access logs.")
     except Exception as e:
         print(f"Log cleanup failed: {e}")
-
-# Run cleanup on startup
-threading.Thread(target=cleanup_logs).start()
 
 def get_library_db():
     """Read-Only Connection to Core Data"""
@@ -166,6 +330,9 @@ def init_portal_db():
 
 # Initialize on Import
 init_portal_db()
+
+# Run cleanup on startup (after all functions are defined)
+threading.Thread(target=cleanup_logs, daemon=True).start()
 
 # --- Helper Functions for Email ---
 
@@ -298,6 +465,7 @@ def request_deletion():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/api/login', methods=['POST'])
+@rate_limit
 def api_login():
     data = request.json
     enrollment = data.get('enrollment_no')
@@ -375,6 +543,7 @@ def api_login():
     })
 
 @app.route('/api/public/forgot-password', methods=['POST'])
+@rate_limit
 def api_forgot_password():
     data = request.json
     enrollment = data.get('enrollment_no')
@@ -429,6 +598,7 @@ def api_forgot_password():
         return jsonify({'status': 'error', 'message': 'Internal Server Error'}), 500
 
 @app.route('/api/change_password', methods=['POST'])
+@rate_limit
 def api_change_password():
     if not session.get('logged_in'):
         return jsonify({'status': 'error', 'message': 'Not logged in'}), 401
@@ -439,7 +609,16 @@ def api_change_password():
     
     if not new_password or len(new_password) < 6:
         return jsonify({'status': 'error', 'message': 'Password must be at least 6 characters'}), 400
-        
+    
+    # Get student name from library.db
+    conn_lib = get_library_db()
+    cursor_lib = conn_lib.cursor()
+    cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (enrollment,))
+    student = cursor_lib.fetchone()
+    conn_lib.close()
+    student_name = student['name'] if student else enrollment
+    
+    # Update password in portal.db
     conn = get_portal_db()
     cursor = conn.cursor()
     
@@ -455,7 +634,13 @@ def api_change_password():
     conn.commit()
     conn.close()
     
-    return jsonify({'status': 'success', 'message': 'Password updated successfully'})
+    return jsonify({
+        'status': 'success', 
+        'message': 'Password updated successfully',
+        'name': student_name,
+        'enrollment_no': enrollment
+    })
+
 
 @app.route('/api/settings', methods=['POST'])
 def api_update_settings():
@@ -1800,7 +1985,71 @@ def api_admin_reset_password(enrollment_no):
         'message': f'Password reset to enrollment number. Student will be prompted to change on next login.'
     })
 
+@app.route('/api/admin/bulk-password-reset', methods=['POST'])
+def api_admin_bulk_password_reset():
+    """Reset passwords for all students in a year group or all students"""
+    data = request.json
+    year = data.get('year')  # '1st', '2nd', '3rd', or None for all
+    
+    try:
+        # Get students from library.db
+        conn_lib = get_library_db()
+        cursor_lib = conn_lib.cursor()
+        
+        if year:
+            cursor_lib.execute("SELECT enrollment_no FROM students WHERE year = ?", (year,))
+        else:
+            cursor_lib.execute("SELECT enrollment_no FROM students")
+        
+        students = cursor_lib.fetchall()
+        conn_lib.close()
+        
+        if not students:
+            return jsonify({'status': 'error', 'message': 'No students found'}), 404
+        
+        # Reset each student's password in portal.db
+        conn_portal = get_portal_db()
+        cursor_portal = conn_portal.cursor()
+        
+        reset_count = 0
+        for student in students:
+            enrollment_no = student['enrollment_no']
+            hashed_pw = generate_password_hash(enrollment_no)
+            
+            # Check if auth record exists
+            cursor_portal.execute("SELECT * FROM student_auth WHERE enrollment_no = ?", (enrollment_no,))
+            auth = cursor_portal.fetchone()
+            
+            if auth:
+                cursor_portal.execute("""
+                    UPDATE student_auth 
+                    SET password = ?, is_first_login = 1, last_changed = CURRENT_TIMESTAMP
+                    WHERE enrollment_no = ?
+                """, (hashed_pw, enrollment_no))
+            else:
+                cursor_portal.execute("""
+                    INSERT INTO student_auth (enrollment_no, password, is_first_login)
+                    VALUES (?, ?, 1)
+                """, (enrollment_no, hashed_pw))
+            
+            reset_count += 1
+        
+        conn_portal.commit()
+        conn_portal.close()
+        
+        year_label = f"{year} Year" if year else "All Years"
+        return jsonify({
+            'status': 'success',
+            'message': f'Password reset for {reset_count} students in {year_label}',
+            'count': reset_count
+        })
+        
+    except Exception as e:
+        print(f"Bulk reset error: {e}")
+        return jsonify({'status': 'error', 'message': 'Bulk reset failed'}), 500
+
 @app.route('/api/admin/auth-stats')
+
 def api_admin_auth_stats():
     """Get auth statistics and recent password resets for dashboard"""
     conn = get_portal_db()

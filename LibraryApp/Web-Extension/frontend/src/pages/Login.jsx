@@ -45,11 +45,15 @@ export default function Login({ setUser }) {
       });
       
       if (data.status === 'success') {
-        setUser(data.user);
+        // Construct user object from API response
+        const userObj = {
+          enrollment_no: data.enrollment_no,
+          name: data.name
+        };
+        setUser(userObj);
         navigate('/');
-        // We ignore data.require_change for blocking now
       } else {
-        setError(data.message);
+        setError(data.message || 'Login failed');
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed');
@@ -57,6 +61,7 @@ export default function Login({ setUser }) {
       setLoading(false);
     }
   };
+
   
   const handleForgotSubmit = async (e) => {
       e.preventDefault();
@@ -81,8 +86,47 @@ export default function Login({ setUser }) {
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
-    // Logic preserved
+    
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+    
+    setLoading(true);
+    setError('');
+    
+    try {
+      const { data } = await axios.post('/api/change_password', { 
+        new_password: newPassword 
+      });
+      
+      if (data.status === 'success') {
+        // Password changed successfully - now fetch full user data from /api/me
+        const { data: meData } = await axios.get('/api/me');
+        if (meData.user) {
+          setUser(meData.user);
+        } else {
+          // Fallback: use data from change_password response
+          setUser({
+            enrollment_no: data.enrollment_no || enrollment,
+            name: data.name
+          });
+        }
+      } else {
+        setError(data.message || 'Failed to change password');
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to change password');
+    } finally {
+      setLoading(false);
+    }
   };
+
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-blue-50/50 text-slate-800">
