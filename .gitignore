@@ -35,6 +35,7 @@ LibraryApp/library.db
 
 # Portal sandbox database
 LibraryApp/Web-Extension/portal.db
+portal.db
 
 # Secret keys (security)
 .secret_key
