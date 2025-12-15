@@ -234,7 +234,8 @@ class LibraryApp:
         default_settings = {
             'fine_per_day': 5,
             'loan_period_days': 7,
-            'max_books_per_student': 5
+            'max_books_per_student': 5,
+            'admin_password': 'gpa123'
         }
         
         if os.path.exists(settings_file):
@@ -1049,7 +1050,10 @@ Government Polytechnic Awasari (Kh)"""
         def do_login():
             username = user_entry.get().strip()
             password = pass_entry.get().strip()
-            if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+            # Use stored password from settings, fallback to hardcoded default
+            stored_password = self.library_settings.get('admin_password', ADMIN_PASSWORD)
+            
+            if username == ADMIN_USERNAME and password == stored_password:
                 self.create_main_interface()
             else:
                 messagebox.showerror('Login Error','Invalid username or password!')
@@ -1670,7 +1674,9 @@ Government Polytechnic Awasari (Kh)"""
             confirm_entry = create_field(form_frame, "Confirm New Password")
             
             def do_save():
-                if current_entry.get() != ADMIN_PASSWORD:
+                # Verify current password
+                stored_password = self.library_settings.get('admin_password', ADMIN_PASSWORD)
+                if current_entry.get() != stored_password:
                     messagebox.showerror("Error", "Current password is incorrect", parent=dialog)
                     return
                 if new_entry.get() != confirm_entry.get():
@@ -1679,10 +1685,14 @@ Government Polytechnic Awasari (Kh)"""
                 if len(new_entry.get()) < 4:
                     messagebox.showerror("Error", "Password must be at least 4 characters", parent=dialog)
                     return
-                messagebox.showinfo("Info", 
-                    "Password change requires modifying main.py.\n\n"
-                    "Contact the developer to update ADMIN_PASSWORD.", parent=dialog)
-                dialog.destroy()
+                
+                # Save new password
+                self.library_settings['admin_password'] = new_entry.get()
+                if self.save_library_settings(self.library_settings):
+                    messagebox.showinfo("Success", "Password updated successfully!", parent=dialog)
+                    dialog.destroy()
+                else:
+                    messagebox.showerror("Error", "Failed to save password settings", parent=dialog)
             
             # Buttons
             btn_frame = tk.Frame(form_frame, bg='white')
