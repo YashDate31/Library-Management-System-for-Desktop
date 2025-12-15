@@ -342,7 +342,11 @@ class LibraryApp:
         
         # Enable mouse wheel scrolling
         def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            try:
+                if canvas.winfo_exists():
+                    canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            except Exception:
+                pass
         
         def bind_mousewheel(event):
             canvas.bind_all("<MouseWheel>", _on_mousewheel)
@@ -1440,7 +1444,11 @@ Government Polytechnic Awasari (Kh)"""
         
         # Mouse wheel scrolling
         def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            try:
+                if canvas.winfo_exists():
+                    canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            except Exception:
+                pass
         
         def bind_mousewheel(widget):
             widget.bind("<MouseWheel>", _on_mousewheel)
@@ -1620,7 +1628,7 @@ Government Polytechnic Awasari (Kh)"""
         def open_password_dialog():
             dialog = tk.Toplevel(self.root)
             dialog.title("🔑 Change Admin Password")
-            dialog.geometry("420x350")
+            dialog.geometry("420x420")
             dialog.configure(bg='white')
             dialog.transient(self.root)
             dialog.grab_set()
@@ -1629,7 +1637,7 @@ Government Polytechnic Awasari (Kh)"""
             # Center
             dialog.update_idletasks()
             x = (dialog.winfo_screenwidth() - 420) // 2
-            y = (dialog.winfo_screenheight() - 350) // 2
+            y = (dialog.winfo_screenheight() - 420) // 2
             dialog.geometry(f"+{x}+{y}")
             
             # Header
