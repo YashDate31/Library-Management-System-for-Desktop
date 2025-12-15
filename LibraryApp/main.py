@@ -133,9 +133,13 @@ class LibraryApp:
         # Email settings
         self.email_settings = self.load_email_settings()
         
+        # Library settings (configurable fine, loan period, etc.)
+        self.library_settings = self.load_library_settings()
+        
         # Start reminder email scheduler if enabled
         if self.email_settings.get('reminder_enabled', False):
             self.schedule_reminder_emails()
+
 
         # Student Portal Thread
         self.portal_thread = None
@@ -221,6 +225,57 @@ class LibraryApp:
             messagebox.showerror("Error", f"Failed to save email settings.\n\n{e}")
             return False
     
+    def load_library_settings(self):
+        """Load library settings from JSON file (configurable fine, loan period, etc.)"""
+        settings_file = os.path.join(os.path.dirname(__file__), 'library_settings.json')
+        if hasattr(sys, '_MEIPASS'):
+            settings_file = os.path.join(os.path.dirname(sys.executable), 'library_settings.json')
+        
+        default_settings = {
+            'fine_per_day': 5,
+            'loan_period_days': 7,
+            'max_books_per_student': 5,
+            'admin_password': 'gpa123'
+        }
+        
+        if os.path.exists(settings_file):
+            try:
+                with open(settings_file, 'r') as f:
+                    loaded_settings = json.load(f)
+                    default_settings.update(loaded_settings)
+                    return default_settings
+            except:
+                return default_settings
+        else:
+            # Create settings file with defaults if it doesn't exist
+            try:
+                with open(settings_file, 'w') as f:
+                    json.dump(default_settings, f, indent=4)
+            except:
+                pass
+        return default_settings
+    
+    def save_library_settings(self, settings):
+        """Save library settings to JSON file"""
+        settings_file = os.path.join(os.path.dirname(__file__), 'library_settings.json')
+        if hasattr(sys, '_MEIPASS'):
+            settings_file = os.path.join(os.path.dirname(sys.executable), 'library_settings.json')
+        
+        try:
+            with open(settings_file, 'w') as f:
+                json.dump(settings, f, indent=4)
+            # Update the instance variable
+            self.library_settings = settings
+            return True
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save library settings.\n\n{e}")
+            return False
+    
+    def get_fine_per_day(self):
+        """Get configurable fine per day from library settings"""
+        return self.library_settings.get('fine_per_day', 5)
+    
+
     def open_email_settings(self):
         """Open email settings dialog with tabs for configuration and history"""
         settings_win = tk.Toplevel(self.root)
@@ -288,7 +343,11 @@ class LibraryApp:
         
         # Enable mouse wheel scrolling
         def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            try:
+                if canvas.winfo_exists():
+                    canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            except Exception:
+                pass
         
         def bind_mousewheel(event):
             canvas.bind_all("<MouseWheel>", _on_mousewheel)
@@ -991,7 +1050,10 @@ Government Polytechnic Awasari (Kh)"""
         def do_login():
             username = user_entry.get().strip()
             password = pass_entry.get().strip()
-            if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+            # Use stored password from settings, fallback to hardcoded default
+            stored_password = self.library_settings.get('admin_password', ADMIN_PASSWORD)
+            
+            if username == ADMIN_USERNAME and password == stored_password:
                 self.create_main_interface()
             else:
                 messagebox.showerror('Login Error','Invalid username or password!')
@@ -1055,6 +1117,7 @@ Government Polytechnic Awasari (Kh)"""
         self.create_transactions_tab()
         self.create_records_tab()  # New records tab
         self.create_analysis_tab()  # New analysis tab with charts
+        self.create_admin_tab()  # Admin Settings tab
         self.create_student_portal_tab()  # Student Portal tab
         
         # Set focus to dashboard
@@ -1359,7 +1422,485 @@ Government Polytechnic Awasari (Kh)"""
 
         # Populate dashboard issued books
         self.refresh_dashboard_borrowed()
+
+    def create_admin_tab(self):
+        """Create Admin Settings tab with premium UI design for librarians"""
+        admin_frame = tk.Frame(self.notebook, bg='#f0f2f5')
+        self.notebook.add(admin_frame, text="⚙️ Admin")
+        
+        # Create scrollable container
+        canvas = tk.Canvas(admin_frame, bg='#f0f2f5', highlightthickness=0)
+        scrollbar = ttk.Scrollbar(admin_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg='#f0f2f5')
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas_window = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Resize canvas window with canvas
+        def resize_frame(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+        canvas.bind('<Configure>', resize_frame)
+        
+        # Mouse wheel scrolling
+        def _on_mousewheel(event):
+            try:
+                if canvas.winfo_exists():
+                    canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            except Exception:
+                pass
+        
+        def bind_mousewheel(widget):
+            widget.bind("<MouseWheel>", _on_mousewheel)
+            for child in widget.winfo_children():
+                bind_mousewheel(child)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # ============== HEADER ==============
+        header_frame = tk.Frame(scrollable_frame, bg='#f0f2f5')
+        header_frame.pack(fill=tk.X, padx=40, pady=(30, 20))
+        
+        # Title with icon
+        title_container = tk.Frame(header_frame, bg='#f0f2f5')
+        title_container.pack(anchor='w')
+        
+        tk.Label(
+            title_container,
+            text="⚙️",
+            font=('Segoe UI', 32),
+            bg='#f0f2f5',
+            fg=self.colors['secondary']
+        ).pack(side=tk.LEFT)
+        
+        title_text_frame = tk.Frame(title_container, bg='#f0f2f5')
+        title_text_frame.pack(side=tk.LEFT, padx=(15, 0))
+        
+        tk.Label(
+            title_text_frame,
+            text="Admin Settings",
+            font=('Segoe UI', 24, 'bold'),
+            bg='#f0f2f5',
+            fg='#1a1a2e'
+        ).pack(anchor='w')
+        
+        tk.Label(
+            title_text_frame,
+            text="Configure library rules and system settings",
+            font=('Segoe UI', 12),
+            bg='#f0f2f5',
+            fg='#666'
+        ).pack(anchor='w')
+        
+        # ============== MAIN CONTENT GRID ==============
+        content_frame = tk.Frame(scrollable_frame, bg='#f0f2f5')
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=40, pady=10)
+        
+        # Helper function to create premium cards
+        def create_card(parent, title, icon, accent_color):
+            # Outer frame for shadow effect
+            outer = tk.Frame(parent, bg='#d0d0d0', padx=2, pady=2)
+            
+            card = tk.Frame(outer, bg='white', padx=25, pady=20)
+            card.pack(fill=tk.BOTH, expand=True)
+            
+            # Card header
+            header = tk.Frame(card, bg='white')
+            header.pack(fill=tk.X, pady=(0, 15))
+            
+            # Icon circle
+            icon_label = tk.Label(
+                header,
+                text=icon,
+                font=('Segoe UI', 18),
+                bg=accent_color,
+                fg='white',
+                width=2,
+                height=1
+            )
+            icon_label.pack(side=tk.LEFT)
+            
+            tk.Label(
+                header,
+                text=title,
+                font=('Segoe UI', 14, 'bold'),
+                bg='white',
+                fg='#1a1a2e'
+            ).pack(side=tk.LEFT, padx=(12, 0))
+            
+            return outer, card
+        
+        # Helper for styled entry with label
+        def create_styled_setting(parent, label, setting_key, unit, min_val=1, max_val=100):
+            row = tk.Frame(parent, bg='white')
+            row.pack(fill=tk.X, pady=10)
+            
+            tk.Label(
+                row,
+                text=label,
+                font=('Segoe UI', 11),
+                bg='white',
+                fg='#444',
+                anchor='w'
+            ).pack(side=tk.LEFT)
+            
+            # Right side container
+            right_container = tk.Frame(row, bg='white')
+            right_container.pack(side=tk.RIGHT)
+            
+            current_val = self.library_settings.get(setting_key, 5)
+            value_var = tk.StringVar(value=str(current_val))
+            
+            entry = tk.Entry(
+                right_container,
+                textvariable=value_var,
+                font=('Segoe UI', 11, 'bold'),
+                width=6,
+                justify='center',
+                relief='solid',
+                bd=1,
+                bg='#f8f9fa'
+            )
+            entry.pack(side=tk.LEFT, padx=5)
+            
+            if unit:
+                tk.Label(
+                    right_container,
+                    text=unit,
+                    font=('Segoe UI', 10),
+                    bg='white',
+                    fg='#888'
+                ).pack(side=tk.LEFT, padx=(0, 10))
+            
+            def save_this_setting():
+                try:
+                    new_val = int(value_var.get())
+                    if new_val < min_val or new_val > max_val:
+                        messagebox.showerror("Invalid", f"Value must be {min_val}-{max_val}")
+                        return
+                    self.library_settings[setting_key] = new_val
+                    if self.save_library_settings(self.library_settings):
+                        messagebox.showinfo("Saved", f"{label} updated to {new_val}")
+                        entry.config(bg='#d4edda')  # Green flash
+                        self.root.after(1000, lambda: entry.config(bg='#f8f9fa'))
+                except ValueError:
+                    messagebox.showerror("Error", "Enter a valid number")
+            
+            save_btn = tk.Button(
+                right_container,
+                text="Save",
+                font=('Segoe UI', 9, 'bold'),
+                bg='#28a745',
+                fg='white',
+                relief='flat',
+                padx=12,
+                pady=2,
+                cursor='hand2',
+                command=save_this_setting
+            )
+            save_btn.pack(side=tk.LEFT)
+            
+            # Hover effect
+            def on_enter(e): save_btn.config(bg='#218838')
+            def on_leave(e): save_btn.config(bg='#28a745')
+            save_btn.bind('<Enter>', on_enter)
+            save_btn.bind('<Leave>', on_leave)
+            
+            return value_var
+        
+        # ============== ROW 1: Library Rules + Security ==============
+        row1 = tk.Frame(content_frame, bg='#f0f2f5')
+        row1.pack(fill=tk.X, pady=10)
+        
+        # --- LIBRARY RULES CARD ---
+        rules_outer, rules_card = create_card(row1, "Library Rules", "📚", '#2E86AB')
+        rules_outer.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        
+        create_styled_setting(rules_card, "Fine Per Day", "fine_per_day", "₹/day", 1, 500)
+        create_styled_setting(rules_card, "Loan Period", "loan_period_days", "days", 1, 30)
+        create_styled_setting(rules_card, "Max Books/Student", "max_books_per_student", "books", 1, 20)
+        
+        # --- SECURITY CARD ---
+        sec_outer, sec_card = create_card(row1, "Security", "🔐", '#dc3545')
+        sec_outer.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0))
+        
+        def open_password_dialog():
+            dialog = tk.Toplevel(self.root)
+            dialog.title("🔑 Change Admin Password")
+            dialog.geometry("420x420")
+            dialog.configure(bg='white')
+            dialog.transient(self.root)
+            dialog.grab_set()
+            dialog.resizable(False, False)
+            
+            # Center
+            dialog.update_idletasks()
+            x = (dialog.winfo_screenwidth() - 420) // 2
+            y = (dialog.winfo_screenheight() - 420) // 2
+            dialog.geometry(f"+{x}+{y}")
+            
+            # Header
+            header_bg = tk.Frame(dialog, bg='#2E86AB', height=60)
+            header_bg.pack(fill=tk.X)
+            header_bg.pack_propagate(False)
+            
+            tk.Label(
+                header_bg,
+                text="🔑 Change Admin Password",
+                font=('Segoe UI', 16, 'bold'),
+                bg='#2E86AB',
+                fg='white'
+            ).pack(expand=True)
+            
+            form_frame = tk.Frame(dialog, bg='white', padx=30, pady=25)
+            form_frame.pack(fill=tk.BOTH, expand=True)
+            
+            # Form fields
+            def create_field(parent, label_text):
+                tk.Label(parent, text=label_text, font=('Segoe UI', 11, 'bold'), 
+                        bg='white', fg='#333').pack(anchor='w', pady=(10, 3))
+                entry = tk.Entry(parent, font=('Segoe UI', 12), show='●', 
+                               relief='solid', bd=1, bg='#f8f9fa')
+                entry.pack(fill=tk.X, ipady=8)
+                return entry
+            
+            current_entry = create_field(form_frame, "Current Password")
+            new_entry = create_field(form_frame, "New Password")
+            confirm_entry = create_field(form_frame, "Confirm New Password")
+            
+            def do_save():
+                # Verify current password
+                stored_password = self.library_settings.get('admin_password', ADMIN_PASSWORD)
+                if current_entry.get() != stored_password:
+                    messagebox.showerror("Error", "Current password is incorrect", parent=dialog)
+                    return
+                if new_entry.get() != confirm_entry.get():
+                    messagebox.showerror("Error", "New passwords do not match", parent=dialog)
+                    return
+                if len(new_entry.get()) < 4:
+                    messagebox.showerror("Error", "Password must be at least 4 characters", parent=dialog)
+                    return
+                
+                # Save new password
+                self.library_settings['admin_password'] = new_entry.get()
+                if self.save_library_settings(self.library_settings):
+                    messagebox.showinfo("Success", "Password updated successfully!", parent=dialog)
+                    dialog.destroy()
+                else:
+                    messagebox.showerror("Error", "Failed to save password settings", parent=dialog)
+            
+            # Buttons
+            btn_frame = tk.Frame(form_frame, bg='white')
+            btn_frame.pack(fill=tk.X, pady=(25, 0))
+            
+            save_btn = tk.Button(
+                btn_frame,
+                text="💾 Save Password",
+                font=('Segoe UI', 11, 'bold'),
+                bg='#28a745',
+                fg='white',
+                relief='flat',
+                padx=25,
+                pady=10,
+                cursor='hand2',
+                command=do_save
+            )
+            save_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 5))
+            
+            cancel_btn = tk.Button(
+                btn_frame,
+                text="Cancel",
+                font=('Segoe UI', 11),
+                bg='#6c757d',
+                fg='white',
+                relief='flat',
+                padx=25,
+                pady=10,
+                cursor='hand2',
+                command=dialog.destroy
+            )
+            cancel_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(5, 0))
+        
+        # Password button
+        pwd_btn = tk.Button(
+            sec_card,
+            text="🔑  Change Admin Password",
+            font=('Segoe UI', 11, 'bold'),
+            bg='#2E86AB',
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=12,
+            cursor='hand2',
+            command=open_password_dialog
+        )
+        pwd_btn.pack(fill=tk.X, pady=(5, 10))
+        
+        # Hover effect
+        def pwd_enter(e): pwd_btn.config(bg='#1d6a8a')
+        def pwd_leave(e): pwd_btn.config(bg='#2E86AB')
+        pwd_btn.bind('<Enter>', pwd_enter)
+        pwd_btn.bind('<Leave>', pwd_leave)
+        
+        # Info text
+        tk.Label(
+            sec_card,
+            text="Admin credentials are used to login\nto the desktop application",
+            font=('Segoe UI', 10),
+            bg='white',
+            fg='#888',
+            justify='left'
+        ).pack(anchor='w', pady=(5, 0))
+        
+        # ============== ROW 2: Backup + Email ==============
+        row2 = tk.Frame(content_frame, bg='#f0f2f5')
+        row2.pack(fill=tk.X, pady=10)
+        
+        # --- BACKUP CARD ---
+        backup_outer, backup_card = create_card(row2, "Backup & Data", "💾", '#28a745')
+        backup_outer.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        
+        def do_backup():
+            try:
+                import shutil
+                from tkinter import filedialog
+                src = os.path.join(os.path.dirname(__file__), 'library.db')
+                if not os.path.exists(src):
+                    messagebox.showerror("Error", "Database file not found")
+                    return
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                dest = filedialog.asksaveasfilename(
+                    defaultextension=".db",
+                    filetypes=[("Database", "*.db")],
+                    initialfile=f"library_backup_{timestamp}.db",
+                    title="Save Backup"
+                )
+                if dest:
+                    shutil.copy2(src, dest)
+                    messagebox.showinfo("Success", f"Backup saved to:\n{dest}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Backup failed: {e}")
+        
+        backup_btn = tk.Button(
+            backup_card,
+            text="💾  Backup Database Now",
+            font=('Segoe UI', 11, 'bold'),
+            bg='#28a745',
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=12,
+            cursor='hand2',
+            command=do_backup
+        )
+        backup_btn.pack(fill=tk.X, pady=(5, 10))
+        
+        tk.Label(
+            backup_card,
+            text="Create a backup copy of library.db\nRecommended: weekly backups to USB",
+            font=('Segoe UI', 10),
+            bg='white',
+            fg='#888',
+            justify='left'
+        ).pack(anchor='w')
+        
+        # --- EMAIL CARD ---
+        email_outer, email_card = create_card(row2, "Email Settings", "📧", '#6f42c1')
+        email_outer.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0))
+        
+        email_btn = tk.Button(
+            email_card,
+            text="📧  Configure Email & Reminders",
+            font=('Segoe UI', 11, 'bold'),
+            bg='#6f42c1',
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=12,
+            cursor='hand2',
+            command=self.open_email_settings
+        )
+        email_btn.pack(fill=tk.X, pady=(5, 10))
+        
+        tk.Label(
+            email_card,
+            text="SMTP settings for Gmail\nAuto-reminders run daily at 9 AM",
+            font=('Segoe UI', 10),
+            bg='white',
+            fg='#888',
+            justify='left'
+        ).pack(anchor='w')
+        
+        # ============== ROW 3: System Info + Danger Zone ==============
+        row3 = tk.Frame(content_frame, bg='#f0f2f5')
+        row3.pack(fill=tk.X, pady=10)
+        
+        # --- SYSTEM INFO CARD ---
+        info_outer, info_card = create_card(row3, "System Information", "ℹ️", '#17a2b8')
+        info_outer.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        
+        info_text = f"""
+Version: {APP_VERSION}
+Database: library.db
+Portal: Port {self.portal_port}
+
+Current Settings:
+  • Fine: ₹{self.library_settings.get('fine_per_day', 5)}/day
+  • Loan: {self.library_settings.get('loan_period_days', 7)} days
+  • Max Books: {self.library_settings.get('max_books_per_student', 5)}
+        """.strip()
+        
+        self.admin_info_label = tk.Label(
+            info_card,
+            text=info_text,
+            font=('Consolas', 10),
+            bg='#f8f9fa',
+            fg='#333',
+            justify='left',
+            padx=15,
+            pady=12,
+            relief='flat',
+            anchor='nw'
+        )
+        self.admin_info_label.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        # --- DANGER ZONE CARD ---
+        danger_outer, danger_card = create_card(row3, "Danger Zone", "⚠️", '#dc3545')
+        danger_outer.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0))
+        
+        danger_btn = tk.Button(
+            danger_card,
+            text="🗑️  Clear All Data",
+            font=('Segoe UI', 11, 'bold'),
+            bg='#dc3545',
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=12,
+            cursor='hand2',
+            command=self.clear_all_data_ui
+        )
+        danger_btn.pack(fill=tk.X, pady=(5, 10))
+        
+        tk.Label(
+            danger_card,
+            text="⚠️ Permanently deletes all data\nRequires password confirmation",
+            font=('Segoe UI', 10),
+            bg='white',
+            fg='#dc3545',
+            justify='left'
+        ).pack(anchor='w')
+        
+        # Bind mousewheel after all widgets created
+        self.root.after(100, lambda: bind_mousewheel(scrollable_frame))
+
     def refresh_dashboard_borrowed(self):
+
         """Refresh dashboard borrowed books table"""
         for item in self.dashboard_borrowed_tree.get_children():
             self.dashboard_borrowed_tree.delete(item)
@@ -4013,7 +4554,7 @@ Government Polytechnic Awasari (Kh)"""
                 fine_str = fine_info.replace('(Late)', '').strip()
                 fine_amount = int(fine_str)
             except:
-                fine_amount = days_overdue * FINE_PER_DAY
+                fine_amount = days_overdue * self.get_fine_per_day()
             
             # Create Word document
             doc = Document()
@@ -4106,7 +4647,7 @@ Government Polytechnic Awasari (Kh)"""
             # Fine details
             fine_para = doc.add_paragraph()
             fine_run = fine_para.add_run(
-                f"As per library rules, a fine of ₹{FINE_PER_DAY} per day is applicable for overdue books.\n"
+                f"As per library rules, a fine of ₹{self.get_fine_per_day()} per day is applicable for overdue books.\n"
                 f"Your current fine amount is: ₹{fine_amount}\n\n"
             )
             fine_run.font.size = Pt(11)
@@ -4377,14 +4918,14 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     # still out; overdue based on today
                     if due_d and today > due_d:
                         overdue_days = (today - due_d).days
-                        fine = overdue_days * FINE_PER_DAY
+                        fine = overdue_days * self.get_fine_per_day()
                 else:
                     # returned; compute late based on return_date
                     try:
                         ret_d = _dt.strptime(return_date, '%Y-%m-%d').date()
                         if due_d and ret_d > due_d:
                             overdue_days = (ret_d - due_d).days
-                            fine = overdue_days * FINE_PER_DAY
+                            fine = overdue_days * self.get_fine_per_day()
                     except Exception:
                         pass
                 # Keep fine as numeric for downstream display logic, add academic_year
@@ -5493,7 +6034,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
                                     'Issue Date': borrow_date,
                                     'Due Date': due_date,
                                     'Days Overdue': days_overdue,
-                                    'Accrued Fine': int(days_overdue) * FINE_PER_DAY
+                                    'Accrued Fine': int(days_overdue) * self.get_fine_per_day()
                                 })
                         except Exception as e:
                             print(f"Error processing overdue record: {e}")
@@ -10250,8 +10791,11 @@ Note: This is an automated email. Please find the attached formal overdue letter
             
             def _autopct(pct, allvals=sizes):
                 total = sum(allvals)
+                if total == 0:
+                    return " "
                 val = int(round(pct*total/100.0))
                 return f"{pct:.1f}%\n({val})"
+
 
             wedges, texts, autotexts = ax.pie(
                 sizes, 
@@ -10460,10 +11004,25 @@ Note: This is an automated email. Please find the attached formal overdue letter
 
             on_time = max(total_issued - overdue, 0)
 
+            # Check if there's any data to display - prevent NaN division
+            if (total_copies or 0) == 0:
+                # Show a placeholder message instead of empty chart
+                placeholder = tk.Label(
+                    self.inventory_overdue_frame,
+                    text="📊 No book inventory data available.\nAdd books to see inventory breakdown.",
+                    font=('Segoe UI', 12),
+                    bg=self.colors['primary'],
+                    fg='#666',
+                    justify='center'
+                )
+                placeholder.pack(expand=True, fill='both', pady=40)
+                return
+
             outer_labels = ["Available", "Issued"]
             outer_sizes = [total_available, total_issued]
             inner_labels = ["Available", "On-time", "Overdue"]
             inner_sizes = [total_available, on_time, overdue]
+
 
             # Colors
             outer_colors = ['#2ed573', '#ff9f43']
