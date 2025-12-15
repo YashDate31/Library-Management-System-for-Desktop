@@ -10250,8 +10250,11 @@ Note: This is an automated email. Please find the attached formal overdue letter
             
             def _autopct(pct, allvals=sizes):
                 total = sum(allvals)
+                if total == 0:
+                    return " "
                 val = int(round(pct*total/100.0))
                 return f"{pct:.1f}%\n({val})"
+
 
             wedges, texts, autotexts = ax.pie(
                 sizes, 
@@ -10460,10 +10463,25 @@ Note: This is an automated email. Please find the attached formal overdue letter
 
             on_time = max(total_issued - overdue, 0)
 
+            # Check if there's any data to display - prevent NaN division
+            if (total_copies or 0) == 0:
+                # Show a placeholder message instead of empty chart
+                placeholder = tk.Label(
+                    self.inventory_overdue_frame,
+                    text="📊 No book inventory data available.\nAdd books to see inventory breakdown.",
+                    font=('Segoe UI', 12),
+                    bg=self.colors['primary'],
+                    fg='#666',
+                    justify='center'
+                )
+                placeholder.pack(expand=True, fill='both', pady=40)
+                return
+
             outer_labels = ["Available", "Issued"]
             outer_sizes = [total_available, total_issued]
             inner_labels = ["Available", "On-time", "Overdue"]
             inner_sizes = [total_available, on_time, overdue]
+
 
             # Colors
             outer_colors = ['#2ed573', '#ff9f43']
