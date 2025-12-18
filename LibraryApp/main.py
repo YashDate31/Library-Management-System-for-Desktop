@@ -1294,27 +1294,64 @@ Government Polytechnic Awasari (Kh)"""
 
     # Removed "Clear All Data" button from header as requested
     def show_developer_info(self):
-        """Minimal developer info dialog (only 4 fields)"""
+        """Enhanced developer info dialog with social links"""
         dialog = tk.Toplevel(self.root)
         dialog.title("Developer Info")
         dialog.configure(bg='white')
         dialog.resizable(False, False)
-        dialog.geometry("320x210")
+        dialog.geometry("380x280")
         dialog.transient(self.root)
         dialog.grab_set()
         dialog.update_idletasks()
         dialog.geometry(f"+{self.root.winfo_rootx()+360}+{self.root.winfo_rooty()+240}")
+        
         header = tk.Label(dialog, text="👨‍💻 Developer", font=('Segoe UI',14,'bold'), bg='white', fg=self.colors['accent'])
         header.pack(pady=(14,6))
+        
         body = tk.Frame(dialog, bg='white')
         body.pack(fill=tk.BOTH, expand=True, padx=24, pady=4)
-        items = [("Name","Yash Vijay Date"),("Enrollment","24210270230"),("Branch","Computer Engineering"),("Year","2nd Year")]
+        
+        items = [
+            ("Name","Yash Vijay Date"),
+            ("Enrollment","24210270230"),
+            ("Branch","Computer Engineering"),
+            ("Year","2nd Year")
+        ]
         kf=('Segoe UI',10,'bold'); vf=('Segoe UI',10)
         for r,(k,v) in enumerate(items):
             tk.Label(body,text=f"{k}:",font=kf,bg='white',fg=self.colors['accent']).grid(row=r,column=0,sticky='w',padx=(0,10),pady=3)
             tk.Label(body,text=v,font=vf,bg='white',fg='#222').grid(row=r,column=1,sticky='w',pady=3)
         body.grid_columnconfigure(0,weight=0); body.grid_columnconfigure(1,weight=1)
+        
+        # Social Links Section
+        social_frame = tk.Frame(dialog, bg='#f8f9fa', relief='flat', bd=1)
+        social_frame.pack(fill=tk.X, padx=24, pady=(12,8))
+        
+        tk.Label(social_frame, text="🔗 Connect With Me", font=('Segoe UI',10,'bold'), bg='#f8f9fa', fg=self.colors['accent']).pack(pady=(8,4))
+        
+        links = [
+            ("GitHub", "github.com/YashDate31"),
+            ("LinkedIn", "linkedin.com/in/yash-date-a361a8329"),
+            ("Instagram", "instagram.com/dypatil0_0")
+        ]
+        
+        for platform, url in links:
+            link_btn = tk.Button(social_frame, text=f"  {platform}  ", font=('Segoe UI',9), 
+                                bg='white', fg=self.colors['secondary'], relief='flat', 
+                                cursor='hand2', padx=8, pady=2,
+                                command=lambda u=url: self._open_social_link(u))
+            link_btn.pack(pady=2)
+        
+        social_frame.pack_configure(pady=(8,4))
+        
         tk.Button(dialog,text='Close',font=('Segoe UI',10,'bold'),bg=self.colors['secondary'],fg='white',relief='flat',padx=16,pady=6,cursor='hand2',command=dialog.destroy,activebackground=self.colors['accent'],activeforeground='white').pack(pady=(4,14))
+    
+    def _open_social_link(self, url):
+        """Open social media link in browser"""
+        import webbrowser
+        if not url.startswith('http'):
+            url = f"https://{url}"
+        webbrowser.open(url)
 
     def clear_all_data_ui(self):
         """Clear all demo/user data with a confirmation prompt."""
@@ -7470,6 +7507,11 @@ Note: This is an automated email. Please find the attached formal overdue letter
         observability_tab = tk.Frame(portal_notebook, bg='white')
         portal_notebook.add(observability_tab, text="📈 Observability")
         self._create_observability_section(observability_tab)
+        
+        # Sub-tab 7: Study Materials
+        materials_tab = tk.Frame(portal_notebook, bg='white')
+        portal_notebook.add(materials_tab, text="📚 Study Materials")
+        self._create_study_materials_section(materials_tab)
 
     def _create_broadcast_section(self, parent):
         """Create broadcast notice management section"""
@@ -8174,6 +8216,274 @@ Note: This is an automated email. Please find the attached formal overdue letter
             
         except Exception as e:
             tk.Label(self.traffic_graph_container, text=f"Error loading traffic graph: {e}", bg='white', fg='red').pack(pady=50)
+    
+    def _create_study_materials_section(self, parent):
+        """Create study materials management section for uploading Google Drive links"""
+        # Header
+        header_frame = tk.Frame(parent, bg='white')
+        header_frame.pack(fill=tk.X, padx=20, pady=(20, 10))
+        
+        tk.Label(
+            header_frame,
+            text="📚 Study Materials Manager",
+            font=('Segoe UI', 18, 'bold'),
+            bg='white',
+            fg=self.colors['accent']
+        ).pack(side=tk.LEFT)
+        
+        tk.Button(
+            header_frame,
+            text="🔄 Refresh",
+            font=('Segoe UI', 9, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            relief='flat',
+            padx=12,
+            pady=4,
+            cursor='hand2',
+            command=lambda: self._refresh_study_materials()
+        ).pack(side=tk.RIGHT)
+        
+        tk.Label(
+            parent,
+            text="Upload study materials to Google Drive and share links with students.",
+            font=('Segoe UI', 10),
+            bg='white',
+            fg='#666'
+        ).pack(padx=20, anchor='w', pady=(0, 20))
+        
+        # Main container with two columns
+        main_container = tk.Frame(parent, bg='white')
+        main_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        
+        # LEFT: Upload Form
+        form_frame = tk.Frame(main_container, bg='white', relief='solid', bd=1)
+        form_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        
+        tk.Label(form_frame, text="📤 Upload New Material", font=('Segoe UI', 13, 'bold'), 
+                bg='white', fg=self.colors['accent']).pack(pady=15, padx=15, anchor='w')
+        
+        # Form fields
+        form_inner = tk.Frame(form_frame, bg='white')
+        form_inner.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        
+        # Title
+        tk.Label(form_inner, text="Title *", font=('Segoe UI', 10, 'bold'), bg='white').grid(row=0, column=0, sticky='w', pady=(0,5))
+        self.material_title = tk.Entry(form_inner, font=('Segoe UI', 10), width=35)
+        self.material_title.grid(row=1, column=0, sticky='ew', pady=(0,15))
+        
+        # Description
+        tk.Label(form_inner, text="Description", font=('Segoe UI', 10, 'bold'), bg='white').grid(row=2, column=0, sticky='w', pady=(0,5))
+        self.material_desc = tk.Text(form_inner, font=('Segoe UI', 10), height=3, width=35, wrap=tk.WORD)
+        self.material_desc.grid(row=3, column=0, sticky='ew', pady=(0,15))
+        
+        # Google Drive Link
+        tk.Label(form_inner, text="Google Drive Link *", font=('Segoe UI', 10, 'bold'), bg='white').grid(row=4, column=0, sticky='w', pady=(0,5))
+        self.material_link = tk.Entry(form_inner, font=('Segoe UI', 10), width=35)
+        self.material_link.grid(row=5, column=0, sticky='ew', pady=(0,15))
+        
+        # Year selection
+        year_frame = tk.Frame(form_inner, bg='white')
+        year_frame.grid(row=6, column=0, sticky='w', pady=(0,15))
+        tk.Label(year_frame, text="Year *", font=('Segoe UI', 10, 'bold'), bg='white').pack(side=tk.LEFT, padx=(0,10))
+        self.material_year = ttk.Combobox(year_frame, values=['1st', '2nd', '3rd'], state='readonly', width=15)
+        self.material_year.set('1st')
+        self.material_year.pack(side=tk.LEFT)
+        
+        # Category selection
+        cat_frame = tk.Frame(form_inner, bg='white')
+        cat_frame.grid(row=7, column=0, sticky='w', pady=(0,15))
+        tk.Label(cat_frame, text="Category", font=('Segoe UI', 10, 'bold'), bg='white').pack(side=tk.LEFT, padx=(0,10))
+        self.material_category = ttk.Combobox(cat_frame, values=['Notes', 'PYQ', 'Study Material', 'Syllabus', 'Other'], state='readonly', width=15)
+        self.material_category.set('Notes')
+        self.material_category.pack(side=tk.LEFT)
+        
+        form_inner.grid_columnconfigure(0, weight=1)
+        
+        # Upload Button
+        tk.Button(
+            form_frame,
+            text="📤 Upload Material",
+            font=('Segoe UI', 11, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=10,
+            cursor='hand2',
+            command=self._upload_study_material
+        ).pack(pady=15)
+        
+        # RIGHT: Materials List
+        list_frame = tk.Frame(main_container, bg='white', relief='solid', bd=1)
+        list_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        tk.Label(list_frame, text="📋 Uploaded Materials", font=('Segoe UI', 13, 'bold'), 
+                bg='white', fg=self.colors['accent']).pack(pady=15, padx=15, anchor='w')
+        
+        # Materials tree
+        tree_container = tk.Frame(list_frame, bg='white')
+        tree_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
+        
+        columns = ('ID', 'Title', 'Year', 'Category', 'Date')
+        self.materials_tree = ttk.Treeview(tree_container, columns=columns, show='headings', height=12)
+        
+        self.materials_tree.heading('ID', text='ID')
+        self.materials_tree.heading('Title', text='Title')
+        self.materials_tree.heading('Year', text='Year')
+        self.materials_tree.heading('Category', text='Category')
+        self.materials_tree.heading('Date', text='Upload Date')
+        
+        self.materials_tree.column('ID', width=40)
+        self.materials_tree.column('Title', width=200)
+        self.materials_tree.column('Year', width=60)
+        self.materials_tree.column('Category', width=100)
+        self.materials_tree.column('Date', width=120)
+        
+        scrollbar = ttk.Scrollbar(tree_container, orient='vertical', command=self.materials_tree.yview)
+        self.materials_tree.configure(yscrollcommand=scrollbar.set)
+        
+        self.materials_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Action buttons
+        btn_frame = tk.Frame(list_frame, bg='white')
+        btn_frame.pack(pady=10)
+        
+        tk.Button(btn_frame, text="🗑️ Delete", font=('Segoe UI', 9, 'bold'), bg='#dc3545', fg='white',
+                 relief='flat', padx=12, pady=5, cursor='hand2', command=self._delete_study_material).pack(side=tk.LEFT, padx=5)
+        
+        tk.Button(btn_frame, text="🔗 Copy Link", font=('Segoe UI', 9, 'bold'), bg=self.colors['secondary'], fg='white',
+                 relief='flat', padx=12, pady=5, cursor='hand2', command=self._copy_material_link).pack(side=tk.LEFT, padx=5)
+        
+        # Load materials
+        self._refresh_study_materials()
+    
+    def _upload_study_material(self):
+        """Upload study material to database"""
+        if not WEB_PORTAL_AVAILABLE:
+            messagebox.showwarning("Unavailable", "Web portal is not running.")
+            return
+        
+        title = self.material_title.get().strip()
+        desc = self.material_desc.get("1.0", tk.END).strip()
+        link = self.material_link.get().strip()
+        year = self.material_year.get()
+        category = self.material_category.get()
+        
+        if not title or not link or not year:
+            messagebox.showwarning("Incomplete", "Please fill in Title, Link, and Year.")
+            return
+        
+        try:
+            import urllib.request
+            import json
+            
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/study-materials"
+            data = json.dumps({
+                "title": title,
+                "description": desc,
+                "drive_link": link,
+                "year": year,
+                "category": category,
+                "branch": "Computer"
+            }).encode('utf-8')
+            
+            req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'}, method='POST')
+            
+            with urllib.request.urlopen(req, timeout=2) as response:
+                res = json.loads(response.read().decode())
+                if res['status'] == 'success':
+                    messagebox.showinfo("Success", "Study material uploaded successfully!")
+                    # Clear form
+                    self.material_title.delete(0, tk.END)
+                    self.material_desc.delete("1.0", tk.END)
+                    self.material_link.delete(0, tk.END)
+                    self.material_year.set('1st')
+                    self.material_category.set('Notes')
+                    self._refresh_study_materials()
+                else:
+                    messagebox.showerror("Error", res.get('message', 'Failed to upload'))
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to upload: {e}")
+    
+    def _refresh_study_materials(self):
+        """Refresh materials list from database"""
+        if not WEB_PORTAL_AVAILABLE:
+            return
+        
+        try:
+            import urllib.request
+            import json
+            
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/study-materials"
+            req = urllib.request.Request(url)
+            
+            with urllib.request.urlopen(req, timeout=2) as response:
+                res = json.loads(response.read().decode())
+                materials = res.get('materials', [])
+                
+                # Clear tree
+                for item in self.materials_tree.get_children():
+                    self.materials_tree.delete(item)
+                
+                # Populate tree
+                for mat in materials:
+                    if mat.get('active', 1) == 1:  # Only show active materials
+                        date_str = mat['upload_date'].split()[0] if mat.get('upload_date') else 'N/A'
+                        self.materials_tree.insert('', 'end', values=(
+                            mat['id'],
+                            mat['title'][:40] + '...' if len(mat['title']) > 40 else mat['title'],
+                            mat['year'],
+                            mat.get('category', 'N/A'),
+                            date_str
+                        ), tags=(mat['id'], mat['drive_link']))
+                        
+        except Exception as e:
+            print(f"Error refreshing materials: {e}")
+    
+    def _delete_study_material(self):
+        """Delete selected study material"""
+        selected = self.materials_tree.selection()
+        if not selected:
+            messagebox.showwarning("No Selection", "Please select a material to delete.")
+            return
+        
+        if not messagebox.askyesno("Confirm", "Delete this study material?"):
+            return
+        
+        try:
+            import urllib.request
+            import json
+            
+            material_id = self.materials_tree.item(selected[0])['values'][0]
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/study-materials/{material_id}"
+            req = urllib.request.Request(url, method='DELETE')
+            
+            with urllib.request.urlopen(req, timeout=2) as response:
+                res = json.loads(response.read().decode())
+                if res['status'] == 'success':
+                    messagebox.showinfo("Success", "Material deleted successfully!")
+                    self._refresh_study_materials()
+                else:
+                    messagebox.showerror("Error", res.get('message', 'Failed to delete'))
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to delete: {e}")
+    
+    def _copy_material_link(self):
+        """Copy Google Drive link to clipboard"""
+        selected = self.materials_tree.selection()
+        if not selected:
+            messagebox.showwarning("No Selection", "Please select a material to copy link.")
+            return
+        
+        try:
+            link = self.materials_tree.item(selected[0])['tags'][1]
+            self.root.clipboard_clear()
+            self.root.clipboard_append(link)
+            messagebox.showinfo("Copied", "Drive link copied to clipboard!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to copy link: {e}")
 
     def _create_qr_access_section(self, parent):
         """Create comprehensive QR code access section with server dashboard"""
