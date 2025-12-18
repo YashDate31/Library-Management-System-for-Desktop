@@ -107,8 +107,8 @@ export default function Catalogue() {
   return (
     <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950 pb-20 transition-colors">
       
-      {/* 1. Glass Header & Search */}
-      <div className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200/50 dark:border-slate-800 transition-colors">
+      {/* 1. Glass Header & Search - Not sticky */}
+      <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200/50 dark:border-slate-800 transition-colors">
           <div className="max-w-7xl mx-auto px-4 py-4 md:py-6">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   

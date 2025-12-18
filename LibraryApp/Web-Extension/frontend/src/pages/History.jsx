@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { CheckCircle, AlertTriangle, Award, BookOpen, DollarSign, Calendar, History as HistoryIcon } from 'lucide-react';
+import { CheckCircle, AlertTriangle, Award, BookOpen, DollarSign, Calendar, History as HistoryIcon, XCircle, Clock } from 'lucide-react';
 import EmptyState from '../components/ui/EmptyState';
 import { Link } from 'react-router-dom';
 
 export default function History({ user }) {
   const [data, setData] = useState(null);
+  const [loanHistory, setLoanHistory] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('all'); // all, borrowed, overdue, on-time, late
 
   useEffect(() => {
     fetchHistory();
+    fetchLoanHistory();
   }, []);
 
   const fetchHistory = async () => {
@@ -23,9 +26,17 @@ export default function History({ user }) {
     }
   };
 
-  if (loading) return <div className="p-10 text-center text-text-secondary animate-pulse">Loading History...</div>;
-  if (loading) return <div className="p-10 text-center text-text-secondary animate-pulse">Loading History...</div>;
-  if (!data || !data.history || data.history.length === 0) return (
+  const fetchLoanHistory = async () => {
+    try {
+      const { data } = await axios.get('/api/loan-history');
+      setLoanHistory(data);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  if (loading) return <div className="p-10 text-center text-slate-500 animate-pulse font-medium">Loading History...</div>;
+  if (!data || (!data.history || data.history.length === 0) && (!loanHistory || loanHistory.total_borrowed === 0)) return (
      <div className="p-10">
         <EmptyState 
            icon={HistoryIcon}
@@ -39,6 +50,15 @@ export default function History({ user }) {
 
   const { history = [], analytics } = data;
   const { stats = {}, badges = [] } = analytics || {};
+
+  // Get all loan records
+  const allLoans = [];
+  if (loanHistory) {
+    if (activeTab === 'all' || activeTab === 'borrowed') allLoans.push(...(loanHistory.currently_borrowed || []));
+    if (activeTab === 'all' || activeTab === 'overdue') allLoans.push(...(loanHistory.currently_overdue || []));
+    if (activeTab === 'all' || activeTab === 'on-time') allLoans.push(...(loanHistory.returned_on_time || []));
+    if (activeTab === 'all' || activeTab === 'late') allLoans.push(...(loanHistory.returned_late || []));
+  }
 
   // Calculate reading preferences from category distribution
   const categoryData = stats.categories || {};
@@ -57,53 +77,139 @@ export default function History({ user }) {
       {/* Header */}
       <div>
         <h1 className="text-4xl font-black text-slate-900 mb-2 tracking-tight">My Library Journey</h1>
+        <p className="text-slate-600">Complete history of all your borrowed books</p>
+      </div>
+
+      {/* Filter Tabs */}
+      <div className="flex gap-2 overflow-x-auto pb-2">
+        <button
+          onClick={() => setActiveTab('all')}
+          className={`px-4 py-2 rounded-xl font-semibold text-sm whitespace-nowrap transition-all ${
+            activeTab === 'all' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:border-blue-300'
+          }`}
+        >
+          All ({loanHistory?.total_borrowed || 0})
+        </button>
+        <button
+          onClick={() => setActiveTab('borrowed')}
+          className={`px-4 py-2 rounded-xl font-semibold text-sm whitespace-nowrap transition-all ${
+            activeTab === 'borrowed' ? 'bg-green-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:border-green-300'
+          }`}
+        >
+          Currently Borrowed ({loanHistory?.currently_borrowed?.length || 0})
+        </button>
+        <button
+          onClick={() => setActiveTab('overdue')}
+          className={`px-4 py-2 rounded-xl font-semibold text-sm whitespace-nowrap transition-all ${
+            activeTab === 'overdue' ? 'bg-red-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:border-red-300'
+          }`}
+        >
+          Currently Overdue ({loanHistory?.currently_overdue?.length || 0})
+        </button>
+        <button
+          onClick={() => setActiveTab('on-time')}
+          className={`px-4 py-2 rounded-xl font-semibold text-sm whitespace-nowrap transition-all ${
+            activeTab === 'on-time' ? 'bg-emerald-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:border-emerald-300'
+          }`}
+        >
+          Returned On Time ({loanHistory?.returned_on_time?.length || 0})
+        </button>
+        <button
+          onClick={() => setActiveTab('late')}
+          className={`px-4 py-2 rounded-xl font-semibold text-sm whitespace-nowrap transition-all ${
+            activeTab === 'late' ? 'bg-orange-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200 hover:border-orange-300'
+          }`}
+        >
+          Returned Late ({loanHistory?.returned_late?.length || 0})
+        </button>
       </div>
 
       {/* Two Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* Left Column - Reading History */}
-        <div className="space-y-4">
-          <h2 className="text-2xl font-bold text-slate-900">Reading History</h2>
+        {/* Left Column - Loan History (2 columns wide) */}
+        <div className="lg:col-span-2 space-y-4">
+          <h2 className="text-2xl font-bold text-slate-900">
+            {activeTab === 'all' && 'All Loan Records'}
+            {activeTab === 'borrowed' && 'Currently Borrowed'}
+            {activeTab === 'overdue' && 'Currently Overdue'}
+            {activeTab === 'on-time' && 'Returned On Time'}
+            {activeTab === 'late' && 'Returned Late'}
+          </h2>
           
           <div className="space-y-3">
-            {history.slice(0, 10).map((book, index) => {
-              const returnDate = book.return_date ? new Date(book.return_date).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }) : 'N/A';
-              const isLate = book.status === 'overdue' || (book.borrow_date && book.return_date && new Date(book.return_date) > new Date(book.borrow_date));
-              
-              return (
-                <div key={index} className="bg-white rounded-xl p-5 border border-slate-100 hover:shadow-md transition-shadow">
-                  <div className="flex items-start gap-4">
-                    {/* Status Icon */}
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isLate ? 'bg-red-50' : 'bg-green-50'}`}>
-                      {isLate ? (
-                        <AlertTriangle className="text-red-500" size={20} />
-                      ) : (
-                        <CheckCircle className="text-green-500" size={20} />
-                      )}
-                    </div>
+            {allLoans.length === 0 ? (
+              <div className="bg-white rounded-xl p-10 border border-slate-100 text-center">
+                <p className="text-slate-500">No records in this category</p>
+              </div>
+            ) : (
+              allLoans.map((record, index) => {
+                const getStatusInfo = () => {
+                  if (record.actual_status === 'Currently Borrowed') {
+                    return { icon: Clock, color: 'bg-blue-50', textColor: 'text-blue-600', iconColor: 'text-blue-500' };
+                  } else if (record.actual_status === 'Currently Overdue') {
+                    return { icon: AlertTriangle, color: 'bg-red-50', textColor: 'text-red-600', iconColor: 'text-red-500' };
+                  } else if (record.actual_status === 'Returned On Time') {
+                    return { icon: CheckCircle, color: 'bg-green-50', textColor: 'text-green-600', iconColor: 'text-green-500' };
+                  } else {
+                    return { icon: XCircle, color: 'bg-orange-50', textColor: 'text-orange-600', iconColor: 'text-orange-500' };
+                  }
+                };
+                
+                const statusInfo = getStatusInfo();
+                const StatusIcon = statusInfo.icon;
+                
+                return (
+                  <div key={index} className="bg-white rounded-xl p-5 border border-slate-100 hover:shadow-md transition-shadow">
+                    <div className="flex items-start gap-4">
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${statusInfo.color}`}>
+                        <StatusIcon className={statusInfo.iconColor} size={22} />
+                      </div>
 
-                    {/* Book Info */}
-                    <div className="flex-1">
-                      <h3 className="font-bold text-slate-900 text-lg leading-tight mb-1">{book.title}</h3>
-                      <p className="text-slate-500 text-sm mb-2">Returned: {returnDate}</p>
-                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${
-                        isLate 
-                          ? 'bg-red-50 text-red-600' 
-                          : 'bg-green-50 text-green-600'
-                      }`}>
-                        {isLate ? 'Returned Late - Fine Paid' : 'Returned on Time'}
-                      </span>
+                      <div className="flex-1">
+                        <h3 className="font-bold text-slate-900 text-lg leading-tight mb-1">{record.title}</h3>
+                        <p className="text-slate-500 text-sm mb-2">by {record.author} • {record.category}</p>
+                        
+                        <div className="flex flex-wrap gap-2 mb-3 text-xs text-slate-600">
+                          <span>Borrowed: {new Date(record.borrow_date).toLocaleDateString()}</span>
+                          {record.due_date && <span>• Due: {new Date(record.due_date).toLocaleDateString()}</span>}
+                          {record.return_date && <span>• Returned: {new Date(record.return_date).toLocaleDateString()}</span>}
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${statusInfo.color} ${statusInfo.textColor}`}>
+                            {record.actual_status}
+                          </span>
+                          
+                          {record.overdue_days > 0 && (
+                            <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700">
+                              {record.overdue_days} days overdue
+                            </span>
+                          )}
+                          
+                          {record.days_left >= 0 && (
+                            <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700">
+                              {record.days_left} days left
+                            </span>
+                          )}
+                          
+                          {record.fine_paid && (
+                            <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">
+                              Fine Paid: ₹{record.fine || 0}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </div>
 
         {/* Right Column - Stats & Fun */}
-        <div className="space-y-8">
+        <div className="space-y-6">
           <h2 className="text-2xl font-bold text-slate-900">Stats & Fun</h2>
 
           {/* Stats Cards */}

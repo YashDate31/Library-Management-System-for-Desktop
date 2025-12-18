@@ -114,6 +114,19 @@ class LibraryApp:
         
         # Initialize database
         self.db = Database()
+        
+        # Run data integrity check on startup
+        print("Running database integrity check...")
+        integrity_result = self.db.verify_data_integrity()
+        if integrity_result['status'] == 'issues_found':
+            print(f"⚠️  Found {integrity_result['total_issues']} integrity issues")
+            print(f"✅ Auto-fixed {integrity_result['total_fixes']} issues")
+            if integrity_result['total_issues'] > integrity_result['total_fixes']:
+                print("⚠️  Some issues require manual attention - check Admin panel")
+        elif integrity_result['status'] == 'ok':
+            print("✅ Database integrity verified - all checks passed")
+        else:
+            print(f"❌ Integrity check error: {integrity_result.get('error', 'Unknown')}")
 
         # Notify user if calendar support missing
         if DateEntry is None:
@@ -275,6 +288,13 @@ class LibraryApp:
         """Get configurable fine per day from library settings"""
         return self.library_settings.get('fine_per_day', 5)
     
+    def get_loan_period_days(self):
+        """Get configurable loan period from library settings"""
+        return self.library_settings.get('loan_period_days', 7)
+    
+    def get_max_books_per_student(self):
+        """Get configurable max books per student from library settings"""
+        return self.library_settings.get('max_books_per_student', 5)
 
     def open_email_settings(self):
         """Open email settings dialog with tabs for configuration and history"""
@@ -1299,7 +1319,7 @@ Government Polytechnic Awasari (Kh)"""
         dialog.title("Developer Info")
         dialog.configure(bg='white')
         dialog.resizable(False, False)
-        dialog.geometry("380x280")
+        dialog.geometry("480x480")
         dialog.transient(self.root)
         dialog.grab_set()
         dialog.update_idletasks()
@@ -1331,8 +1351,7 @@ Government Polytechnic Awasari (Kh)"""
         
         links = [
             ("GitHub", "github.com/YashDate31"),
-            ("LinkedIn", "linkedin.com/in/yash-date-a361a8329"),
-            ("Instagram", "instagram.com/dypatil0_0")
+            ("LinkedIn", "linkedin.com/in/yash-date-a361a8329")
         ]
         
         for platform, url in links:
@@ -1344,6 +1363,35 @@ Government Polytechnic Awasari (Kh)"""
         
         social_frame.pack_configure(pady=(8,4))
         
+        # Special Thanks Section
+        thanks_frame = tk.Frame(dialog, bg='#fffbf0', relief='flat', bd=1)
+        thanks_frame.pack(fill=tk.X, padx=24, pady=(8,8))
+        
+        tk.Label(thanks_frame, text="🙏 Special Thanks", font=('Segoe UI',10,'bold'), bg='#fffbf0', fg='#d97706').pack(pady=(8,4))
+        
+        tk.Label(thanks_frame, text="Yash Magar", font=('Segoe UI',10,'bold'), bg='#fffbf0', fg='#222').pack(pady=2)
+        tk.Label(thanks_frame, text="For valuable contributions and support", font=('Segoe UI',8), bg='#fffbf0', fg='#666').pack(pady=(0,4))
+        
+        thanks_links = [
+            ("LinkedIn", "linkedin.com/in/yash-magar-55a184395"),
+            ("Email", "yashajaymagar01@gmail.com")
+        ]
+        
+        for platform, url in thanks_links:
+            if platform == "Email":
+                link_btn = tk.Button(thanks_frame, text=f"  {platform}  ", font=('Segoe UI',9), 
+                                    bg='white', fg='#d97706', relief='flat', 
+                                    cursor='hand2', padx=8, pady=2,
+                                    command=lambda u=url: self._open_email(u))
+            else:
+                link_btn = tk.Button(thanks_frame, text=f"  {platform}  ", font=('Segoe UI',9), 
+                                    bg='white', fg='#d97706', relief='flat', 
+                                    cursor='hand2', padx=8, pady=2,
+                                    command=lambda u=url: self._open_social_link(u))
+            link_btn.pack(pady=2)
+        
+        thanks_frame.pack_configure(pady=(4,4))
+        
         tk.Button(dialog,text='Close',font=('Segoe UI',10,'bold'),bg=self.colors['secondary'],fg='white',relief='flat',padx=16,pady=6,cursor='hand2',command=dialog.destroy,activebackground=self.colors['accent'],activeforeground='white').pack(pady=(4,14))
     
     def _open_social_link(self, url):
@@ -1352,6 +1400,11 @@ Government Polytechnic Awasari (Kh)"""
         if not url.startswith('http'):
             url = f"https://{url}"
         webbrowser.open(url)
+    
+    def _open_email(self, email):
+        """Open email client"""
+        import webbrowser
+        webbrowser.open(f"mailto:{email}")
 
     def clear_all_data_ui(self):
         """Clear all demo/user data with a confirmation prompt."""
@@ -1366,13 +1419,14 @@ Government Polytechnic Awasari (Kh)"""
 
     def _prompt_and_promote(self):
         """Prompt for password and, if correct, promote student years.
-        Required password: gpa123
+        Required password: Admin password from library settings
         """
         from tkinter import simpledialog
-        pwd = simpledialog.askstring("Authentication Required", "Enter password to promote students:", show='*')
+        pwd = simpledialog.askstring("Authentication Required", "Enter admin password to promote students:", show='*')
         if pwd is None:
             return
-        if pwd.strip() != 'gpa123':
+        stored_password = self.library_settings.get('admin_password', ADMIN_PASSWORD)
+        if pwd.strip() != stored_password:
             messagebox.showerror("Access Denied", "Incorrect password. Promotion aborted.")
             return
         self.promote_student_years()
@@ -1387,16 +1441,17 @@ Government Polytechnic Awasari (Kh)"""
             icon='warning'
         ):
             return
-        # Password prompt (must match CLEAR_WIPE_PASSWORD)
+        # Password prompt (must match admin password)
         pwd = simpledialog.askstring(
-            "Enter Wipe Password",
-            "Enter password to continue (cancel to abort):",
+            "Enter Admin Password",
+            "Enter admin password to continue (cancel to abort):",
             show='*'
         )
         if pwd is None:
             messagebox.showinfo("Cancelled", "Data wipe cancelled.")
             return
-        if pwd.strip() != CLEAR_WIPE_PASSWORD:
+        stored_password = self.library_settings.get('admin_password', ADMIN_PASSWORD)
+        if pwd.strip() != stored_password:
             messagebox.showerror("Incorrect", "Wrong password. Data wipe aborted.")
             return
         # Second, stronger confirmation
@@ -3940,16 +3995,31 @@ Current Settings:
             cur = conn.cursor()
             cur.execute("SELECT year FROM students WHERE enrollment_no = ?", (enrollment_no,))
             row = cur.fetchone()
-            conn.close()
             if not row:
+                conn.close()
                 messagebox.showerror("Error", "Student not found!")
                 return
             year_val = (row[0] or '').strip().lower()
             if year_val in ("pass out", "passout"):
+                conn.close()
                 messagebox.showerror("Not Allowed", "Pass Out students cannot borrow books.")
                 return
-        except Exception:
+            
+            # Check max books limit
+            max_books = self.get_max_books_per_student()
+            cur.execute("SELECT COUNT(*) FROM borrow_records WHERE enrollment_no = ? AND status = 'borrowed'", (enrollment_no,))
+            current_books = cur.fetchone()[0]
+            conn.close()
+            
+            if current_books >= max_books:
+                messagebox.showerror(
+                    "Limit Reached",
+                    f"Student has already borrowed {current_books} book(s).\nMaximum allowed: {max_books} books.\n\nPlease return books before borrowing more."
+                )
+                return
+        except Exception as e:
             # If the check fails unexpectedly, continue to DB enforcement which also validates
+            print(f"Pre-borrow validation error: {e}")
             pass
 
         # Validate date format (borrow & due)
@@ -3966,15 +4036,16 @@ Current Settings:
             messagebox.showerror("Error", "Due date cannot be before issue date")
             return
 
-        # UI-side validation for allowed range: 1..LOAN_PERIOD_DAYS days from borrow
+        # UI-side validation for allowed range: 1..loan_period days from borrow
         try:
             bd_obj = datetime.strptime(borrow_date, '%Y-%m-%d')
             dd_obj = datetime.strptime(due_date, '%Y-%m-%d')
             diff_days = (dd_obj - bd_obj).days
-            if not (1 <= diff_days <= LOAN_PERIOD_DAYS):
+            loan_period = self.get_loan_period_days()
+            if not (1 <= diff_days <= loan_period):
                 messagebox.showerror(
                     "Invalid Due Date",
-                    f"Due date must be between 1 and {LOAN_PERIOD_DAYS} days after the issue date."
+                    f"Due date must be between 1 and {loan_period} days after the issue date."
                 )
                 return
         except Exception:
@@ -3983,39 +4054,7 @@ Current Settings:
         success, message = self.db.borrow_book(enrollment_no, book_id, borrow_date, due_date)
         
         if success:
-            # Determine if late and show punishment popup if overdue
-            late_popup_shown = False
-            try:
-                conn = self.db.get_connection()
-                cur = conn.cursor()
-                cur.execute("""
-                    SELECT br.due_date, br.return_date
-                    FROM borrow_records br
-                    WHERE br.enrollment_no = ? AND br.book_id = ? AND br.status = 'returned'
-                    ORDER BY br.id DESC LIMIT 1
-                """, (enrollment_no, book_id))
-                row = cur.fetchone()
-                conn.close()
-                if row:
-                    due_date_val, return_date_val = row
-                    from datetime import datetime as _dt
-                    try:
-                        dd = _dt.strptime(due_date_val, '%Y-%m-%d').date()
-                        rd = _dt.strptime(return_date_val, '%Y-%m-%d').date()
-                        if rd > dd:
-                            overdue_days = (rd - dd).days
-                            fine_amount = overdue_days * FINE_PER_DAY
-                            messagebox.showwarning(
-                                "Late Return",
-                                f"You failed to return the book on time.\n\nDue Date: {due_date_val}\nReturn Date: {return_date_val}\nOverdue Days: {overdue_days}\nFine: {fine_amount} units\n\nYou are punished for late submission!"
-                            )
-                            late_popup_shown = True
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            if not late_popup_shown:
-                messagebox.showinfo("Success", message)
+            messagebox.showinfo("Success", message)
             # Clear fields
             self.borrow_enrollment_entry.delete(0, tk.END)
             self.borrow_book_id_entry.delete(0, tk.END)
@@ -4025,7 +4064,7 @@ Current Settings:
             self.borrow_borrow_date_entry.insert(0, today_str)
             self.borrow_due_date_entry.delete(0, tk.END)
             # Suggest 7-day period by default; user may change to 1..7 days
-            default_due = (datetime.now() + timedelta(days=LOAN_PERIOD_DAYS)).strftime('%Y-%m-%d')
+            default_due = (datetime.now() + timedelta(days=self.get_loan_period_days())).strftime('%Y-%m-%d')
             self.borrow_due_date_entry.insert(0, default_due)
 
             # Clear student and book details
@@ -4082,10 +4121,10 @@ Current Settings:
                     ret_dt = _dt.strptime(row[1], '%Y-%m-%d')
                     days_late = (ret_dt - due_dt).days
                     if days_late > 0:
-                        fine_amount = days_late * FINE_PER_DAY
+                        fine_amount = days_late * self.get_fine_per_day()
                         messagebox.showwarning(
                             "Late Return",
-                            f"This book is returned {days_late} day(s) late.\nFine: Rs {fine_amount}"
+                            f"This book is returned {days_late} day(s) late.\nFine: ₹{fine_amount}"
                         )
             except Exception as e:
                 print(f"Late return fine computation failed: {e}")
@@ -4751,7 +4790,7 @@ Due Date: {due_date}
 Days Overdue: {days_overdue}
 Fine Amount: ₹{fine_amount}
 
-As per library rules, a fine of ₹{FINE_PER_DAY} per day is applicable for overdue books.
+As per library rules, a fine of ₹{self.get_fine_per_day()} per day is applicable for overdue books.
 
 Please return the book to the library at the earliest and clear the pending fine. Failure to do so may result in restrictions on future borrowing privileges.
 
@@ -5004,20 +5043,21 @@ Note: This is an automated email. Please find the attached formal overdue letter
             print(f"Auto due date update failed: {e}")
 
     def on_due_date_attempt_change(self):
-        """Validate due-date change: must be within 1..LOAN_PERIOD_DAYS days of issue date."""
+        """Validate due-date change: must be within 1..loan_period days of issue date."""
         try:
             from datetime import datetime as _dt
             bd = _dt.strptime(self.borrow_borrow_date_entry.get(), '%Y-%m-%d')
             dd = _dt.strptime(self.borrow_due_date_entry.get(), '%Y-%m-%d')
             diff = (dd - bd).days
-            if not (1 <= diff <= LOAN_PERIOD_DAYS):
+            loan_period = self.get_loan_period_days()
+            if not (1 <= diff <= loan_period):
                 messagebox.showerror(
                     "Invalid Due Date",
-                    f"Due date must be between 1 and {LOAN_PERIOD_DAYS} days after the issue date."
+                    f"Due date must be between 1 and {loan_period} days after the issue date."
                 )
                 # Re-suggest maximum allowed
                 from datetime import timedelta
-                suggested = (bd + timedelta(days=LOAN_PERIOD_DAYS)).strftime('%Y-%m-%d')
+                suggested = (bd + timedelta(days=loan_period)).strftime('%Y-%m-%d')
                 try:
                     self.borrow_due_date_entry.config(state='normal')
                     self.borrow_due_date_entry.delete(0, tk.END)
@@ -6102,7 +6142,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 "Subject: Submission of Overdue Library Books",
                 "", "Dear Students,", "",
                 "The following students are hereby notified to immediately submit the listed library books that are now overdue.",
-                f"A fine of Rs {FINE_PER_DAY} per day has accrued (or will continue to accrue) until the books are returned.",
+                f"A fine of Rs {self.get_fine_per_day()} per day has accrued (or will continue to accrue) until the books are returned.",
                 "Failure to comply today will trigger disciplinary action per departmental policy.",
                 "", "Overdue Book List:", ""
             ]
@@ -6139,7 +6179,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     current_row += 2
                     ws.cell(row=current_row, column=1, value="The following students are hereby notified to immediately submit the listed library books that are now overdue.")
                     current_row += 1
-                    ws.cell(row=current_row, column=1, value=f"A fine of Rs {FINE_PER_DAY} per day has accrued (or will continue to accrue) until the books are returned.")
+                    ws.cell(row=current_row, column=1, value=f"A fine of Rs {self.get_fine_per_day()} per day has accrued (or will continue to accrue) until the books are returned.")
                     current_row += 1
                     ws.cell(row=current_row, column=1, value="Failure to comply today will trigger disciplinary action per departmental policy.")
                     current_row += 2
@@ -6275,7 +6315,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
             body_paras = [
                 "Dear Students,",
                 "The following students are hereby notified to immediately submit the listed library books that are now overdue.",
-                f"A fine of Rs {FINE_PER_DAY} per day has accrued (or will continue to accrue) until the books are returned.",
+                f"A fine of Rs {self.get_fine_per_day()} per day has accrued (or will continue to accrue) until the books are returned.",
                 "Failure to comply today will trigger disciplinary action per departmental policy.",
                 "Overdue Book List:"
             ]
@@ -6439,7 +6479,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
                         temp_doc.add_paragraph()
                         fine_para = temp_doc.add_paragraph()
                         fine_run = fine_para.add_run(
-                            f"As per library rules, a fine of ₹{FINE_PER_DAY} per day is applicable for overdue books.\n"
+                            f"As per library rules, a fine of ₹{self.get_fine_per_day()} per day is applicable for overdue books.\n"
                             f"Your current fine amount is: ₹{fine}\n\n"
                         )
                         fine_run.bold = True
@@ -6479,7 +6519,7 @@ Due Date: {due_date}
 Days Overdue: {days_overdue}
 Fine Amount: ₹{fine}
 
-As per library rules, a fine of ₹{FINE_PER_DAY} per day is applicable for overdue books.
+As per library rules, a fine of ₹{self.get_fine_per_day()} per day is applicable for overdue books.
 
 Please return the book to the library at the earliest and clear the pending fine. Failure to do so may result in restrictions on future borrowing privileges.
 
@@ -7764,9 +7804,18 @@ Note: This is an automated email. Please find the attached formal overdue letter
         v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         main_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
+        # Mousewheel scrolling with proper enter/leave handling
         def _on_mousewheel(event):
             main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        main_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        def _on_enter(event):
+            main_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        def _on_leave(event):
+            main_canvas.unbind_all("<MouseWheel>")
+        
+        main_canvas.bind("<Enter>", _on_enter)
+        main_canvas.bind("<Leave>", _on_leave)
         parent.bind("<Destroy>", lambda e: main_canvas.unbind_all("<MouseWheel>"), add='+')
 
 
@@ -8218,7 +8267,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
             tk.Label(self.traffic_graph_container, text=f"Error loading traffic graph: {e}", bg='white', fg='red').pack(pady=50)
     
     def _create_study_materials_section(self, parent):
-        """Create study materials management section for uploading Google Drive links"""
+        """Create study materials management section for uploading files"""
         # Header
         header_frame = tk.Frame(parent, bg='white')
         header_frame.pack(fill=tk.X, padx=20, pady=(20, 10))
@@ -8246,7 +8295,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
         
         tk.Label(
             parent,
-            text="Upload study materials to Google Drive and share links with students.",
+            text="Upload study materials (PDFs, docs, images, etc.) and share with students.",
             font=('Segoe UI', 10),
             bg='white',
             fg='#666'
@@ -8268,51 +8317,67 @@ Note: This is an automated email. Please find the attached formal overdue letter
         form_inner.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
         
         # Title
-        tk.Label(form_inner, text="Title *", font=('Segoe UI', 10, 'bold'), bg='white').grid(row=0, column=0, sticky='w', pady=(0,5))
+        tk.Label(form_inner, text="Title *", font=('Segoe UI', 10, 'bold'), bg='white').grid(row=0, column=0, sticky='w', pady=(0,3))
         self.material_title = tk.Entry(form_inner, font=('Segoe UI', 10), width=35)
-        self.material_title.grid(row=1, column=0, sticky='ew', pady=(0,15))
+        self.material_title.grid(row=1, column=0, sticky='ew', pady=(0,8))
         
         # Description
-        tk.Label(form_inner, text="Description", font=('Segoe UI', 10, 'bold'), bg='white').grid(row=2, column=0, sticky='w', pady=(0,5))
-        self.material_desc = tk.Text(form_inner, font=('Segoe UI', 10), height=3, width=35, wrap=tk.WORD)
-        self.material_desc.grid(row=3, column=0, sticky='ew', pady=(0,15))
+        tk.Label(form_inner, text="Description", font=('Segoe UI', 10, 'bold'), bg='white').grid(row=2, column=0, sticky='w', pady=(0,3))
+        self.material_desc = tk.Text(form_inner, font=('Segoe UI', 10), height=2, width=35, wrap=tk.WORD)
+        self.material_desc.grid(row=3, column=0, sticky='ew', pady=(0,8))
         
-        # Google Drive Link
-        tk.Label(form_inner, text="Google Drive Link *", font=('Segoe UI', 10, 'bold'), bg='white').grid(row=4, column=0, sticky='w', pady=(0,5))
-        self.material_link = tk.Entry(form_inner, font=('Segoe UI', 10), width=35)
-        self.material_link.grid(row=5, column=0, sticky='ew', pady=(0,15))
+        # File Selection
+        tk.Label(form_inner, text="Select File *", font=('Segoe UI', 10, 'bold'), bg='white').grid(row=4, column=0, sticky='w', pady=(0,3))
         
-        # Year selection
+        self.selected_file_path = tk.StringVar(value="No file selected")
+        self.selected_file_full_path = None  # Initialize file path variable
+        
+        # Display selected file name
+        file_display = tk.Entry(form_inner, textvariable=self.selected_file_path, font=('Segoe UI', 9), 
+                               state='readonly', fg='#666', relief='solid', bd=1)
+        file_display.grid(row=5, column=0, sticky='ew', pady=(0,5))
+        
+        # Browse button
+        browse_btn = tk.Button(form_inner, text="📁 Choose File", font=('Segoe UI', 10, 'bold'), 
+                              bg='#0078d4', fg='white', relief='flat', 
+                              padx=20, pady=6, cursor='hand2', 
+                              command=self._browse_study_material_file,
+                              activebackground='#106ebe')
+        browse_btn.grid(row=6, column=0, sticky='ew', pady=(0,8))
+        
+        # Semester selection
         year_frame = tk.Frame(form_inner, bg='white')
-        year_frame.grid(row=6, column=0, sticky='w', pady=(0,15))
-        tk.Label(year_frame, text="Year *", font=('Segoe UI', 10, 'bold'), bg='white').pack(side=tk.LEFT, padx=(0,10))
-        self.material_year = ttk.Combobox(year_frame, values=['1st', '2nd', '3rd'], state='readonly', width=15)
+        year_frame.grid(row=7, column=0, sticky='w', pady=(0,8))
+        tk.Label(year_frame, text="Semester *", font=('Segoe UI', 10, 'bold'), bg='white').pack(side=tk.LEFT, padx=(0,10))
+        self.material_year = ttk.Combobox(year_frame, values=['1st', '2nd', '3rd', '4th', '5th', '6th'], state='readonly', width=15)
         self.material_year.set('1st')
         self.material_year.pack(side=tk.LEFT)
         
         # Category selection
         cat_frame = tk.Frame(form_inner, bg='white')
-        cat_frame.grid(row=7, column=0, sticky='w', pady=(0,15))
+        cat_frame.grid(row=8, column=0, sticky='w', pady=(0,8))
         tk.Label(cat_frame, text="Category", font=('Segoe UI', 10, 'bold'), bg='white').pack(side=tk.LEFT, padx=(0,10))
         self.material_category = ttk.Combobox(cat_frame, values=['Notes', 'PYQ', 'Study Material', 'Syllabus', 'Other'], state='readonly', width=15)
         self.material_category.set('Notes')
         self.material_category.pack(side=tk.LEFT)
         
-        form_inner.grid_columnconfigure(0, weight=1)
-        
-        # Upload Button
-        tk.Button(
-            form_frame,
-            text="📤 Upload Material",
+        # Upload Button - Placed inside grid layout for visibility
+        upload_btn = tk.Button(
+            form_inner,
+            text="📤 UPLOAD MATERIAL",
             font=('Segoe UI', 11, 'bold'),
-            bg=self.colors['secondary'],
+            bg='#28a745',
             fg='white',
             relief='flat',
-            padx=20,
+            padx=25,
             pady=10,
             cursor='hand2',
-            command=self._upload_study_material
-        ).pack(pady=15)
+            command=self._upload_study_material,
+            activebackground='#218838'
+        )
+        upload_btn.grid(row=9, column=0, sticky='ew', pady=(10,5))
+        
+        form_inner.grid_columnconfigure(0, weight=1)
         
         # RIGHT: Materials List
         list_frame = tk.Frame(main_container, bg='white', relief='solid', bd=1)
@@ -8325,18 +8390,18 @@ Note: This is an automated email. Please find the attached formal overdue letter
         tree_container = tk.Frame(list_frame, bg='white')
         tree_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
         
-        columns = ('ID', 'Title', 'Year', 'Category', 'Date')
+        columns = ('ID', 'Title', 'Semester', 'Category', 'Date')
         self.materials_tree = ttk.Treeview(tree_container, columns=columns, show='headings', height=12)
         
         self.materials_tree.heading('ID', text='ID')
         self.materials_tree.heading('Title', text='Title')
-        self.materials_tree.heading('Year', text='Year')
+        self.materials_tree.heading('Semester', text='Semester')
         self.materials_tree.heading('Category', text='Category')
         self.materials_tree.heading('Date', text='Upload Date')
         
         self.materials_tree.column('ID', width=40)
         self.materials_tree.column('Title', width=200)
-        self.materials_tree.column('Year', width=60)
+        self.materials_tree.column('Semester', width=70)
         self.materials_tree.column('Category', width=100)
         self.materials_tree.column('Date', width=120)
         
@@ -8353,54 +8418,83 @@ Note: This is an automated email. Please find the attached formal overdue letter
         tk.Button(btn_frame, text="🗑️ Delete", font=('Segoe UI', 9, 'bold'), bg='#dc3545', fg='white',
                  relief='flat', padx=12, pady=5, cursor='hand2', command=self._delete_study_material).pack(side=tk.LEFT, padx=5)
         
-        tk.Button(btn_frame, text="🔗 Copy Link", font=('Segoe UI', 9, 'bold'), bg=self.colors['secondary'], fg='white',
-                 relief='flat', padx=12, pady=5, cursor='hand2', command=self._copy_material_link).pack(side=tk.LEFT, padx=5)
-        
         # Load materials
         self._refresh_study_materials()
     
+    def _browse_study_material_file(self):
+        """Open file dialog to select study material file"""
+        from tkinter import filedialog
+        
+        filetypes = [
+            ("All Files", "*.*"),
+            ("PDF Files", "*.pdf"),
+            ("Word Documents", "*.doc;*.docx"),
+            ("PowerPoint", "*.ppt;*.pptx"),
+            ("Text Files", "*.txt"),
+            ("Images", "*.jpg;*.jpeg;*.png"),
+            ("Archives", "*.zip;*.rar")
+        ]
+        
+        filepath = filedialog.askopenfilename(
+            title="Select Study Material File",
+            filetypes=filetypes
+        )
+        
+        if filepath:
+            import os
+            filename = os.path.basename(filepath)
+            self.selected_file_path.set(filename)
+            self.selected_file_full_path = filepath
+    
     def _upload_study_material(self):
-        """Upload study material to database"""
+        """Upload study material file to server"""
         if not WEB_PORTAL_AVAILABLE:
             messagebox.showwarning("Unavailable", "Web portal is not running.")
             return
         
         title = self.material_title.get().strip()
         desc = self.material_desc.get("1.0", tk.END).strip()
-        link = self.material_link.get().strip()
         year = self.material_year.get()
         category = self.material_category.get()
         
-        if not title or not link or not year:
-            messagebox.showwarning("Incomplete", "Please fill in Title, Link, and Year.")
+        # Check if file is selected
+        if not hasattr(self, 'selected_file_full_path') or not self.selected_file_full_path:
+            messagebox.showwarning("No File", "Please select a file to upload.")
+            return
+        
+        if not title or not year:
+            messagebox.showwarning("Incomplete", "Please fill in Title and Year.")
             return
         
         try:
-            import urllib.request
-            import json
+            import requests
+            import os
             
             url = f"http://127.0.0.1:{self.portal_port}/api/admin/study-materials"
-            data = json.dumps({
-                "title": title,
-                "description": desc,
-                "drive_link": link,
-                "year": year,
-                "category": category,
-                "branch": "Computer"
-            }).encode('utf-8')
             
-            req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'}, method='POST')
-            
-            with urllib.request.urlopen(req, timeout=2) as response:
-                res = json.loads(response.read().decode())
+            # Prepare multipart form data
+            with open(self.selected_file_full_path, 'rb') as f:
+                files = {'file': (os.path.basename(self.selected_file_full_path), f)}
+                data = {
+                    "title": title,
+                    "description": desc,
+                    "year": year,
+                    "category": category,
+                    "branch": "Computer"
+                }
+                
+                response = requests.post(url, files=files, data=data, timeout=30)
+                res = response.json()
+                
                 if res['status'] == 'success':
                     messagebox.showinfo("Success", "Study material uploaded successfully!")
                     # Clear form
                     self.material_title.delete(0, tk.END)
                     self.material_desc.delete("1.0", tk.END)
-                    self.material_link.delete(0, tk.END)
                     self.material_year.set('1st')
                     self.material_category.set('Notes')
+                    self.selected_file_path.set("No file selected")
+                    self.selected_file_full_path = None
                     self._refresh_study_materials()
                 else:
                     messagebox.showerror("Error", res.get('message', 'Failed to upload'))
@@ -8431,13 +8525,17 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 for mat in materials:
                     if mat.get('active', 1) == 1:  # Only show active materials
                         date_str = mat['upload_date'].split()[0] if mat.get('upload_date') else 'N/A'
+                        # Format file size
+                        file_size = mat.get('file_size', 0)
+                        size_str = f"{file_size / 1024:.1f} KB" if file_size < 1024*1024 else f"{file_size / (1024*1024):.1f} MB"
+                        
                         self.materials_tree.insert('', 'end', values=(
                             mat['id'],
                             mat['title'][:40] + '...' if len(mat['title']) > 40 else mat['title'],
                             mat['year'],
                             mat.get('category', 'N/A'),
                             date_str
-                        ), tags=(mat['id'], mat['drive_link']))
+                        ), tags=(mat['id'],))
                         
         except Exception as e:
             print(f"Error refreshing materials: {e}")
@@ -8469,21 +8567,6 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     messagebox.showerror("Error", res.get('message', 'Failed to delete'))
         except Exception as e:
             messagebox.showerror("Error", f"Failed to delete: {e}")
-    
-    def _copy_material_link(self):
-        """Copy Google Drive link to clipboard"""
-        selected = self.materials_tree.selection()
-        if not selected:
-            messagebox.showwarning("No Selection", "Please select a material to copy link.")
-            return
-        
-        try:
-            link = self.materials_tree.item(selected[0])['tags'][1]
-            self.root.clipboard_clear()
-            self.root.clipboard_append(link)
-            messagebox.showinfo("Copied", "Drive link copied to clipboard!")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to copy link: {e}")
 
     def _create_qr_access_section(self, parent):
         """Create comprehensive QR code access section with server dashboard"""
@@ -9351,11 +9434,21 @@ Note: This is an automated email. Please find the attached formal overdue letter
         self.requests_canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
-        # Bind mousewheel
+        # Bind mousewheel scrolling - bind to both canvas and container
         def _on_mousewheel(event):
             self.requests_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        self.requests_canvas.bind("<MouseWheel>", _on_mousewheel)
-        self.requests_canvas.bind("<Enter>", lambda e: self.requests_canvas.focus_set())
+        
+        # Bind to canvas
+        self.requests_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        # Unbind when leaving the frame to avoid conflicts
+        def _on_leave(event):
+            self.requests_canvas.unbind_all("<MouseWheel>")
+        def _on_enter(event):
+            self.requests_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        list_frame.bind("<Enter>", _on_enter)
+        list_frame.bind("<Leave>", _on_leave)
         
         # Load requests
         self._refresh_portal_requests()
@@ -11880,7 +11973,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 ) as total_fines
                 FROM borrow_records 
                 WHERE return_date >= ? AND return_date IS NOT NULL
-            """, (FINE_PER_DAY, start_date))
+            """, (self.get_fine_per_day(), start_date))
             
             total_fines = cursor.fetchone()[0] or 0
             
@@ -11895,7 +11988,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 ("📥 Total Returns", total_returns, "#45b7d1"),
                 ("⚠️ Currently Overdue", overdue_count, "#ff6b6b"),
                 ("👥 Active Students", active_students, "#f9ca24"),
-                (f"💰 Fines Collected (₹{FINE_PER_DAY}/day)", f"₹{total_fines:.0f}", "#a55eea")
+                (f"💰 Fines Collected (₹{self.get_fine_per_day()}/day)", f"₹{total_fines:.0f}", "#a55eea")
             ]
             
             for i, (label, value, color) in enumerate(stats):
