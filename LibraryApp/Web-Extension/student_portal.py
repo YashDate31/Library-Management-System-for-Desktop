@@ -137,6 +137,12 @@ CSRF_EXCLUDED_ENDPOINTS = [
     '/api/login',
     '/api/public/forgot-password',
     '/api/change_password',  # Part of first-time login flow
+    '/api/request',  # Student requests (session-protected)
+    '/api/settings',  # Settings update (session-protected)
+    '/api/request-deletion',  # Deletion request (session-protected)
+    '/api/admin/notices',  # Desktop app access
+    '/api/admin/requests',  # Desktop app access
+    '/api/admin/deletion',  # Desktop app access
 ]
 
 
@@ -149,6 +155,10 @@ def csrf_protect():
     
     # Skip for excluded endpoints
     if request.path in CSRF_EXCLUDED_ENDPOINTS:
+        return
+    
+    # Skip for admin endpoints (desktop app access only)
+    if request.path.startswith('/api/admin/'):
         return
     
     # Skip for static files
@@ -322,6 +332,22 @@ def init_portal_db():
             method TEXT,
             status INTEGER,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # Study Materials Table (Google Drive Links)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS study_materials (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            description TEXT,
+            drive_link TEXT NOT NULL,
+            branch TEXT DEFAULT 'Computer',
+            year TEXT NOT NULL,  -- '1st', '2nd', '3rd'
+            category TEXT,  -- 'Notes', 'PYQ', 'Study Material', 'Other'
+            uploaded_by TEXT DEFAULT 'Library Admin',
+            upload_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+            active INTEGER DEFAULT 1
         )
     """)
     
@@ -2129,6 +2155,98 @@ def api_admin_stats():
         'portal_users': auth_count,
         'pending_password_change': first_login_count
     })
+
+# =====================================================================
+# STUDY MATERIALS API ENDPOINTS
+# =====================================================================
+
+@app.route('/api/study-materials', methods=['GET'])
+def api_get_study_materials():
+    """Get study materials (optionally filtered by year)"""
+    year_filter = request.args.get('year', None)
+    
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    
+    if year_filter and year_filter != 'All':
+        cursor.execute("""
+            SELECT * FROM study_materials 
+            WHERE active = 1 AND year = ?
+            ORDER BY upload_date DESC
+        """, (year_filter,))
+    else:
+        cursor.execute("""
+            SELECT * FROM study_materials 
+            WHERE active = 1
+            ORDER BY upload_date DESC
+        """)
+    
+    materials = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
+    return jsonify({'materials': materials})
+
+@app.route('/api/admin/study-materials', methods=['GET', 'POST'])
+def api_admin_study_materials():
+    """Admin: Manage study materials"""
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    
+    if request.method == 'GET':
+        # Get all materials (including inactive)
+        cursor.execute("SELECT * FROM study_materials ORDER BY upload_date DESC")
+        materials = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify({'materials': materials})
+    
+    elif request.method == 'POST':
+        # Add new study material
+        data = request.json
+        title = data.get('title')
+        description = data.get('description', '')
+        drive_link = data.get('drive_link')
+        branch = data.get('branch', 'Computer')
+        year = data.get('year')
+        category = data.get('category', 'Notes')
+        
+        if not title or not drive_link or not year:
+            conn.close()
+            return jsonify({'status': 'error', 'message': 'Title, link, and year required'}), 400
+        
+        cursor.execute("""
+            INSERT INTO study_materials (title, description, drive_link, branch, year, category)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (title, description, drive_link, branch, year, category))
+        
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'success', 'message': 'Study material added successfully'})
+
+@app.route('/api/admin/study-materials/<int:material_id>', methods=['DELETE', 'PUT'])
+def api_admin_manage_material(material_id):
+    """Admin: Delete or update study material"""
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    
+    if request.method == 'DELETE':
+        # Soft delete (set active = 0)
+        cursor.execute("UPDATE study_materials SET active = 0 WHERE id = ?", (material_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'success', 'message': 'Material deleted'})
+    
+    elif request.method == 'PUT':
+        # Update material
+        data = request.json
+        cursor.execute("""
+            UPDATE study_materials 
+            SET title = ?, description = ?, drive_link = ?, year = ?, category = ?
+            WHERE id = ?
+        """, (data['title'], data.get('description', ''), data['drive_link'], 
+              data['year'], data.get('category', 'Notes'), material_id))
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'success', 'message': 'Material updated'})
 
 # --- SPA Serving ---
 @app.route('/', defaults={'path': ''})

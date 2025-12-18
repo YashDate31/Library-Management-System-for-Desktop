@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LogOut, LayoutDashboard, BookOpen, Clock, FileText, Bell, Search, User, Settings, ScanLine, Menu, X, ChevronLeft, ChevronRight, Home, PanelLeftClose, PanelLeftOpen, Pin, PinOff } from 'lucide-react';
+import { LogOut, LayoutDashboard, BookOpen, Clock, FileText, Bell, Search, User, Settings, ScanLine, Menu, X, ChevronLeft, ChevronRight, Home, PanelLeftClose, PanelLeftOpen, Pin, PinOff, GraduationCap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 import { useState, useEffect, useRef } from 'react';
@@ -17,10 +17,11 @@ const NAV_ITEMS = [
     ]
   },
   {
-    section: "Operations",
+    section: "Resources",
     items: [
+      { id: 'study-materials', label: 'Study Materials', icon: GraduationCap, path: '/study-materials' },
       { id: 'services', label: 'Services', icon: FileText, path: '/services' },
-      { id: 'history', label: 'History', icon: Clock, path: '/history' }, // Moved History here
+      { id: 'history', label: 'History', icon: Clock, path: '/history' },
       { id: 'requests', label: 'Requests', icon: Bell, path: '/requests' }
     ]
   },
