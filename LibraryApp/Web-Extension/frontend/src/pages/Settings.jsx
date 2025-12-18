@@ -59,8 +59,8 @@ export default function Settings({ user, setUser }) {
     dataConsent !== initialSettings.dataConsent;
 
   const handleChangePassword = async () => {
-    if (newPassword.length < 4) {
-        setPasswordMsg('Password must be at least 4 characters');
+    if (newPassword.length < 6) {
+        setPasswordMsg('Password must be at least 6 characters');
         return;
     }
     if (newPassword !== confirmPassword) {
@@ -187,7 +187,7 @@ export default function Settings({ user, setUser }) {
                              value={newPassword}
                              onChange={(e) => setNewPassword(e.target.value)}
                              className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm text-slate-900 dark:text-white transition-colors"
-                             placeholder="New password (min 4 chars)"
+                             placeholder="New password (min 6 chars)"
                          />
                          <input 
                              type="password"

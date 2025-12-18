@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Catalogue from './pages/Catalogue';
@@ -10,11 +10,37 @@ import History from './pages/History';
 import MyBooks from './pages/MyBooks';
 import Services from './pages/Services';
 import StudyMaterials from './pages/StudyMaterials';
+import Contact from './pages/Contact';
 import Layout from './components/Layout';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { ToastProvider } from './context/ToastContext';
 import ErrorBoundary from './components/ErrorBoundary';
+
+function AppRoutes({ user, setUser }) {
+  const location = useLocation();
+  
+  return (
+    <Routes location={location} key={location.pathname}>
+      <Route path="/login" element={!user ? <Login setUser={setUser} /> : <Navigate to="/" replace />} />
+      
+      <Route element={<Layout user={user} setUser={setUser} />}>
+        <Route path="/" element={user ? <Dashboard user={user} /> : <Navigate to="/login" replace />} />
+        <Route path="/books" element={user ? <Catalogue /> : <Navigate to="/login" replace />} />
+        <Route path="/books/:bookId" element={user ? <BookDetails /> : <Navigate to="/login" replace />} />
+        <Route path="/my-books" element={user ? <MyBooks user={user} /> : <Navigate to="/login" replace />} />
+        <Route path="/history" element={user ? <History user={user} /> : <Navigate to="/login" replace />} />
+        <Route path="/services" element={user ? <Services /> : <Navigate to="/login" replace />} />
+        <Route path="/study-materials" element={user ? <StudyMaterials user={user} /> : <Navigate to="/login" replace />} />
+        <Route path="/requests" element={user ? <Services /> : <Navigate to="/login" replace />} />
+        <Route path="/profile" element={user ? <Profile user={user} /> : <Navigate to="/login" replace />} />
+        <Route path="/settings" element={user ? <Settings user={user} setUser={setUser} /> : <Navigate to="/login" replace />} />
+        <Route path="/contact" element={user ? <Contact /> : <Navigate to="/login" replace />} />
+        <Route path="/notifications" element={user ? <Notifications /> : <Navigate to="/login" replace />} />
+      </Route>
+    </Routes>
+  );
+}
 
 function App() {
   const [user, setUser] = useState(null);
@@ -50,23 +76,7 @@ function App() {
     <ToastProvider>
       <BrowserRouter>
         <ErrorBoundary>
-          <Routes>
-            <Route path="/login" element={!user ? <Login setUser={setUser} /> : <Navigate to="/" />} />
-            
-            <Route element={<Layout user={user} setUser={setUser} />}>
-              <Route path="/" element={user ? <Dashboard user={user} /> : <Navigate to="/login" />} />
-              <Route path="/books" element={user ? <Catalogue /> : <Navigate to="/login" />} />
-              <Route path="/books/:bookId" element={user ? <BookDetails /> : <Navigate to="/login" />} />
-              <Route path="/my-books" element={user ? <MyBooks user={user} /> : <Navigate to="/login" />} />
-              <Route path="/history" element={user ? <History user={user} /> : <Navigate to="/login" />} />
-              <Route path="/services" element={user ? <Services /> : <Navigate to="/login" />} />
-              <Route path="/study-materials" element={user ? <StudyMaterials user={user} /> : <Navigate to="/login" />} />
-              <Route path="/requests" element={user ? <Services /> : <Navigate to="/login" />} />
-              <Route path="/profile" element={user ? <Profile user={user} /> : <Navigate to="/login" />} />
-              <Route path="/settings" element={user ? <Settings user={user} setUser={setUser} /> : <Navigate to="/login" />} />
-              <Route path="/notifications" element={user ? <Notifications /> : <Navigate to="/login" />} />
-            </Route>
-          </Routes>
+          <AppRoutes user={user} setUser={setUser} />
         </ErrorBoundary>
       </BrowserRouter>
     </ToastProvider>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useToast } from '../context/ToastContext';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, BookOpen, Clock, AlertCircle, CheckCircle, Calendar, User, Tag, Hash, Heart, Share2, Star, Copy, Mail, MessageCircle } from 'lucide-react';
+import { X, BookOpen, Clock, AlertCircle, CheckCircle, Calendar, User, Tag, Hash, Heart, Share2, Star, Copy, Mail, MessageCircle, Bell, BellOff } from 'lucide-react';
 
 export default function BookDetailModal({ isOpen, onClose, bookId }) {
   const [book, setBook] = useState(null);
@@ -11,6 +11,7 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
   const [requestStatus, setRequestStatus] = useState('idle'); // 'idle', 'loading', 'success', 'error'
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [notifyLoading, setNotifyLoading] = useState(false);
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -77,6 +78,31 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
     } else if (method === 'email') {
       window.open(`mailto:?subject=${encodeURIComponent(`Check out: ${book.title}`)}&body=${encodeURIComponent(text + '\n\n' + url)}`);
       setShareOpen(false);
+    }
+  };
+
+  const handleNotifyMe = async () => {
+    if (!book) return;
+    
+    setNotifyLoading(true);
+    try {
+      if (book.on_waitlist) {
+        // Remove from waitlist
+        await axios.delete(`/api/books/${bookId}/notify`);
+        addToast('Removed from waitlist', 'info');
+        setBook({ ...book, on_waitlist: false });
+      } else {
+        // Add to waitlist
+        await axios.post(`/api/books/${bookId}/notify`);
+        addToast('You will be notified when this book is available', 'success');
+        setBook({ ...book, on_waitlist: true });
+      }
+    } catch (err) {
+      console.error("Notify error:", err);
+      const message = err.response?.data?.error || 'Failed to update notification preference';
+      addToast(message, 'error');
+    } finally {
+      setNotifyLoading(false);
     }
   };
 
@@ -347,8 +373,23 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
                            )}
                          </button>
                          {book.available_copies <= 0 && (
-                            <button className="px-4 py-3.5 rounded-xl border-2 border-slate-200 font-bold text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-colors">
-                               Notify Me
+                            <button 
+                              onClick={handleNotifyMe}
+                              disabled={notifyLoading}
+                              className={`px-4 py-3.5 rounded-xl border-2 font-bold transition-all flex items-center gap-2 ${
+                                book.on_waitlist
+                                  ? 'border-brand-blue bg-brand-blue/5 text-brand-blue hover:bg-brand-blue/10'
+                                  : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                              }`}
+                            >
+                              {notifyLoading ? (
+                                <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+                              ) : (
+                                <>
+                                  {book.on_waitlist ? <Bell size={18} /> : <BellOff size={18} />}
+                                  {book.on_waitlist ? 'Notifying' : 'Notify Me'}
+                                </>
+                              )}
                             </button>
                          )}
                       </div>

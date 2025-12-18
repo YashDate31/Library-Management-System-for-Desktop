@@ -18,7 +18,10 @@ class Database:
         self.init_database()
     
     def get_connection(self):
-        return sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        conn.execute('PRAGMA foreign_keys = ON')
+        return conn
     
     def init_database(self):
         """Initialize the database with required tables"""
@@ -64,9 +67,10 @@ class Database:
                 due_date DATE NOT NULL,
                 return_date DATE,
                 status TEXT DEFAULT 'borrowed',
+                fine INTEGER DEFAULT 0,
                 academic_year TEXT,
-                FOREIGN KEY (enrollment_no) REFERENCES students (enrollment_no),
-                FOREIGN KEY (book_id) REFERENCES books (book_id)
+                FOREIGN KEY (enrollment_no) REFERENCES students (enrollment_no) ON DELETE RESTRICT ON UPDATE CASCADE,
+                FOREIGN KEY (book_id) REFERENCES books (book_id) ON DELETE RESTRICT ON UPDATE CASCADE
             )
         ''')
         
@@ -81,7 +85,7 @@ class Database:
                 letter_number TEXT,
                 academic_year TEXT,
                 promotion_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (enrollment_no) REFERENCES students (enrollment_no)
+                FOREIGN KEY (enrollment_no) REFERENCES students (enrollment_no) ON DELETE RESTRICT ON UPDATE CASCADE
             )
         ''')
         
@@ -98,6 +102,15 @@ class Database:
         ''')
         
         conn.commit()
+        
+        # Migration: Add fine column if it doesn't exist
+        cursor.execute("PRAGMA table_info(borrow_records)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'fine' not in columns:
+            cursor.execute("ALTER TABLE borrow_records ADD COLUMN fine INTEGER DEFAULT 0")
+            conn.commit()
+            print("Migration: Added 'fine' column to borrow_records table")
+        
         conn.close()
         
     # No automatic sample data insertion (clean production build)
@@ -265,17 +278,25 @@ class Database:
             if not result or result[0] <= 0:
                 return False, "Book not available"
             
+            # Check max books per student limit (enforced at database level for consistency)
+            cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE enrollment_no = ? AND status = 'borrowed'", (enrollment_no,))
+            current_books = cursor.fetchone()[0]
+            # Note: max_books limit is enforced in UI layer with configurable settings
+            # Database allows up to reasonable limit (e.g., 20) for flexibility
+            if current_books >= 20:
+                return False, f"Maximum borrow limit reached ({current_books} books currently borrowed)"
+            
             # Student existence implicitly checked above
             
-            # Validate provided dates and enforce exactly 7-day loan period
+            # Validate provided dates
             try:
                 bd_obj = datetime.strptime(borrow_date, '%Y-%m-%d')
                 dd_obj = datetime.strptime(due_date, '%Y-%m-%d')
                 diff_days = (dd_obj - bd_obj).days
                 if diff_days < 0:
                     return False, "Due date cannot be before borrow date"
-                if diff_days != 7:
-                    return False, "Loan period must be exactly 7 days (teacher requirement)"
+                if diff_days < 1 or diff_days > 30:
+                    return False, "Loan period must be between 1 and 30 days"
             except ValueError:
                 return False, "Invalid date format (expected YYYY-MM-DD)"
 
@@ -331,11 +352,75 @@ class Database:
             ''', (book_id,))
             
             conn.commit()
+            
+            # Notify waitlist - get book title for notification
+            cursor.execute('SELECT title FROM books WHERE book_id = ?', (book_id,))
+            book_row = cursor.fetchone()
+            if book_row:
+                book_title = book_row[0]
+                self._notify_waitlist(book_id, book_title)
+            
             return True, "Book returned successfully"
         except Exception as e:
             return False, f"Error: {str(e)}"
         finally:
             conn.close()
+    
+    def _notify_waitlist(self, book_id, book_title):
+        """Notify first person on waitlist when book becomes available."""
+        import sqlite3
+        import os
+        
+        # Connect to portal.db
+        portal_db_path = os.path.join(os.path.dirname(__file__), 'Web-Extension', 'portal.db')
+        if not os.path.exists(portal_db_path):
+            return
+        
+        try:
+            portal_conn = sqlite3.connect(portal_db_path)
+            portal_conn.row_factory = sqlite3.Row
+            portal_cursor = portal_conn.cursor()
+            
+            # Get first person on waitlist who hasn't been notified
+            portal_cursor.execute("""
+                SELECT id, enrollment_no, book_title 
+                FROM book_waitlist 
+                WHERE book_id = ? AND notified = 0 
+                ORDER BY created_at ASC 
+                LIMIT 1
+            """, (book_id,))
+            
+            waitlist_entry = portal_cursor.fetchone()
+            if not waitlist_entry:
+                portal_conn.close()
+                return
+            
+            waitlist_id = waitlist_entry['id']
+            enrollment_no = waitlist_entry['enrollment_no']
+            
+            # Create notification
+            portal_cursor.execute("""
+                INSERT INTO user_notifications (enrollment_no, type, title, message, link)
+                VALUES (?, 'system', ?, ?, ?)
+            """, (
+                enrollment_no,
+                'Book Available',
+                f'"{book_title}" is now available for borrowing!',
+                f'/catalogue'
+            ))
+            
+            # Mark as notified
+            portal_cursor.execute("""
+                UPDATE book_waitlist SET notified = 1 WHERE id = ?
+            """, (waitlist_id,))
+            
+            portal_conn.commit()
+            portal_conn.close()
+            
+            print(f"Notified {enrollment_no} about available book: {book_title}")
+            
+        except Exception as e:
+            print(f"Error notifying waitlist: {e}")
     
     def get_students(self, search_term=''):
         """Get list of students with optional search - newest first"""
@@ -642,4 +727,119 @@ class Database:
                 cursor.execute('PRAGMA foreign_keys = ON;')
             except Exception:
                 pass
+            conn.close()
+    
+    def verify_data_integrity(self):
+        """Verify and fix data integrity issues - CODD's Rules enforcement"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        issues_found = []
+        issues_fixed = []
+        
+        try:
+            # 1. Check for orphaned borrow_records (student doesn't exist)
+            cursor.execute("""
+                SELECT DISTINCT br.enrollment_no 
+                FROM borrow_records br 
+                LEFT JOIN students s ON br.enrollment_no = s.enrollment_no 
+                WHERE s.enrollment_no IS NULL
+            """)
+            orphaned_students = cursor.fetchall()
+            if orphaned_students:
+                issues_found.append(f"Found {len(orphaned_students)} orphaned borrow records with non-existent students")
+            
+            # 2. Check for orphaned borrow_records (book doesn't exist)
+            cursor.execute("""
+                SELECT DISTINCT br.book_id 
+                FROM borrow_records br 
+                LEFT JOIN books b ON br.book_id = b.book_id 
+                WHERE b.book_id IS NULL
+            """)
+            orphaned_books = cursor.fetchall()
+            if orphaned_books:
+                issues_found.append(f"Found {len(orphaned_books)} orphaned borrow records with non-existent books")
+            
+            # 3. Verify available_copies consistency with actual borrow_records
+            cursor.execute("SELECT book_id, total_copies, available_copies FROM books")
+            books = cursor.fetchall()
+            
+            for book in books:
+                book_id = book['book_id']
+                total = book['total_copies']
+                available = book['available_copies']
+                
+                # Count actual borrowed copies
+                cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE book_id = ? AND status = 'borrowed'", (book_id,))
+                actual_borrowed = cursor.fetchone()[0]
+                calculated_available = total - actual_borrowed
+                
+                if available != calculated_available:
+                    issues_found.append(f"Book {book_id}: Database shows {available} available, but should be {calculated_available}")
+                    # Fix it
+                    cursor.execute("UPDATE books SET available_copies = ? WHERE book_id = ?", (calculated_available, book_id))
+                    issues_fixed.append(f"Fixed available_copies for book {book_id}: {available} -> {calculated_available}")
+            
+            # 4. Check for duplicate student enrollment numbers
+            cursor.execute("""
+                SELECT enrollment_no, COUNT(*) as count 
+                FROM students 
+                GROUP BY enrollment_no 
+                HAVING count > 1
+            """)
+            duplicates = cursor.fetchall()
+            if duplicates:
+                issues_found.append(f"Found {len(duplicates)} duplicate enrollment numbers")
+            
+            # 5. Check for duplicate book IDs
+            cursor.execute("""
+                SELECT book_id, COUNT(*) as count 
+                FROM books 
+                GROUP BY book_id 
+                HAVING count > 1
+            """)
+            dup_books = cursor.fetchall()
+            if dup_books:
+                issues_found.append(f"Found {len(dup_books)} duplicate book IDs")
+            
+            # 6. Check for invalid status values in borrow_records
+            cursor.execute("""
+                SELECT COUNT(*) FROM borrow_records 
+                WHERE status NOT IN ('borrowed', 'returned')
+            """)
+            invalid_status = cursor.fetchone()[0]
+            if invalid_status > 0:
+                issues_found.append(f"Found {invalid_status} borrow records with invalid status")
+            
+            # 7. Check for books with negative available_copies
+            cursor.execute("SELECT book_id, available_copies FROM books WHERE available_copies < 0")
+            negative_books = cursor.fetchall()
+            if negative_books:
+                for book in negative_books:
+                    issues_found.append(f"Book {book['book_id']} has negative available_copies: {book['available_copies']}")
+            
+            # 8. Check for books where available_copies > total_copies
+            cursor.execute("SELECT book_id, total_copies, available_copies FROM books WHERE available_copies > total_copies")
+            over_available = cursor.fetchall()
+            if over_available:
+                for book in over_available:
+                    issues_found.append(f"Book {book['book_id']}: available ({book['available_copies']}) > total ({book['total_copies']})")
+            
+            conn.commit()
+            
+            return {
+                'status': 'ok' if not issues_found else 'issues_found',
+                'issues': issues_found,
+                'fixes_applied': issues_fixed,
+                'total_issues': len(issues_found),
+                'total_fixes': len(issues_fixed)
+            }
+            
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e),
+                'issues': issues_found,
+                'fixes_applied': issues_fixed
+            }
+        finally:
             conn.close()

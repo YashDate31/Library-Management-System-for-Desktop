@@ -1,9 +1,10 @@
-from flask import Flask, session, jsonify, request, send_from_directory
+from flask import Flask, session, jsonify, request, send_from_directory, send_file
 import sqlite3
 import os
 import json
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 import smtplib
 import threading
 from email.mime.text import MIMEText
@@ -13,6 +14,12 @@ import time
 from collections import defaultdict
 
 # --- Configuration ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads', 'study_materials')
+ALLOWED_EXTENSIONS = {'pdf', 'doc', 'docx', 'ppt', 'pptx', 'txt', 'jpg', 'jpeg', 'png', 'zip', 'rar'}
+
+# Create upload folder if it doesn't exist
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # --- Secure Secret Key Management ---
@@ -324,6 +331,19 @@ def init_portal_db():
         )
     """)
     
+    # Book Waitlist / Notify Me Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS book_waitlist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            enrollment_no TEXT NOT NULL,
+            book_id INTEGER NOT NULL,
+            book_title TEXT,
+            notified INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(enrollment_no, book_id)
+        )
+    """)
+    
     # Access Logs Table (Observability)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS access_logs (
@@ -335,15 +355,17 @@ def init_portal_db():
         )
     """)
     
-    # Study Materials Table (Google Drive Links)
+    # Study Materials Table (File Upload System)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS study_materials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
             description TEXT,
-            drive_link TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            original_filename TEXT,
+            file_size INTEGER,
             branch TEXT DEFAULT 'Computer',
-            year TEXT NOT NULL,  -- '1st', '2nd', '3rd'
+            year TEXT NOT NULL,  -- '1st', '2nd', '3rd', '4th', '5th', '6th' (Semester)
             category TEXT,  -- 'Notes', 'PYQ', 'Study Material', 'Other'
             uploaded_by TEXT DEFAULT 'Library Admin',
             upload_date DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -440,7 +462,7 @@ def trigger_notification_email(enrollment_no, subject, body):
 @app.route('/api/request-deletion', methods=['POST'])
 def request_deletion():
     data = request.json
-    password = data.get('password')
+    password = data.get('password', '').strip()
     reason = data.get('reason', 'User requested deletion via Student Portal')
     
     # 1. Verify Session
@@ -459,13 +481,17 @@ def request_deletion():
     
     is_valid = False
     if auth_record:
-        # Check against stored password
-        if auth_record['password'] == password:
-            is_valid = True
+        stored_pw = auth_record['password']
+        # Try hash verification first
+        try:
+            if check_password_hash(stored_pw, password):
+                is_valid = True
+        except:
+            # Fallback to plain text comparison
+            if stored_pw == password:
+                is_valid = True
     else:
-        # Fallback to legacy (enrollment_no itself) for very old accounts not yet migrated?
-        # But our login flow forces migration. We'll assume if they are logged in, they might have an auth record.
-        # If not, strictly check against enrollment_no if that was the "password"
+        # No auth record - check against enrollment_no as default password
         if password == student_id:
             is_valid = True
             
@@ -494,8 +520,8 @@ def request_deletion():
 @rate_limit
 def api_login():
     data = request.json
-    enrollment = data.get('enrollment_no')
-    password = data.get('password')
+    enrollment = data.get('enrollment_no', '').strip()
+    password = data.get('password', '').strip()
     
     if not enrollment:
         return jsonify({'status': 'error', 'message': 'Enrollment number required'}), 400
@@ -630,7 +656,7 @@ def api_change_password():
         return jsonify({'status': 'error', 'message': 'Not logged in'}), 401
         
     data = request.json
-    new_password = data.get('new_password')
+    new_password = data.get('new_password', '').strip()
     enrollment = session.get('student_id')
     
     if not new_password or len(new_password) < 6:
@@ -714,6 +740,78 @@ def api_public_notices():
     notices = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return jsonify({'notices': notices})
+
+@app.route('/api/loan-history')
+def api_loan_history():
+    """Get comprehensive loan history with all statuses"""
+    if 'student_id' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    enrollment = session['student_id']
+    conn = get_library_db()
+    cursor = conn.cursor()
+    
+    # Get ALL borrow records (borrowed, returned, overdue)
+    cursor.execute("""
+        SELECT b.title, b.author, b.category, br.borrow_date, br.due_date, br.return_date, br.status, br.fine
+        FROM borrow_records br
+        JOIN books b ON br.book_id = b.book_id
+        WHERE br.enrollment_no = ?
+        ORDER BY br.borrow_date DESC
+    """, (enrollment,))
+    
+    all_records = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
+    # Categorize records
+    currently_borrowed = []
+    returned_on_time = []
+    returned_late = []
+    currently_overdue = []
+    
+    today = datetime.now()
+    
+    for record in all_records:
+        # Determine actual status
+        if record['status'] == 'borrowed':
+            if record['due_date']:
+                try:
+                    due_dt = datetime.strptime(record['due_date'], '%Y-%m-%d')
+                    if due_dt < today:
+                        record['actual_status'] = 'Currently Overdue'
+                        record['overdue_days'] = (today - due_dt).days
+                        currently_overdue.append(record)
+                    else:
+                        record['actual_status'] = 'Currently Borrowed'
+                        record['days_left'] = (due_dt - today).days
+                        currently_borrowed.append(record)
+                except:
+                    record['actual_status'] = 'Currently Borrowed'
+                    currently_borrowed.append(record)
+        elif record['status'] == 'returned':
+            if record['due_date'] and record['return_date']:
+                try:
+                    due_dt = datetime.strptime(record['due_date'], '%Y-%m-%d')
+                    return_dt = datetime.strptime(record['return_date'], '%Y-%m-%d')
+                    if return_dt > due_dt:
+                        record['actual_status'] = 'Returned Late'
+                        record['fine_paid'] = record.get('fine', 0) > 0
+                        returned_late.append(record)
+                    else:
+                        record['actual_status'] = 'Returned On Time'
+                        returned_on_time.append(record)
+                except:
+                    record['actual_status'] = 'Returned'
+                    returned_on_time.append(record)
+    
+    return jsonify({
+        'currently_borrowed': currently_borrowed,
+        'currently_overdue': currently_overdue,
+        'returned_on_time': returned_on_time,
+        'returned_late': returned_late,
+        'total_borrowed': len(all_records),
+        'total_fines_paid': sum([r.get('fine', 0) for r in returned_late])
+    })
 
 # --- Notification System API ---
 
@@ -960,11 +1058,11 @@ def api_me():
             'email': user_email,
             'phone': dict(student).get('phone', 'N/A'),
             'settings': {
-                'library_alerts': bool(settings['library_alerts']) if settings else False,
-                'loan_reminders': bool(settings['loan_reminders']) if settings else True,
+                'libraryAlerts': bool(settings['library_alerts']) if settings else False,
+                'loanReminders': bool(settings['loan_reminders']) if settings else True,
                 'theme': settings['theme'] if settings else 'light',
                 'language': settings['language'] if settings else 'English',
-                'data_consent': bool(settings['data_consent']) if settings else True
+                'dataConsent': bool(settings['data_consent']) if settings else True
             },
             'privileges': {
                  'max_books': 5,
@@ -1261,8 +1359,106 @@ def get_book_details(book_id):
         borrowed_count = cursor.fetchone()[0]
         book_data['available_copies'] = book_data['total_copies'] - borrowed_count
         
+        # Check if current user is on waitlist
+        if 'student_id' in session:
+            portal_conn = get_portal_db()
+            portal_cursor = portal_conn.cursor()
+            portal_cursor.execute(
+                "SELECT id FROM book_waitlist WHERE enrollment_no = ? AND book_id = ? AND notified = 0",
+                (session['student_id'], book_id)
+            )
+            waitlist_entry = portal_cursor.fetchone()
+            book_data['on_waitlist'] = waitlist_entry is not None
+            portal_conn.close()
+        else:
+            book_data['on_waitlist'] = False
+        
         conn.close()
         return jsonify(book_data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/books/<int:book_id>/notify', methods=['POST'])
+def add_to_waitlist(book_id):
+    """Add student to waitlist for out-of-stock book."""
+    if 'student_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        enrollment_no = session['student_id']
+        
+        # Get book details
+        library_conn = get_library_db()
+        library_cursor = library_conn.cursor()
+        library_cursor.execute("SELECT title, total_copies FROM books WHERE book_id = ?", (book_id,))
+        book = library_cursor.fetchone()
+        
+        if not book:
+            library_conn.close()
+            return jsonify({'error': 'Book not found'}), 404
+        
+        book_title = book['title']
+        
+        # Check availability
+        library_cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE book_id = ? AND status = 'borrowed'", (book_id,))
+        borrowed_count = library_cursor.fetchone()[0]
+        available = book['total_copies'] - borrowed_count
+        library_conn.close()
+        
+        if available > 0:
+            return jsonify({'error': 'Book is currently available'}), 400
+        
+        # Add to waitlist
+        portal_conn = get_portal_db()
+        portal_cursor = portal_conn.cursor()
+        
+        try:
+            portal_cursor.execute(
+                "INSERT INTO book_waitlist (enrollment_no, book_id, book_title) VALUES (?, ?, ?)",
+                (enrollment_no, book_id, book_title)
+            )
+            portal_conn.commit()
+            portal_conn.close()
+            
+            return jsonify({
+                'success': True,
+                'message': 'You will be notified when this book becomes available'
+            })
+        except sqlite3.IntegrityError:
+            portal_conn.close()
+            return jsonify({'error': 'You are already on the waitlist for this book'}), 400
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/books/<int:book_id>/notify', methods=['DELETE'])
+def remove_from_waitlist(book_id):
+    """Remove student from waitlist."""
+    if 'student_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        enrollment_no = session['student_id']
+        
+        portal_conn = get_portal_db()
+        portal_cursor = portal_conn.cursor()
+        
+        portal_cursor.execute(
+            "DELETE FROM book_waitlist WHERE enrollment_no = ? AND book_id = ? AND notified = 0",
+            (enrollment_no, book_id)
+        )
+        portal_conn.commit()
+        
+        if portal_cursor.rowcount == 0:
+            portal_conn.close()
+            return jsonify({'error': 'Not on waitlist for this book'}), 404
+        
+        portal_conn.close()
+        return jsonify({
+            'success': True,
+            'message': 'Removed from waitlist'
+        })
+        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -1467,6 +1663,12 @@ def api_books():
     
     cursor.execute(sql, params)
     books = [dict(row) for row in cursor.fetchall()]
+    
+    # Recalculate available_copies in real-time for data consistency
+    for book in books:
+        cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE book_id = ? AND status = 'borrowed'", (book['book_id'],))
+        borrowed_count = cursor.fetchone()[0]
+        book['available_copies'] = book['total_copies'] - borrowed_count
     
     # Get distinct categories for filter
     cursor.execute("SELECT DISTINCT category FROM books WHERE category IS NOT NULL ORDER BY category")
@@ -2186,6 +2388,10 @@ def api_get_study_materials():
     
     return jsonify({'materials': materials})
 
+def allowed_file(filename):
+    """Check if file extension is allowed"""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 @app.route('/api/admin/study-materials', methods=['GET', 'POST'])
 def api_admin_study_materials():
     """Admin: Manage study materials"""
@@ -2200,27 +2406,72 @@ def api_admin_study_materials():
         return jsonify({'materials': materials})
     
     elif request.method == 'POST':
-        # Add new study material
-        data = request.json
-        title = data.get('title')
-        description = data.get('description', '')
-        drive_link = data.get('drive_link')
-        branch = data.get('branch', 'Computer')
-        year = data.get('year')
-        category = data.get('category', 'Notes')
-        
-        if not title or not drive_link or not year:
+        # Handle file upload
+        if 'file' not in request.files:
             conn.close()
-            return jsonify({'status': 'error', 'message': 'Title, link, and year required'}), 400
+            return jsonify({'status': 'error', 'message': 'No file uploaded'}), 400
         
-        cursor.execute("""
-            INSERT INTO study_materials (title, description, drive_link, branch, year, category)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (title, description, drive_link, branch, year, category))
+        file = request.files['file']
+        if file.filename == '':
+            conn.close()
+            return jsonify({'status': 'error', 'message': 'No file selected'}), 400
         
-        conn.commit()
-        conn.close()
-        return jsonify({'status': 'success', 'message': 'Study material added successfully'})
+        if not allowed_file(file.filename):
+            conn.close()
+            return jsonify({'status': 'error', 'message': 'File type not allowed'}), 400
+        
+        # Get form data
+        title = request.form.get('title')
+        description = request.form.get('description', '')
+        year = request.form.get('year')
+        category = request.form.get('category', 'Notes')
+        branch = request.form.get('branch', 'Computer')
+        
+        if not title or not year:
+            conn.close()
+            return jsonify({'status': 'error', 'message': 'Title and year required'}), 400
+        
+        # Save file with unique name
+        original_filename = secure_filename(file.filename)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        unique_filename = f"{timestamp}_{original_filename}"
+        file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
+        
+        try:
+            file.save(file_path)
+            file_size = os.path.getsize(file_path)
+            
+            cursor.execute("""
+                INSERT INTO study_materials (title, description, filename, original_filename, file_size, branch, year, category)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (title, description, unique_filename, original_filename, file_size, branch, year, category))
+            
+            conn.commit()
+            conn.close()
+            return jsonify({'status': 'success', 'message': 'File uploaded successfully'})
+        except Exception as e:
+            conn.close()
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            return jsonify({'status': 'error', 'message': f'Upload failed: {str(e)}'}), 500
+
+@app.route('/api/study-materials/<int:material_id>/download')
+def download_study_material(material_id):
+    """Download a study material file"""
+    conn = get_portal_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT filename, original_filename FROM study_materials WHERE id = ? AND active = 1", (material_id,))
+    material = cursor.fetchone()
+    conn.close()
+    
+    if not material:
+        return jsonify({'error': 'File not found'}), 404
+    
+    file_path = os.path.join(UPLOAD_FOLDER, material['filename'])
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found on server'}), 404
+    
+    return send_file(file_path, as_attachment=True, download_name=material['original_filename'])
 
 @app.route('/api/admin/study-materials/<int:material_id>', methods=['DELETE', 'PUT'])
 def api_admin_manage_material(material_id):
@@ -2229,9 +2480,20 @@ def api_admin_manage_material(material_id):
     cursor = conn.cursor()
     
     if request.method == 'DELETE':
+        # Get filename before deletion
+        cursor.execute("SELECT filename FROM study_materials WHERE id = ?", (material_id,))
+        material = cursor.fetchone()
+        
         # Soft delete (set active = 0)
         cursor.execute("UPDATE study_materials SET active = 0 WHERE id = ?", (material_id,))
         conn.commit()
+        
+        # Optionally delete physical file (commented out to keep files)
+        # if material:
+        #     file_path = os.path.join(UPLOAD_FOLDER, material['filename'])
+        #     if os.path.exists(file_path):
+        #         os.remove(file_path)
+        
         conn.close()
         return jsonify({'status': 'success', 'message': 'Material deleted'})
     

@@ -77,7 +77,7 @@ export default function StudyMaterials({ user }) {
               📚 Study Materials
             </h1>
             <p className="text-slate-500 dark:text-slate-400 mt-1">
-              Access notes, previous year questions, and study resources
+              Access semester-wise notes, previous year questions, and study resources
             </p>
           </div>
 
@@ -89,10 +89,13 @@ export default function StudyMaterials({ user }) {
               onChange={(e) => setYearFilter(e.target.value)}
               className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="All">All Years</option>
-              <option value="1st">1st Year</option>
-              <option value="2nd">2nd Year</option>
-              <option value="3rd">3rd Year</option>
+              <option value="All">All Semesters</option>
+              <option value="1st">1st Semester</option>
+              <option value="2nd">2nd Semester</option>
+              <option value="3rd">3rd Semester</option>
+              <option value="4th">4th Semester</option>
+              <option value="5th">5th Semester</option>
+              <option value="6th">6th Semester</option>
             </select>
           </div>
         </div>
@@ -102,7 +105,7 @@ export default function StudyMaterials({ user }) {
           <EmptyState
             icon={BookOpen}
             title="No materials available"
-            description={yearFilter === 'All' ? "No study materials have been uploaded yet." : `No materials for ${yearFilter} year.`}
+            description={yearFilter === 'All' ? "No study materials have been uploaded yet." : `No materials for ${yearFilter} semester.`}
             actionLabel="Refresh"
             onAction={fetchMaterials}
           />
@@ -117,7 +120,7 @@ export default function StudyMaterials({ user }) {
                       {getCategoryIcon(material.category)} {material.category || 'Material'}
                     </span>
                     <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase">
-                      {material.year}
+                      Sem {material.year}
                     </span>
                   </div>
 
@@ -141,9 +144,8 @@ export default function StudyMaterials({ user }) {
                     </div>
 
                     <a
-                      href={material.drive_link}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      href={`/api/study-materials/${material.id}/download`}
+                      download
                       className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg transition-all shadow-sm hover:shadow-md active:scale-95"
                     >
                       <Download size={16} />
