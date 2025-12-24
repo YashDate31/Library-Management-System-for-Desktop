@@ -33,9 +33,19 @@ export default function Dashboard({ user }) {
   }, [user]);
 
   // Use actual user data from session
+  // Normalize year for display
+  let displayYear = "N/A";
+  if (user?.year) {
+    const y = String(user.year).trim().toLowerCase();
+    if (["pass out", "passout", "passed out", "alumni", "graduate"].includes(y)) {
+      displayYear = "Pass Out";
+    } else {
+      displayYear = user.year;
+    }
+  }
   const displayUser = {
     name: user?.name || "Student",
-    year: user?.year || "N/A",
+    year: displayYear,
     department: user?.department || "Computer Department",
     avatar: profilePhoto || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'Student')}&background=3b82f6&color=fff&size=128&bold=true`
   };
@@ -260,7 +270,7 @@ export default function Dashboard({ user }) {
                       author={book.author || "Unknown Author"}
                       dueDate={book.due_date}
                       status={getLoanStatus(book)}
-                      fine="₹50" 
+                      fine={book.status === 'overdue' && book.fine ? `₹${book.fine}` : undefined}
                       onViewDetails={() => navigate(`/books/${book.book_id}`)}
                     />
                   </div>

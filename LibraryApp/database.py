@@ -57,7 +57,21 @@ class Database:
             )
         ''')
         
-        # Create borrow_records table
+        # Create transactions table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                enrollment_no TEXT NOT NULL,
+                book_id TEXT NOT NULL,
+                borrow_date DATE NOT NULL,
+                due_date DATE NOT NULL,
+                return_date DATE,
+                fine INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'active',
+                FOREIGN KEY (enrollment_no) REFERENCES students(enrollment_no),
+                FOREIGN KEY (book_id) REFERENCES books(book_id)
+            )
+        ''')
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS borrow_records (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -95,6 +95,177 @@ ADMIN_USERNAME = "gpa"
 ADMIN_PASSWORD = "gpa123"
 
 class LibraryApp:
+    def import_students_excel_new(self):
+        """Import students from Excel with year selection (robust new workflow)."""
+        import tkinter as tk
+        from tkinter import messagebox, filedialog
+        import pandas as pd
+
+        # 1. Year selection dialog
+        year_dialog = tk.Toplevel(self.root)
+        year_dialog.title("Select Student Year")
+        year_dialog.geometry("400x350")  # Increased size
+        year_dialog.resizable(False, False)
+        year_dialog.configure(bg='white')
+        year_dialog.transient(self.root)
+        year_dialog.grab_set()
+        year_dialog.update_idletasks()
+        x = (year_dialog.winfo_screenwidth() // 2) - (400 // 2)
+        y = (year_dialog.winfo_screenheight() // 2) - (350 // 2)
+        year_dialog.geometry(f"+{x}+{y}")
+
+        selected_year = tk.StringVar(value="1st Year")
+        confirmed = [False]
+
+        header_frame = tk.Frame(year_dialog, bg=self.colors['secondary'], height=60)
+        header_frame.pack(fill=tk.X)
+        header_frame.pack_propagate(False)
+        tk.Label(
+            header_frame,
+            text="📚 Import Students",
+            font=('Segoe UI', 14, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white'
+        ).pack(pady=15)
+
+        content_frame = tk.Frame(year_dialog, bg='white', padx=20, pady=20)
+        content_frame.pack(fill=tk.BOTH, expand=True)
+        tk.Label(
+            content_frame,
+            text="Which year are these students from?",
+            font=('Segoe UI', 11),
+            bg='white',
+            fg=self.colors['accent']
+        ).pack(pady=(0, 15))
+        years = ["1st Year", "2nd Year", "3rd Year", "Pass Out"]
+        for year in years:
+            rb = tk.Radiobutton(
+                content_frame,
+                text=year,
+                variable=selected_year,
+                value=year,
+                font=('Segoe UI', 10),
+                bg='white',
+                fg=self.colors['text'],
+                selectcolor='white',
+                activebackground='white'
+            )
+            rb.pack(anchor='w', pady=5)
+
+        button_frame = tk.Frame(year_dialog, bg='white', padx=20, pady=20)
+        button_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        def on_confirm():
+            confirmed[0] = True
+            year_dialog.destroy()
+        def on_cancel():
+            confirmed[0] = False
+            year_dialog.destroy()
+        continue_btn = tk.Button(
+            button_frame,
+            text="Continue",
+            command=on_confirm,
+            bg=self.colors['secondary'],
+            fg='white',
+            font=('Segoe UI', 12, 'bold'),
+            padx=30,
+            pady=12,
+            relief='flat',
+            cursor='hand2'
+        )
+        continue_btn.pack(side=tk.RIGHT, padx=(5, 0))
+        cancel_btn = tk.Button(
+            button_frame,
+            text="Cancel",
+            command=on_cancel,
+            bg='#cccccc',
+            fg='#333333',
+            font=('Segoe UI', 11),
+            padx=20,
+            pady=10,
+            relief='flat',
+            cursor='hand2'
+        )
+        cancel_btn.pack(side=tk.RIGHT)
+
+        self.root.wait_window(year_dialog)
+        if not confirmed[0]:
+            return
+        default_year = selected_year.get()
+
+        # 2. File dialog for Excel
+        self.root.focus_force()
+        self.root.update_idletasks()
+        self.root.attributes('-topmost', True)
+        self.root.update()
+        file_path = filedialog.askopenfilename(
+            parent=self.root,
+            title="Select Students Excel file",
+            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
+        )
+        self.root.attributes('-topmost', False)
+        self.root.update()
+        if not file_path:
+            return
+
+        # 3. Read Excel and import students
+        try:
+            df = pd.read_excel(file_path)
+            df.columns = df.columns.str.lower().str.replace(' ', '_')
+            column_map = {
+                'enrollment': 'enrollment_no',
+                'enrollmentno': 'enrollment_no',
+                'enrollment_number': 'enrollment_no'
+            }
+            df.rename(columns={k: v for k, v in column_map.items() if k in df.columns}, inplace=True)
+            required = ['enrollment_no', 'name']
+            missing = [c for c in required if c not in df.columns]
+            if missing:
+                messagebox.showerror("Error", f"Missing required columns: {', '.join(missing)}")
+                return
+            added = 0
+            skipped = 0
+            duplicate = 0
+            errors = 0
+            error_list = []
+            for idx, row in df.iterrows():
+                row_no = idx + 2
+                try:
+                    enrollment = str(row.get('enrollment_no', '')).strip()
+                    name = str(row.get('name', '')).strip()
+                    email = str(row.get('email', '')).strip()
+                    phone = str(row.get('phone', '')).strip()
+                    department = str(row.get('department', 'Computer')).strip() or 'Computer'
+                    year = default_year
+                    if not enrollment or not name or enrollment.lower() == 'nan' or name.lower() == 'nan':
+                        skipped += 1
+                        continue
+                    success, message = self.db.add_student(enrollment, name, email, phone, department, year)
+                    if success:
+                        added += 1
+                    else:
+                        if 'exists' in message.lower() or 'duplicate' in message.lower():
+                            duplicate += 1
+                        else:
+                            errors += 1
+                            error_list.append(f"Row {row_no}: {message}")
+                except Exception as e:
+                    errors += 1
+                    error_list.append(f"Row {row_no}: {e}")
+            summary = (
+                f"Import completed!\n\nAdded: {added}\nDuplicates: {duplicate}\n"
+                f"Skipped (missing enrollment/name): {skipped}\nErrors: {errors}"
+            )
+            if error_list:
+                summary += "\n\nFirst few errors:\n" + "\n".join(error_list[:5])
+                if len(error_list) > 5:
+                    summary += f"\n... and {len(error_list) - 5} more errors."
+            messagebox.showinfo("Import Results", summary)
+            if added or duplicate:
+                self.refresh_students()
+                self.refresh_dashboard()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to import Excel file: {e}")
+
     def __init__(self, root):
         self.root = root
         # Set window title (remove version as requested)
@@ -1937,7 +2108,10 @@ Government Polytechnic Awasari (Kh)"""
         info_outer.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
         
         info_text = f"""
+Application: Library Management System 2.0
 Version: {APP_VERSION}
+Built by: Yash Date
+Release Date: December 23, 2025
 Database: library.db
 Portal: Port {self.portal_port}
 
@@ -2117,7 +2291,7 @@ Current Settings:
         
         tk.Label(search_controls, text="Year:", bg=self.colors['primary'], fg=self.colors['accent'], font=('Segoe UI', 10)).pack(side=tk.LEFT)
         # Include 'Pass Out' instead of '4th' for final year
-        year_combo = ttk.Combobox(search_controls, textvariable=self.student_year_filter, values=["All", "1st", "2nd", "3rd", "Pass Out"], state="readonly", width=10)
+        year_combo = ttk.Combobox(search_controls, textvariable=self.student_year_filter, values=["All", "1st Year", "2nd Year", "3rd Year", "Pass Out"], state="readonly", width=12)
         year_combo.pack(side=tk.LEFT, padx=5)
         year_combo.bind('<<ComboboxSelected>>', lambda e: self.search_students())
         
@@ -2148,20 +2322,21 @@ Current Settings:
             cursor='hand2'
         )
         add_student_btn.pack(side=tk.LEFT, padx=(0, 5))
-        
+
         import_students_btn = tk.Button(
             buttons_frame,
-            text="📥 Import Excel",
+            text="📥 Import Students (Excel)",
             font=('Segoe UI', 10, 'bold'),
             bg='#6f42c1',
             fg='white',
             relief='flat',
             padx=15,
             pady=8,
-            command=self.import_students_from_excel,
+            command=self.import_students_excel_new,
             cursor='hand2'
         )
         import_students_btn.pack(side=tk.LEFT, padx=5)
+        
         
         # Students list
         students_list_frame = tk.LabelFrame(
@@ -4148,10 +4323,131 @@ Current Settings:
     
     def import_students_from_excel(self):
         """Import students from Excel file (append; skip invalid or duplicate)."""
+        # First, ask user to select the year for these students
+        year_dialog = tk.Toplevel(self.root)
+        year_dialog.title("Select Student Year")
+        year_dialog.geometry("350x250")
+        year_dialog.resizable(False, False)
+        year_dialog.configure(bg='white')
+        year_dialog.transient(self.root)
+        year_dialog.grab_set()
+        
+        # Center the dialog
+        year_dialog.update_idletasks()
+        x = (year_dialog.winfo_screenwidth() // 2) - (350 // 2)
+        y = (year_dialog.winfo_screenheight() // 2) - (250 // 2)
+        year_dialog.geometry(f"+{x}+{y}")
+        
+        # Variable to store selected year and confirmation
+        selected_year = tk.StringVar(value="1st Year")
+        confirmed = [False]  # Use list to allow modification in nested function
+        
+        # Header
+        header_frame = tk.Frame(year_dialog, bg=self.colors['secondary'], height=60)
+        header_frame.pack(fill=tk.X)
+        header_frame.pack_propagate(False)
+        
+        tk.Label(
+            header_frame,
+            text="📚 Import Students",
+            font=('Segoe UI', 14, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white'
+        ).pack(pady=15)
+        
+        # Content
+        content_frame = tk.Frame(year_dialog, bg='white', padx=20, pady=20)
+        content_frame.pack(fill=tk.BOTH, expand=True)
+        
+        tk.Label(
+            content_frame,
+            text="Which year are these students from?",
+            font=('Segoe UI', 11),
+            bg='white',
+            fg=self.colors['accent']
+        ).pack(pady=(0, 15))
+        
+        # Radio buttons for year selection
+        years = ["1st Year", "2nd Year", "3rd Year", "Pass Out"]
+        for year in years:
+            rb = tk.Radiobutton(
+                content_frame,
+                text=year,
+                variable=selected_year,
+                value=year,
+                font=('Segoe UI', 10),
+                bg='white',
+                fg=self.colors['text'],
+                selectcolor='white',
+                activebackground='white'
+            )
+            rb.pack(anchor='w', pady=5)
+        
+        # Buttons
+        button_frame = tk.Frame(year_dialog, bg='white', padx=20, pady=(0, 20))
+        button_frame.pack(fill=tk.X)
+        
+        def on_confirm():
+            confirmed[0] = True
+            year_dialog.destroy()
+        
+        def on_cancel():
+            confirmed[0] = False
+            year_dialog.destroy()
+        
+        tk.Button(
+            button_frame,
+            text="Continue",
+            command=on_confirm,
+            bg=self.colors['secondary'],
+            fg='white',
+            font=('Segoe UI', 10, 'bold'),
+            padx=20,
+            pady=8,
+            relief='flat',
+            cursor='hand2'
+        ).pack(side=tk.RIGHT, padx=(5, 0))
+        
+        tk.Button(
+            button_frame,
+            text="Cancel",
+            command=on_cancel,
+            bg='#cccccc',
+            fg='#333333',
+            font=('Segoe UI', 10),
+            padx=20,
+            pady=8,
+            relief='flat',
+            cursor='hand2'
+        ).pack(side=tk.RIGHT)
+        
+        # Wait for dialog to close
+        self.root.wait_window(year_dialog)
+        
+        # If user cancelled, abort import
+        if not confirmed[0]:
+            return
+        
+        default_year = selected_year.get()
+
+        # DEBUG: Show message to confirm code is progressing
+        messagebox.showinfo("DEBUG", "Year selected: " + str(default_year) + "\nProceeding to file dialog...")
+
+        # Ensure main window has focus before opening file dialog
+        self.root.focus_force()
+        self.root.update_idletasks()
+
+        # Now proceed with file selection
+        # Force file dialog to front
+        self.root.attributes('-topmost', True)
+        self.root.update()
         file_path = filedialog.askopenfilename(
+            parent=self.root,
             title="Select Students Excel file",
             filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
         )
+        self.root.attributes('-topmost', False)
+        self.root.update()
         if not file_path:
             return
         try:
@@ -4183,7 +4479,7 @@ Current Settings:
                     email = str(row.get('email', '')).strip()
                     phone = str(row.get('phone', '')).strip()
                     department = str(row.get('department', 'Computer')).strip() or 'Computer'
-                    year = str(row.get('year', '2nd Year')).strip() or '2nd Year'
+                    year = default_year  # Always use the selected year from the dialog
                     if not enrollment or not name or enrollment.lower() == 'nan' or name.lower() == 'nan':
                         skipped += 1
                         continue
@@ -4232,7 +4528,15 @@ Current Settings:
                     if search_term not in text:
                         continue
                 if year_filter != "All":
-                    if (s[6] or '').strip() != year_filter:
+                    def normalize_year(y):
+                        y = str(y or '').lower().strip()
+                        if '1' in y: return '1'
+                        if '2' in y: return '2'
+                        if '3' in y: return '3'
+                        return y
+                    
+                    student_year = (s[6] or '').strip()
+                    if normalize_year(year_filter) != normalize_year(student_year):
                         continue
                 filtered_students.append(s)
 
@@ -5614,11 +5918,12 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 if not label:
                     return '1st'
                 s = str(label).strip().lower()
-                if s in ('1st', 'first', 'first year', '1', 'i', 'fy', 'f.y', 'f.y.', 'fe', 'fe year'):
+                # Accept more variants for year labels
+                if s in ('1st', 'first', 'first year', '1', 'i', 'fy', 'f.y', 'f.y.', 'fe', 'fe year', '1st year', '1styear'):
                     return '1st'
-                if s in ('2nd', 'second', 'second year', '2', 'ii', 'sy', 's.y', 's.y.'):
+                if s in ('2nd', 'second', 'second year', '2', 'ii', 'sy', 's.y', 's.y.', '2nd year', '2ndyear'):
                     return '2nd'
-                if s in ('3rd', 'third', 'third year', '3', 'iii', 'ty', 't.y', 't.y.'):
+                if s in ('3rd', 'third', 'third year', '3', 'iii', 'ty', 't.y', 't.y.', '3rd year', '3rdyear'):
                     return '3rd'
                 if 'pass' in s:
                     return 'Pass Out'
@@ -8388,7 +8693,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
         
         # Materials tree
         tree_container = tk.Frame(list_frame, bg='white')
-        tree_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
+        tree_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=(10, 0))
         
         columns = ('ID', 'Title', 'Semester', 'Category', 'Date')
         self.materials_tree = ttk.Treeview(tree_container, columns=columns, show='headings', height=12)
@@ -8407,6 +8712,9 @@ Note: This is an automated email. Please find the attached formal overdue letter
         
         scrollbar = ttk.Scrollbar(tree_container, orient='vertical', command=self.materials_tree.yview)
         self.materials_tree.configure(yscrollcommand=scrollbar.set)
+        
+        # Bind double-click to edit
+        self.materials_tree.bind("<Double-1>", self._on_material_double_click)
         
         self.materials_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -8567,6 +8875,138 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     messagebox.showerror("Error", res.get('message', 'Failed to delete'))
         except Exception as e:
             messagebox.showerror("Error", f"Failed to delete: {e}")
+
+
+    def _on_material_double_click(self, event):
+        """Handle double-click on material to edit"""
+        item = self.materials_tree.identify_row(event.y)
+        if not item:
+            return
+            
+        # Get material data
+        values = self.materials_tree.item(item)['values']
+        material_id = values[0]
+        
+        # Show edit dialog
+        self._edit_study_material_dialog(material_id)
+        
+    def _edit_study_material_dialog(self, material_id):
+        """Show dialog to edit study material"""
+        current_item = None
+        for item in self.materials_tree.get_children():
+            if str(self.materials_tree.item(item)['values'][0]) == str(material_id):
+                current_item = self.materials_tree.item(item)
+                break
+        
+        if not current_item:
+            return
+
+        vals = current_item['values']
+        current_title = vals[1]
+        current_year = vals[2]
+        current_cat = vals[3]
+        
+        # Remove ellipsis from title if present (rough restore)
+        if current_title.endswith('...'):
+            current_title = current_title[:-3]
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"Edit Material #{material_id}")
+        dialog.geometry("500x450")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (450 // 2)
+        dialog.geometry(f"+{x}+{y}")
+        
+        tk.Label(dialog, text="✏️ Edit Material", font=('Segoe UI', 14, 'bold'), bg='white', fg=self.colors['accent']).pack(fill=tk.X, pady=10,padx=20)
+        
+        form_frame = tk.Frame(dialog, padx=20, pady=10)
+        form_frame.pack(fill=tk.BOTH, expand=True)
+        
+        tk.Label(form_frame, text="Title", font=('Segoe UI', 10, 'bold')).pack(anchor='w')
+        title_entry = tk.Entry(form_frame, font=('Segoe UI', 10), width=40)
+        title_entry.insert(0, current_title)
+        title_entry.pack(fill=tk.X, pady=(0, 10))
+        
+        tk.Label(form_frame, text="Description (Update optional)", font=('Segoe UI', 10, 'bold')).pack(anchor='w')
+        desc_entry = tk.Text(form_frame, font=('Segoe UI', 10), height=3, width=40)
+        desc_entry.pack(fill=tk.X, pady=(0, 10))
+        
+        tk.Label(form_frame, text="Semester", font=('Segoe UI', 10, 'bold')).pack(anchor='w')
+        year_combo = ttk.Combobox(form_frame, values=['1st', '2nd', '3rd', '4th', '5th', '6th'], state='readonly')
+        year_combo.set(current_year)
+        year_combo.pack(fill=tk.X, pady=(0, 10))
+        
+        tk.Label(form_frame, text="Category", font=('Segoe UI', 10, 'bold')).pack(anchor='w')
+        cat_combo = ttk.Combobox(form_frame, values=['Notes', 'PYQ', 'Study Material', 'Syllabus', 'Other'], state='readonly')
+        cat_combo.set(current_cat)
+        cat_combo.pack(fill=tk.X, pady=(0, 10))
+        
+        btn_frame = tk.Frame(dialog, pady=20)
+        btn_frame.pack(fill=tk.X, padx=20)
+        
+        def save_changes():
+            import urllib.request
+            import json
+            
+            new_title = title_entry.get().strip()
+            if not new_title:
+                messagebox.showerror("Error", "Title is required", parent=dialog)
+                return
+                
+            data = {
+                "title": new_title,
+                "description": desc_entry.get("1.0", tk.END).strip(),
+                "year": year_combo.get(),
+                "category": cat_combo.get(),
+                "drive_link": "" 
+            }
+            
+            try:
+                url = f"http://127.0.0.1:{self.portal_port}/api/admin/study-materials/{material_id}"
+                req = urllib.request.Request(url, method='PUT')
+                req.add_header('Content-Type', 'application/json')
+                
+                jsondata = json.dumps(data).encode('utf-8')
+                
+                with urllib.request.urlopen(req, data=jsondata, timeout=5) as response:
+                    res = json.loads(response.read().decode())
+                    if res.get('status') == 'success':
+                        messagebox.showinfo("Success", "Material updated!", parent=dialog)
+                        dialog.destroy()
+                        self._refresh_study_materials()
+                    else:
+                        messagebox.showerror("Error", res.get('message', 'Update failed'), parent=dialog)
+            except Exception as e:
+                messagebox.showerror("Error", f"Update failed: {e}", parent=dialog)
+
+        def delete_material():
+            if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this material?", parent=dialog):
+                try:
+                    import urllib.request
+                    import json
+                    url = f"http://127.0.0.1:{self.portal_port}/api/admin/study-materials/{material_id}"
+                    req = urllib.request.Request(url, method='DELETE')
+                    with urllib.request.urlopen(req, timeout=5) as response:
+                        res = json.loads(response.read().decode())
+                        if res.get('status') == 'success':
+                            messagebox.showinfo("Deleted", "Material deleted successfully", parent=dialog)
+                            dialog.destroy()
+                            self._refresh_study_materials()
+                        else:
+                            messagebox.showerror("Error", res.get('message', 'Deletion failed'), parent=dialog)
+                except Exception as e:
+                    messagebox.showerror("Error", f"Deletion failed: {e}", parent=dialog)
+
+        tk.Button(btn_frame, text="💾 Save Changes", command=save_changes, 
+                 bg='#28a745', fg='white', font=('Segoe UI', 10, 'bold'), padx=15).pack(side=tk.RIGHT)
+                 
+        tk.Button(btn_frame, text="🗑️ Delete", command=delete_material, 
+                 bg='#dc3545', fg='white', font=('Segoe UI', 10, 'bold'), padx=15).pack(side=tk.LEFT)
 
     def _create_qr_access_section(self, parent):
         """Create comprehensive QR code access section with server dashboard"""
@@ -11865,7 +12305,11 @@ Note: This is an automated email. Please find the attached formal overdue letter
         tv.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
         for r in rows:
-            tv.insert('', tk.END, values=r)
+            # Convert sqlite3.Row objects to tuples for display
+            if hasattr(r, 'keys') and not isinstance(r, (list, tuple)):
+                tv.insert('', tk.END, values=tuple(r))
+            else:
+                tv.insert('', tk.END, values=r)
         btns = tk.Frame(dlg, bg=self.colors['primary'])
         btns.pack(fill=tk.X)
         def do_export():

@@ -372,6 +372,18 @@ def init_portal_db():
             active INTEGER DEFAULT 1
         )
     """)
+
+    # Ratings Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS book_ratings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            book_id TEXT NOT NULL,
+            enrollment_no TEXT NOT NULL,
+            rating INTEGER NOT NULL, -- 1-5
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(book_id, enrollment_no)
+        )
+    """)
     
     conn.commit()
     conn.close()
@@ -587,10 +599,17 @@ def api_login():
     session['logged_in'] = True
     
     conn_portal.close()
+    
+    # Return full user details (similar to /api/me) for Profile page consistency
+    student_year = student['year'] if student['year'] else '1st'
+    
     return jsonify({
         'status': 'success', 
         'enrollment_no': enrollment,
         'name': student['name'],
+        'department': student['department'] if student['department'] else 'General',
+        'year': student_year,
+        'email': student['email'],
         'require_change': require_change
     })
 
@@ -1036,8 +1055,13 @@ def api_me():
     conn.close()
     
     if student:
-        # Get student's year properly
+        # Determine if Pass Out
         student_year = student['year'] if student['year'] else '1st'
+        is_pass_out = False
+        # Normalize year string for pass out detection
+        if student_year.strip().lower() in ['pass out', 'passout', 'passed out', 'alumni', 'graduate']:
+            student_year = 'Pass Out'
+            is_pass_out = True
         
         # Fetch User Settings Override
         conn_portal = get_portal_db()
@@ -1071,7 +1095,8 @@ def api_me():
             },
             'account_info': {
                 'password_last_changed': 'Recently'
-            }
+            },
+            'can_request': not is_pass_out
         }})
     return jsonify({'user': None})
 
@@ -1259,10 +1284,10 @@ def api_dashboard():
                     item['status'] = 'overdue'
                     overdue_days = abs(delta)
                     item['days_msg'] = f"Overdue by {overdue_days} days"
-                    item['fine_est'] = overdue_days * 10 # Example fine calculation
+                    item['fine'] = overdue_days * 5 # ₹5 per day per logic in create_demo_data
                     notifications.append({
                         'type': 'danger',
-                        'msg': f"'{item['title']}' is OVERDUE! Please return immediately."
+                        'msg': f"'{item['title']}' is OVERDUE! Fine: ₹{item['fine']}"
                     })
                 elif delta <= 2:
                     item['status'] = 'warning'
@@ -1337,7 +1362,7 @@ def api_dashboard():
 
 # --- Write Endpoints (Sandbox Only) ---
 
-@app.route('/api/books/<int:book_id>', methods=['GET'])
+@app.route('/api/books/<book_id>', methods=['GET'])
 def get_book_details(book_id):
     """Fetch details for a specific book."""
     try:
@@ -1345,7 +1370,7 @@ def get_book_details(book_id):
         cursor = conn.cursor()
         
         # Fetch book details
-        cursor.execute("SELECT * FROM books WHERE book_id = ?", (book_id,))
+        cursor.execute("SELECT * FROM books WHERE book_id = ?", (str(book_id),))
         book = cursor.fetchone()
         
         if not book:
@@ -1355,30 +1380,50 @@ def get_book_details(book_id):
         book_data = dict(book)
         
         # Calculate availability
-        cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE book_id = ? AND status = 'borrowed'", (book_id,))
+        cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE book_id = ? AND status = 'borrowed'", (str(book_id),))
         borrowed_count = cursor.fetchone()[0]
         book_data['available_copies'] = book_data['total_copies'] - borrowed_count
         
-        # Check if current user is on waitlist
+        # Fetch Ratings
+        portal_conn = get_portal_db()
+        portal_cursor = portal_conn.cursor()
+        
+        # Check if current user is on waitlist & Get their rating
+        user_rating = 0
+        
         if 'student_id' in session:
-            portal_conn = get_portal_db()
-            portal_cursor = portal_conn.cursor()
             portal_cursor.execute(
                 "SELECT id FROM book_waitlist WHERE enrollment_no = ? AND book_id = ? AND notified = 0",
-                (session['student_id'], book_id)
+                (session['student_id'], str(book_id))
             )
             waitlist_entry = portal_cursor.fetchone()
             book_data['on_waitlist'] = waitlist_entry is not None
-            portal_conn.close()
+            
+            portal_cursor.execute(
+                "SELECT rating FROM book_ratings WHERE enrollment_no = ? AND book_id = ?",
+                (session['student_id'], str(book_id))
+            )
+            rating_entry = portal_cursor.fetchone()
+            if rating_entry:
+                user_rating = rating_entry['rating']
         else:
             book_data['on_waitlist'] = False
+            
+        # Get Average Rating
+        portal_cursor.execute("SELECT AVG(rating), COUNT(rating) FROM book_ratings WHERE book_id = ?", (str(book_id),))
+        rating_stats = portal_cursor.fetchone()
         
+        book_data['rating_avg'] = round(rating_stats[0], 1) if rating_stats[0] else None
+        book_data['rating_count'] = rating_stats[1] if rating_stats[1] else 0
+        book_data['user_rating'] = user_rating
+        
+        portal_conn.close()
         conn.close()
         return jsonify(book_data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/books/<int:book_id>/notify', methods=['POST'])
+@app.route('/api/books/<book_id>/notify', methods=['POST'])
 def add_to_waitlist(book_id):
     """Add student to waitlist for out-of-stock book."""
     if 'student_id' not in session:
@@ -1431,7 +1476,7 @@ def add_to_waitlist(book_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/books/<int:book_id>/notify', methods=['DELETE'])
+@app.route('/api/books/<book_id>/notify', methods=['DELETE'])
 def remove_from_waitlist(book_id):
     """Remove student from waitlist."""
     if 'student_id' not in session:
@@ -1531,14 +1576,24 @@ def generate_email_template(header_title, user_name, main_text, details_dict=Non
 def api_submit_request():
     if 'student_id' not in session:
         return jsonify({'error': 'Unauthorized'}), 401
-    
+
+    # Restrict Pass Out students from submitting requests
+    conn_lib = get_library_db()
+    cursor_lib = conn_lib.cursor()
+    cursor_lib.execute("SELECT year FROM students WHERE enrollment_no = ?", (session['student_id'],))
+    student = cursor_lib.fetchone()
+    conn_lib.close()
+    student_year = student['year'] if student and student['year'] else ''
+    if student_year.strip().lower() in ['pass out', 'passout', 'passed out', 'alumni', 'graduate']:
+        return jsonify({'error': 'Requests are not allowed for Pass Out students.'}), 403
+
     data = request.json
     req_type = data.get('type') # 'profile_update', 'renewal'
     details = data.get('details') # e.g., "Change email to x@y.com"
-    
+
     if not req_type or not details:
         return jsonify({'error': 'Missing data'}), 400
-    
+
     try:
         conn = get_portal_db()
         cursor = conn.cursor()
