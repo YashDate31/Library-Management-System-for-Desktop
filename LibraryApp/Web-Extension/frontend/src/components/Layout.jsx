@@ -347,6 +347,39 @@ export default function Layout({ user, setUser }) {
                           <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{user?.enrollment_no}</p>
                         </div>
                         
+                        {/* Navigation Links - Mobile Only */}
+                        <div className="md:hidden">
+                          <Link 
+                            to="/study-materials" 
+                            onClick={() => setProfileMenuOpen(false)}
+                            className="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                          >
+                            <GraduationCap size={16} className="text-slate-400"/> Study Materials
+                          </Link>
+                          <Link 
+                            to="/services" 
+                            onClick={() => setProfileMenuOpen(false)}
+                            className="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                          >
+                            <FileText size={16} className="text-slate-400"/> Services
+                          </Link>
+                          <Link 
+                            to="/history" 
+                            onClick={() => setProfileMenuOpen(false)}
+                            className="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                          >
+                            <Clock size={16} className="text-slate-400"/> History
+                          </Link>
+                          <Link 
+                            to="/contact" 
+                            onClick={() => setProfileMenuOpen(false)}
+                            className="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                          >
+                            <Mail size={16} className="text-slate-400"/> Contact
+                          </Link>
+                          <div className="h-px bg-slate-50 dark:bg-slate-700 my-1"></div>
+                        </div>
+                        
                         <Link 
                           to="/profile" 
                           onClick={() => setProfileMenuOpen(false)}

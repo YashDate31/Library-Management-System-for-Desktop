@@ -62,11 +62,21 @@ export default function Profile({ user }) {
     reader.readAsDataURL(file);
   };
 
+  // Normalize year for display
+  let displayYear = "N/A";
+  if (user?.year) {
+    const y = String(user.year).trim().toLowerCase();
+    if (["pass out", "passout", "passed out", "alumni", "graduate"].includes(y)) {
+      displayYear = "Pass Out";
+    } else {
+      displayYear = user.year;
+    }
+  }
   const profile = {
     name: user?.name || "Student",
     id: user?.enrollment_no || "N/A",
     department: user?.department || "General",
-    year: user?.year ? `${user.year}` : "N/A",
+    year: displayYear,
     email: user?.email || "N/A",
   };
 

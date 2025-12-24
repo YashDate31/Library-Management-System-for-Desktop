@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useToast } from '../context/ToastContext';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, BookOpen, Clock, AlertCircle, CheckCircle, Calendar, User, Tag, Hash, Heart, Share2, Star, Copy, Mail, MessageCircle, Bell, BellOff } from 'lucide-react';
+import { Book, X, Calendar, User, Tag, Clock, Sparkles, CheckCircle, AlertTriangle, Star, BookOpen, Copy, Mail, MessageCircle, Heart, Share2, Bell, BellOff } from 'lucide-react';
 
 export default function BookDetailModal({ isOpen, onClose, bookId }) {
   const [book, setBook] = useState(null);
@@ -12,6 +12,9 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [notifyLoading, setNotifyLoading] = useState(false);
+  const [userRating, setUserRating] = useState(0);
+  const [ratingStats, setRatingStats] = useState({ avg: 0, count: 0 });
+  const [hoverRating, setHoverRating] = useState(0);
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -21,7 +24,7 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
       setIsWishlisted(false); // Reset/Mock
       setShareOpen(false);
     } else {
-      setBook(null); 
+      setBook(null);
     }
   }, [isOpen, bookId]);
 
@@ -29,13 +32,36 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await axios.get(`/api/books/${bookId}`);
+      // Ensure ID is string for API
+      const safeId = String(bookId);
+      const { data } = await axios.get(`/api/books/${safeId}`);
       setBook(data);
+      if (data.rating_avg !== undefined) {
+        setRatingStats({ avg: data.rating_avg || 0, count: data.rating_count || 0 });
+        setUserRating(data.user_rating || 0);
+      }
     } catch (err) {
       console.error("Error fetching book details:", err);
       setError("Failed to load book details. Please try again.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRate = async (rating) => {
+    if (!book) return;
+    const oldRating = userRating;
+    setUserRating(rating); // Optimistic update
+
+    try {
+      const { data } = await axios.post(`/api/books/${book.book_id}/rate`, { rating });
+      if (data.success) {
+        setRatingStats({ avg: data.new_avg, count: data.new_count });
+        addToast('Rating submitted!', 'success');
+      }
+    } catch (e) {
+      addToast('Failed to submit rating', 'error');
+      setUserRating(oldRating); // Revert
     }
   };
 
@@ -57,9 +83,9 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
   const toggleWishlist = () => {
     setIsWishlisted(!isWishlisted);
     if (!isWishlisted) {
-       addToast('Added to wishlist', 'success');
+      addToast('Added to wishlist', 'success');
     } else {
-       addToast('Removed from wishlist', 'info');
+      addToast('Removed from wishlist', 'info');
     }
     // Future: API call to sync wishlist
   };
@@ -67,7 +93,7 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
   const handleShare = (method) => {
     const text = `Check out "${book.title}" by ${book.author} at the library!`;
     const url = window.location.origin + `/books/${bookId}`;
-    
+
     if (method === 'copy') {
       navigator.clipboard.writeText(`${text} ${url}`);
       addToast('Link copied to clipboard', 'success');
@@ -83,7 +109,7 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
 
   const handleNotifyMe = async () => {
     if (!book) return;
-    
+
     setNotifyLoading(true);
     try {
       if (book.on_waitlist) {
@@ -109,7 +135,7 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
   return (
     <AnimatePresence>
       {isOpen && (
-        <motion.div 
+        <motion.div
           className="fixed inset-0 z-[100] flex items-center justify-center p-4 isolate"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -117,8 +143,8 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
           transition={{ duration: 0.2 }}
         >
           {/* Backdrop */}
-          <motion.div 
-            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
+          <motion.div
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
             onClick={onClose}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -126,77 +152,100 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
           />
 
           {/* Modal Card */}
-          <motion.div 
+          <motion.div
             className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row max-h-[90vh] md:h-[600px]"
             initial={{ scale: 0.95, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.95, opacity: 0, y: 20 }}
             transition={{ type: "spring", duration: 0.4, bounce: 0.2 }}
           >
-        
-        {loading ? (
-           <div className="w-full h-full flex flex-col items-center justify-center space-y-4">
-             <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-             <p className="text-slate-500 font-medium animate-pulse">Fetching book details...</p>
-           </div>
-        ) : error ? (
-           <div className="w-full h-full p-12 flex flex-col items-center justify-center text-center space-y-4">
-             <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mb-2">
-                <AlertCircle size={32} />
-             </div>
-             <h3 className="text-xl font-bold text-slate-800">Unable to load book</h3>
-             <p className="text-slate-500 max-w-xs">{error}</p>
-             <button onClick={onClose} className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition-colors">
-               Close
-             </button>
-           </div>
-        ) : book && (
-          <>
-             {/* Close Button Mobile (Absolute) */}
-             <button 
-               onClick={onClose}
-               aria-label="Close modal"
-               className="md:hidden absolute top-4 right-4 z-20 p-2 bg-black/20 hover:bg-black/30 text-white rounded-full backdrop-blur-md transition-colors btn-interaction"
-             >
-               <X size={20} aria-hidden="true" />
-             </button>
 
-             {/* LEFT COLUMN: Visual & Meta */}
-             <div className="w-full md:w-1/3 bg-slate-900 relative flex flex-col items-center p-8 text-white overflow-hidden shrink-0">
-                {/* Background Pattern */}
-                <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] mix-blend-overlay" />
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 to-purple-600/20" />
-                
-                {/* Book Cover */}
-                <div className="relative z-10 w-40 md:w-48 aspect-[2/3] shadow-2xl rounded-sm group perspective-1000 mb-6">
-                   <div className="w-full h-full bg-slate-200 rounded-sm overflow-hidden relative shadow-lg transform transition-transform group-hover:rotate-y-12 duration-500">
+            {loading ? (
+              <div className="w-full h-full flex flex-col items-center justify-center space-y-4">
+                <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                <p className="text-slate-500 font-medium animate-pulse">Fetching book details...</p>
+              </div>
+            ) : error ? (
+              <div className="w-full h-full p-12 flex flex-col items-center justify-center text-center space-y-4">
+                <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mb-2">
+                  <AlertCircle size={32} />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800">Unable to load book</h3>
+                <p className="text-slate-500 max-w-xs">{error}</p>
+                <button onClick={onClose} className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition-colors">
+                  Close
+                </button>
+              </div>
+            ) : book && (
+              <>
+                {/* Close Button Mobile (Absolute) */}
+                <button
+                  onClick={onClose}
+                  aria-label="Close modal"
+                  className="md:hidden absolute top-4 right-4 z-20 p-2 bg-black/20 hover:bg-black/30 text-white rounded-full backdrop-blur-md transition-colors btn-interaction"
+                >
+                  <X size={20} aria-hidden="true" />
+                </button>
+
+                {/* LEFT COLUMN: Visual & Meta */}
+                <div className="w-full md:w-1/3 bg-slate-900 relative flex flex-col items-center p-8 text-white overflow-hidden shrink-0">
+                  {/* Background Pattern */}
+                  <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] mix-blend-overlay" />
+                  <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 to-purple-600/20" />
+
+                  {/* Book Cover */}
+                  <div className="relative z-10 w-40 md:w-48 aspect-[2/3] shadow-2xl rounded-sm group perspective-1000 mb-6">
+                    <div className="w-full h-full bg-slate-200 rounded-sm overflow-hidden relative shadow-lg transform transition-transform group-hover:rotate-y-12 duration-500">
                       {/* Image Placeholder or Actual Image */}
                       <div className="absolute inset-0 bg-gradient-to-br from-slate-200 to-slate-300 flex items-center justify-center">
-                         <BookOpen size={48} className="text-slate-400 opacity-50" />
+                        <BookOpen size={48} className="text-slate-400 opacity-50" />
                       </div>
                       {/* Spine Effect */}
                       <div className="absolute left-0 top-0 bottom-0 w-2 bg-black/10 z-20" />
-                   </div>
+                    </div>
+                  </div>
+
+                  {/* Quick Stats - Mobile Hidden usually, but let's show here */}
+                  <div className="relative z-10 text-center space-y-1">
+                    <h3 className="font-bold text-lg leading-tight">{book.title}</h3>
+                    <p className="text-slate-400 text-sm">{book.author}</p>
+                    <div className="flex items-center justify-center gap-1 mt-2">
+                      <div className="flex text-amber-400">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <button
+                            key={star}
+                            type="button"
+                            onMouseEnter={() => setHoverRating(star)}
+                            onMouseLeave={() => setHoverRating(0)}
+                            onClick={() => handleRate(star)}
+                            className="focus:outline-none transition-transform hover:scale-110 active:scale-95"
+                          >
+                            <Star
+                              size={16}
+                              className={
+                                (hoverRating || userRating) >= star
+                                  ? "fill-current"
+                                  : (ratingStats.avg >= star ? "fill-current opacity-80" : (ratingStats.avg >= star - 0.5 ? "fill-current opacity-50" : "text-slate-500 opacity-40"))
+                              }
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="text-center mt-1">
+                      <span className="font-bold text-amber-400 text-sm">{ratingStats.avg > 0 ? ratingStats.avg : 'No ratings'}</span>
+                      <span className="text-slate-500 text-xs ml-1">({ratingStats.count} reviews)</span>
+                    </div>
+                    {userRating > 0 && <p className="text-xs text-amber-200/80 text-center mt-1">You rated: {userRating}</p>}
+                  </div>
                 </div>
 
-                {/* Quick Stats - Mobile Hidden usually, but let's show here */}
-                <div className="relative z-10 text-center space-y-1">
-                   <h3 className="font-bold text-lg leading-tight">{book.title}</h3>
-                   <p className="text-slate-400 text-sm">{book.author}</p>
-                   <div className="flex items-center justify-center gap-1 text-amber-400 text-sm mt-2">
-                      <Star size={14} fill="currentColor" />
-                      <span className="font-bold">4.5</span>
-                      <span className="text-slate-500 text-xs ml-1">(24 reviews)</span>
-                   </div>
-                </div>
-             </div>
+                {/* RIGHT COLUMN: Details & Actions */}
+                <div className="flex-1 bg-white flex flex-col min-h-0">
 
-             {/* RIGHT COLUMN: Details & Actions */}
-             <div className="flex-1 bg-white flex flex-col min-h-0">
-                
-                {/* Fixed Header (Desktop) */}
-                <div className="hidden md:flex items-center justify-between px-8 py-6 border-b border-slate-100 shrink-0">
-                   <div className="flex items-center gap-3">
+                  {/* Fixed Header (Desktop) */}
+                  <div className="hidden md:flex items-center justify-between px-8 py-6 border-b border-slate-100 shrink-0">
+                    <div className="flex items-center gap-3">
                       <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-wider rounded-full">
                         {book.category || 'General'}
                       </span>
@@ -205,200 +254,198 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
                           <Clock size={12} /> Borrowed
                         </span>
                       )}
-                   </div>
-                   <div className="flex items-center gap-2 relative">
+                    </div>
+                    <div className="flex items-center gap-2 relative">
                       <button onClick={toggleWishlist} aria-label={isWishlisted ? "Remove from Wishlist" : "Add to Wishlist"} className={`p-2 rounded-full transition-colors btn-interaction ${isWishlisted ? 'bg-pink-50 text-pink-500' : 'hover:bg-slate-100 text-slate-400'}`}>
-                         <Heart size={20} fill={isWishlisted ? "currentColor" : "none"} aria-hidden="true" />
+                        <Heart size={20} fill={isWishlisted ? "currentColor" : "none"} aria-hidden="true" />
                       </button>
-                      
+
                       {/* Share Menu */}
                       <div className="relative">
-                        <button 
+                        <button
                           onClick={() => setShareOpen(!shareOpen)}
                           aria-label="Share this book"
                           aria-haspopup="true"
                           aria-expanded={shareOpen}
                           className={`p-2 rounded-full transition-colors btn-interaction ${shareOpen ? 'bg-blue-50 text-blue-600' : 'hover:bg-slate-100 text-slate-400'}`}
                         >
-                           <Share2 size={20} aria-hidden="true" />
+                          <Share2 size={20} aria-hidden="true" />
                         </button>
-                        
+
                         {shareOpen && (
                           <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-fade-in-up origin-top-right">
-                             <div className="p-2 space-y-1">
-                                <button onClick={() => handleShare('copy')} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 rounded-lg transition-colors">
-                                   <Copy size={16} className="text-slate-400" /> Copy Link
-                                </button>
-                                <button onClick={() => handleShare('whatsapp')} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-green-50 hover:text-green-700 rounded-lg transition-colors">
-                                   <MessageCircle size={16} className="text-green-500" /> WhatsApp
-                                </button>
-                                <button onClick={() => handleShare('email')} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors">
-                                   <Mail size={16} className="text-blue-500" /> Email
-                                </button>
-                             </div>
+                            <div className="p-2 space-y-1">
+                              <button onClick={() => handleShare('copy')} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 rounded-lg transition-colors">
+                                <Copy size={16} className="text-slate-400" /> Copy Link
+                              </button>
+                              <button onClick={() => handleShare('whatsapp')} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-green-50 hover:text-green-700 rounded-lg transition-colors">
+                                <MessageCircle size={16} className="text-green-500" /> WhatsApp
+                              </button>
+                              <button onClick={() => handleShare('email')} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors">
+                                <Mail size={16} className="text-blue-500" /> Email
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>
 
                       <button onClick={onClose} aria-label="Close modal" className="p-2 hover:bg-slate-100 text-slate-400 rounded-full transition-colors ml-2 btn-interaction">
-                         <X size={24} aria-hidden="true" />
+                        <X size={24} aria-hidden="true" />
                       </button>
-                   </div>
-                </div>
+                    </div>
+                  </div>
 
-                {/* Scrollable Content */}
-                <div className="flex-1 overflow-y-auto p-6 md:p-8">
-                   {/* Mobile Title (Visible only on mobile) */}
-                   <div className="md:hidden mb-6">
+                  {/* Scrollable Content */}
+                  <div className="flex-1 overflow-y-auto p-6 md:p-8">
+                    {/* Mobile Title (Visible only on mobile) */}
+                    <div className="md:hidden mb-6">
                       <div className="flex items-center justify-between mb-2">
-                         <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-wider rounded-full">
-                           {book.category || 'General'}
-                         </span>
-                         <div className="flex gap-2">
-                            <button onClick={toggleWishlist} aria-label={isWishlisted ? "Remove from Wishlist" : "Add to Wishlist"}><Heart size={20} className={isWishlisted ? 'text-pink-500 fill-current' : 'text-slate-400'} aria-hidden="true" /></button>
-                            <div className="relative">
-                               <button 
-                                 onClick={() => setShareOpen(!shareOpen)}
-                                 aria-label="Share this book"
-                                 aria-haspopup="true"
-                                 aria-expanded={shareOpen}
-                                 className={`${shareOpen ? 'text-blue-600' : 'text-slate-400'}`}
-                               >
-                                  <Share2 size={20} aria-hidden="true" />
-                               </button>
+                        <span className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-wider rounded-full">
+                          {book.category || 'General'}
+                        </span>
+                        <div className="flex gap-2">
+                          <button onClick={toggleWishlist} aria-label={isWishlisted ? "Remove from Wishlist" : "Add to Wishlist"}><Heart size={20} className={isWishlisted ? 'text-pink-500 fill-current' : 'text-slate-400'} aria-hidden="true" /></button>
+                          <div className="relative">
+                            <button
+                              onClick={() => setShareOpen(!shareOpen)}
+                              aria-label="Share this book"
+                              aria-haspopup="true"
+                              aria-expanded={shareOpen}
+                              className={`${shareOpen ? 'text-blue-600' : 'text-slate-400'}`}
+                            >
+                              <Share2 size={20} aria-hidden="true" />
+                            </button>
 
-                               {shareOpen && (
-                                 <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-fade-in-up origin-top-right">
-                                    <div className="p-2 space-y-1">
-                                       <button onClick={() => handleShare('copy')} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 rounded-lg transition-colors">
-                                          <Copy size={16} className="text-slate-400" /> Copy Link
-                                       </button>
-                                       <button onClick={() => handleShare('whatsapp')} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-green-50 hover:text-green-700 rounded-lg transition-colors">
-                                          <MessageCircle size={16} className="text-green-500" /> WhatsApp
-                                       </button>
-                                       <button onClick={() => handleShare('email')} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors">
-                                          <Mail size={16} className="text-blue-500" /> Email
-                                       </button>
-                                    </div>
-                                 </div>
-                               )}
-                            </div>
-                         </div>
+                            {shareOpen && (
+                              <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-fade-in-up origin-top-right">
+                                <div className="p-2 space-y-1">
+                                  <button onClick={() => handleShare('copy')} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 rounded-lg transition-colors">
+                                    <Copy size={16} className="text-slate-400" /> Copy Link
+                                  </button>
+                                  <button onClick={() => handleShare('whatsapp')} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-green-50 hover:text-green-700 rounded-lg transition-colors">
+                                    <MessageCircle size={16} className="text-green-500" /> WhatsApp
+                                  </button>
+                                  <button onClick={() => handleShare('email')} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg transition-colors">
+                                    <Mail size={16} className="text-blue-500" /> Email
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
                       <h2 className="text-2xl font-bold text-slate-900 mb-1">{book.title}</h2>
-                   </div>
+                    </div>
 
-                   {/* Description */}
-                   <div className="mb-8">
+                    {/* Description */}
+                    <div className="mb-8">
                       <h4 className="text-sm font-bold text-slate-900 mb-3 uppercase tracking-wide">About this Book</h4>
                       <p className="text-slate-600 text-sm md:text-base leading-relaxed">
                         {book.description || "No description available. Access detailed summaries, author bios, and reviews by visiting the physical library or checking the external database linked below."}
                       </p>
-                   </div>
+                    </div>
 
-                   {/* Metadata Grid */}
-                   <div className="grid grid-cols-2 md:grid-cols-3 gap-6 mb-8 pb-8 border-b border-slate-100">
+                    {/* Metadata Grid */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-6 mb-8 pb-8 border-b border-slate-100">
                       <div>
-                         <span className="text-xs font-bold text-slate-400 uppercase block mb-1">ISBN</span>
-                         <span className="text-sm font-mono text-slate-700">{book.isbn || '978-3-16-148410-0'}</span>
+                        <span className="text-xs font-bold text-slate-400 uppercase block mb-1">ISBN</span>
+                        <span className="text-sm font-mono text-slate-700">{book.isbn || '978-3-16-148410-0'}</span>
                       </div>
                       <div>
-                         <span className="text-xs font-bold text-slate-400 uppercase block mb-1">Publisher</span>
-                         <span className="text-sm text-slate-700 font-medium">{book.publisher || 'Tech Press Inc.'}</span>
+                        <span className="text-xs font-bold text-slate-400 uppercase block mb-1">Publisher</span>
+                        <span className="text-sm text-slate-700 font-medium">{book.publisher || 'Tech Press Inc.'}</span>
                       </div>
                       <div>
-                         <span className="text-xs font-bold text-slate-400 uppercase block mb-1">Pages</span>
-                         <span className="text-sm text-slate-700 font-medium">{book.page_count || '342'} pages</span>
+                        <span className="text-xs font-bold text-slate-400 uppercase block mb-1">Pages</span>
+                        <span className="text-sm text-slate-700 font-medium">{book.page_count || '342'} pages</span>
                       </div>
                       <div>
-                         <span className="text-xs font-bold text-slate-400 uppercase block mb-1">Language</span>
-                         <span className="text-sm text-slate-700 font-medium">English</span>
+                        <span className="text-xs font-bold text-slate-400 uppercase block mb-1">Language</span>
+                        <span className="text-sm text-slate-700 font-medium">English</span>
                       </div>
                       <div>
-                         <span className="text-xs font-bold text-slate-400 uppercase block mb-1">Format</span>
-                         <span className="text-sm text-slate-700 font-medium">Hardcover</span>
+                        <span className="text-xs font-bold text-slate-400 uppercase block mb-1">Format</span>
+                        <span className="text-sm text-slate-700 font-medium">Hardcover</span>
                       </div>
-                   </div>
+                    </div>
 
-                   {/* Availability Section */}
-                   <div>
+                    {/* Availability Section */}
+                    <div>
                       <h4 className="text-sm font-bold text-slate-900 mb-4 uppercase tracking-wide flex items-center gap-2">
                         <BookOpen size={16} /> Live Availability
                       </h4>
-                      
+
                       <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                         <div className="flex items-center justify-between mb-3">
-                            <span className="font-bold text-slate-700">Main Library</span>
-                            <span className={`text-sm font-bold px-2 py-1 rounded-md ${book.available_copies > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                               {book.available_copies > 0 ? 'Available' : 'Out of Stock'}
-                            </span>
-                         </div>
-                         <div className="w-full bg-slate-200 rounded-full h-2 mb-2 overflow-hidden">
-                            <div 
-                              className="bg-green-500 h-2 rounded-full transition-all duration-500" 
-                              style={{ width: `${(book.available_copies / book.total_copies) * 100}%` }}
-                            />
-                         </div>
-                         <p className="text-xs text-slate-500 text-right">
-                            {book.available_copies} of {book.total_copies} copies available
-                         </p>
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="font-bold text-slate-700">Main Library</span>
+                          <span className={`text-sm font-bold px-2 py-1 rounded-md ${book.available_copies > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {book.available_copies > 0 ? 'Available' : 'Out of Stock'}
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2 mb-2 overflow-hidden">
+                          <div
+                            className="bg-green-500 h-2 rounded-full transition-all duration-500"
+                            style={{ width: `${(book.available_copies / book.total_copies) * 100}%` }}
+                          />
+                        </div>
+                        <p className="text-xs text-slate-500 text-right">
+                          {book.available_copies} of {book.total_copies} copies available
+                        </p>
                       </div>
-                   </div>
-                </div>
+                    </div>
+                  </div>
 
-                {/* Footer / Actions */}
-                <div className="p-6 border-t border-slate-100 bg-white shrink-0">
-                   {requestStatus === 'success' ? (
+                  {/* Footer / Actions */}
+                  <div className="p-6 border-t border-slate-100 bg-white shrink-0">
+                    {requestStatus === 'success' ? (
                       <div className="w-full py-3 bg-green-50 border border-green-100 rounded-xl flex items-center justify-center gap-2 text-green-700 animate-fade-in">
-                         <CheckCircle size={20} />
-                         <span className="font-bold">Request Submitted Successfully</span>
+                        <CheckCircle size={20} />
+                        <span className="font-bold">Request Submitted Successfully</span>
                       </div>
-                   ) : (
+                    ) : (
                       <div className="flex gap-3">
-                         <button 
-                           onClick={handleRequestBook}
-                           disabled={requestStatus === 'loading' || book.available_copies <= 0}
-                           className={`flex-1 py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all shadow-lg active:scale-[0.98] btn-interaction ${
-                              book.available_copies > 0 
-                                ? 'bg-brand-blue hover:bg-blue-600 shadow-blue-500/25' 
-                                : 'bg-slate-300 cursor-not-allowed text-slate-500'
-                           }`}
-                         >
-                           {requestStatus === 'loading' ? (
-                              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                           ) : book.available_copies > 0 ? (
-                              <>Request Book</>
-                           ) : (
-                              'Unavailable'
-                           )}
-                         </button>
-                         {book.available_copies <= 0 && (
-                            <button 
-                              onClick={handleNotifyMe}
-                              disabled={notifyLoading}
-                              className={`px-4 py-3.5 rounded-xl border-2 font-bold transition-all flex items-center gap-2 ${
-                                book.on_waitlist
-                                  ? 'border-brand-blue bg-brand-blue/5 text-brand-blue hover:bg-brand-blue/10'
-                                  : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                        <button
+                          onClick={handleRequestBook}
+                          disabled={requestStatus === 'loading' || book.available_copies <= 0}
+                          className={`flex-1 py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all shadow-lg active:scale-[0.98] btn-interaction ${book.available_copies > 0
+                              ? 'bg-brand-blue hover:bg-blue-600 shadow-blue-500/25'
+                              : 'bg-slate-300 cursor-not-allowed text-slate-500'
+                            }`}
+                        >
+                          {requestStatus === 'loading' ? (
+                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          ) : book.available_copies > 0 ? (
+                            <>Request Book</>
+                          ) : (
+                            'Unavailable'
+                          )}
+                        </button>
+                        {book.available_copies <= 0 && (
+                          <button
+                            onClick={handleNotifyMe}
+                            disabled={notifyLoading}
+                            className={`px-4 py-3.5 rounded-xl border-2 font-bold transition-all flex items-center gap-2 ${book.on_waitlist
+                                ? 'border-brand-blue bg-brand-blue/5 text-brand-blue hover:bg-brand-blue/10'
+                                : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
                               }`}
-                            >
-                              {notifyLoading ? (
-                                <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
-                              ) : (
-                                <>
-                                  {book.on_waitlist ? <Bell size={18} /> : <BellOff size={18} />}
-                                  {book.on_waitlist ? 'Notifying' : 'Notify Me'}
-                                </>
-                              )}
-                            </button>
-                         )}
+                          >
+                            {notifyLoading ? (
+                              <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+                            ) : (
+                              <>
+                                {book.on_waitlist ? <Bell size={18} /> : <BellOff size={18} />}
+                                {book.on_waitlist ? 'Notifying' : 'Notify Me'}
+                              </>
+                            )}
+                          </button>
+                        )}
                       </div>
-                   )}
-                </div>
+                    )}
+                  </div>
 
-             </div>
-          </>
-        )}
+                </div>
+              </>
+            )}
           </motion.div>
         </motion.div>
       )}
