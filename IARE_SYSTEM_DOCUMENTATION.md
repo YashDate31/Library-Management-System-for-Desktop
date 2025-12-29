@@ -105,10 +105,10 @@ flowchart TD
 The core physical operations of the library. These flows follow strict
 validation rules to maintain inventory integrity.
 
-````carousel
+#### Book Issue Process
+
 ```mermaid
 flowchart TD
-    title[<b>Book Issue Process</b>]
     Start([Start Issue]) --> In[/Input: Enrollment No<br/>& Book ID/]
     In --> Val1{Student<br/>Pass Out?}
     
@@ -124,10 +124,11 @@ flowchart TD
     Action --> DB[Update library.db:<br/>Decrement Available]
     DB --> Success([End: Book Issued])
 ```
-<!-- slide -->
+
+#### Book Return Process
+
 ```mermaid
 flowchart TD
-    title[<b>Book Return Process</b>]
     Start([Start Return]) --> In[/Input: Book ID/]
     In --> Logic[Calculate:<br/>Days_Late = Now - Due_Date]
     
@@ -142,7 +143,6 @@ flowchart TD
     Update[Update borrow_records:<br/>Set Return Date & status='returned'] --> Incr[Update library.db:<br/>Increment Available]
     Incr --> End([End: Book Returned])
 ```
-````
 
 ### In-Depth Explanation:
 
