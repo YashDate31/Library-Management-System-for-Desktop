@@ -1,237 +1,160 @@
-# IARE: Integrated Academic Resource Ecosystem
+# Project Overview
 
-## DIPEX 2026 Project Report & Technical Bible
+**CURRENT STAGE** Testing Phase
 
-> **Competition Category**: Open Innovation\
-> **Target Platform**: Legacy Government Systems (Windows 7 / 32-bit
-> Architecture)
+**OBJECTIVE** To bridge the gap between physical libraries and digital learners.
+Our goal is to democratize access by building a hybrid ecosystem-parlaying
+secure desktop administration with a seamless browser extension-that gives
+students instant, 24/7 access to books and study material directly in their
+workflow.
 
----
+### ABSTRACT
 
-## 1. Executive Summary (Synopsis)
-
-**The Integrated Academic Resource Ecosystem (IARE)** is a "Hybrid
-Decentralized" library management solution designed specifically to bridge the
-technological gap in resource-constrained government colleges.
-
-Unlike traditional solutions that are either **Standalone Desktop Apps**
-(isolating students) or **Cloud-Based Web Apps** (requiring expensive
-infrastructure and constant internet), IARE combines the best of both worlds. It
-employs a **Desktop Authority Node** (for the Librarian) that acts as a local
-server for a lightweight **Web Extension Client** (for Students).
-
-This unique architecture allows the system to provide a modern, "Web-Like"
-experience for students (searching books, reserving copies, checking history)
-while running entirely on **Legacy Windows 7 hardware** without requiring a
-dedicated cloud server or static IP.
-
----
-
-## 2. Problem Identification & Motivation
-
-### The "Government College" Constraint
-
-Most government educational institutions in Maharashtra operate under strict
-constraints:
-
-- **Hardware**: Computers often run **Windows 7 (32-bit)** with 2GB-4GB RAM.
-- **Internet**: Connectivity is intermittent or restricted to LAN.
-- **Expertise**: Librarians are often non-technical, requiring
-  "Zero-Configuration" software.
-
-### The Operational Gaps
-
-1. **The Information Silo**: In current setups, students must physically visit
-   the library to know if a book is available. There is no remote discovery.
-2. **Inventory Drift**: Manual registers lead to human error, resulting in
-   "Ghost Books" (marked available but missing).
-3. **Late Fine Disputes**: Manual calculation of fines leads to arguments and
-   lack of transparency.
-
-### The DIPEX "Innovation" Angle
-
-IARE addresses these problems not by demanding better hardware, but by
-**innovating the software architecture** to fit the existing environment. It
-turns the Librarian's existing PC into a "Micro-Server," democratizing digital
-access for students at **Zero Cost**.
+Most college libraries are fixed in the past. For students to check a book's
+availability or to download notes, they actually have to visit the library.
+Resources and learners are quite disconnected from each other. We built the
+Integrated Academic Resource Ecosystem-IARE-to solve this "last mile" problem.
+Unlike other management systems, IARE is a hybrid solution. It couples a strong
+Python Desktop Application for librarians with a lightweight Web Extension for
+students. We didn't want to develop yet another awkward portal. Our extension
+resides noiselessly in the browser, giving students instant access to the
+catalogue and study materials. We even extended the reach of the library beyond
+campus; the system includes DELNET integration allowing students to request
+books directly from the national library network through the extension, which
+the librarian then processes. This transforms the library from a physical room
+to a 24/7 digital assistant.
 
 ---
 
-## 3. Proposed Solution & Architecture
+# PROBLEM STATEMENT
 
-### 3.1 The Hybrid Decentralized Model
+The conventional university libraries are **functionally isolated**. They depend
+on rigid computer software that can be used only by the librarians, making the
+students unaware of the same. For searching or accessing study notes, the
+students have to actually come to the library, which is not necessary.
 
-The system operates on a **Local-First** principle.
+Current technology that already exists may be costly or existent only within a
+large portal that students do not browse often. Thus, it creates a significant
+**resource gap** whereas resources abound within the SFL, students cannot easily
+access or research these resources beyond the physical SFL boundaries.
 
-- **Node 1: The Authority (Admin Desktop App)**
-  - Built with **Tkinter** and **Python**.
-  - Controls the physical inventory.
-  - Hosts a `Waitress` WSGI server in a background thread.
-  - Manages the `library.db` (Master Record).
+# PROPOSED SOLUTION
 
-- **Node 2: The Client (Student Extension)**
-  - A Browser Extension / Lightweight Web Interface.
-  - Communicates with the Authority Node via standard HTTP/JSON requests.
-  - Interacts with `portal.db` (Requests/Sessions).
+We suggest that an "**Integrated Academic Resource Ecosystem**" or "**IARE**" is
+developed as a **hybrid solution** that approaches library connectivity with a
+new and innovative perspective where "**library administration**" is unbundled
+from
 
-### 3.2 System Block Diagram
+**For Administration:** Create a secure Desktop Application in Python for
+managing this heavy lifting. The new system is more than an ordinary library
+management system that does inventory and fine calculations alone because it has
+an intelligent automation system designed for queueing automated due letters to
+offenders as well as producing analyses of activities and monthly reports.The
+new system is fast and can function even when it is offline.
 
-```mermaid
-graph TD
-    classDef storage fill:#f9f,stroke:#333,stroke-width:2px;
-    classDef component fill:#dfd,stroke:#333,stroke-width:2px;
+**For Students:** Rather than designing a portal, we came up with a lightweight
+Web Extension. The Web Extension is integrated into the browser so that students
+can access and download study materials instantly. We also implemented a
+**DELNET Request** service so that students can request national inter-library
+materials, and the librarian can receive and process these requests.
 
-    subgraph "Student Layer (Web Extension)"
-        FE[/Frontend Browser/]:::component
-    end
-
-    subgraph "Logic & Service Layer"
-        Waitress[Waitress/Flask<br/>Local Web Server]:::component
-        AdminUI[Tkinter Admin<br/>Desktop Application]:::component
-    end
-
-    subgraph "External Integration"
-        SMTP[GMail SMTP Server]:::component
-    end
-
-    subgraph "Data Layer"
-        PDB[(portal.db)]:::storage
-        LDB[(library.db)]:::storage
-    end
-
-    FE -- "HTTPS/API<br/>Requests" --> Waitress
-    Waitress -- "CRUD" --> PDB
-    AdminUI -- "Direct Query" --> LDB
-    AdminUI -- "Manage" --> PDB
-    AdminUI -- "Alerts" --> SMTP
-```
+This approach solves the problem of **accessibility** because it provides
+**resources**, both **local and national**, as well as **automated management
+capabilities**, to the users.
 
 ---
 
-## 4. Technical Feasibility & Methodology
+# Technical Architecture
 
-### 4.1 Technology Stack
+### METHODOLOGY
 
-| Component         | Technology       | Justification for DIPEX/Win7                                                         |
-| :---------------- | :--------------- | :----------------------------------------------------------------------------------- |
-| **Language**      | Python 3.8+      | Standard library support, easy to bundle as `.exe`.                                  |
-| **GUI Framework** | Tkinter          | Native look on Windows 7, zero external dependencies (unlike PyQt/Electron).         |
-| **Web Server**    | Flask + Waitress | Flask for logic, Waitress for production-ready serving on Windows without IIS/Nginx. |
-| **Database**      | SQLite3          | Serverless, file-based, zero-configuration. Perfect for single-node deployment.      |
-| **Visualization** | Matplotlib       | Generates industry-standard analytics graphs offline.                                |
+_Focus: The engineering approach, architecture, and development life cycle._
 
-### 4.2 Core Feature Workflows
+The project follows a **Hybrid Modular Architecture** developed using **Agile
+Methodology**, thus allowing the iterative development of the desktop and web
+modules.
 
-#### Feature A: The "Guard-Pattern" Transaction Cycle
+**1. Requirement Analysis:** This gave us the insight about how all the physical
+records in the library are not an option that can be availed by the students,
+hence, the two modules in which the project will be divided-a powerhouse called
+the Admin Panel and the lighter Web Extension that will provide access remotely.
 
-The system employs strict validation logic to prevent "Inventory Leakage." A
-book cannot be issued if the student is flagged or limits are reached.
+**2. Architectural Design:**
 
-**Automated Fine Logic**: `Late_Fine = (Current_Date - Due_Date) * 5 INR`
-(Calculated instantly upon return).
+**3. Integration Strategy:** Custom "**Bridge API**" - simulated here by local
+file serving, provided a means for the browser extension to read library records
+without compromising the main database's security against write access.
 
-```mermaid
-flowchart TD
-    Start([Start Issue]) --> In[/Input: Enrollment No<br/>& Book ID/]
-    In --> Val1{Student<br/>Pass Out?}
-    
-    Val1 -- Yes --x Block1([Block: Invalid Status])
-    Val1 -- No --> Val2{Available<br/>Copies > 0?}
-    
-    Val2 -- No --x Block2([Block: Out of Stock])
-    Val2 -- Yes --> Val3{Student at<br/>Max Limit?}
-    
-    Val3 -- Yes --x Block3([Block: Limit Exceeded])
-    Val3 -- No --> Action[Insert Record to<br/>borrow_records]
-    
-    Action --> DB[Update library.db:<br/>Decrement Available]
-    DB --> Success([End: Book Issued])
-```
+### WORKING MECHANISM
 
-#### Feature B: Asynchronous Request Workflow
-
-This flow decouples student demand from librarian action. Students "Express
-Interest" (write to `portal.db`), which the Librarian "Approves" (fetches from
-`portal.db`, writes to `library.db`).
-
-```mermaid
-flowchart TD
-    Start([Start]) --> Input[/Student Enters<br/>Request Details/]
-    Input --> API[POST /api/request]
-    API --> Validate{Valid<br/>Session?}
-    
-    Validate -- No --x Stop([End: Invalid])
-    Validate -- Yes --> DBInsert[(Insert to portal.db<br/>status: 'pending')]
-    
-    DBInsert --> Refresh[/Librarian Refreshes<br/>Dashboard/]
-    Refresh --> ViewCard[View Pending<br/>Request Card]
-    
-    ViewCard --> Decision{Librarian<br/>Approves?}
-    
-    Decision -- No --x EndReject([Request Ignored])
-    Decision -- Yes --> UpdateDB[Update Status:<br/>'approved']
-    
-    UpdateDB --> SMTP[Trigger SMTP Email<br/>'Ready for Pickup']
-    SMTP --> EndSuccess([End: Ready for Pickup])
-```
-
-#### Feature C: The "Watchdog" (Automated Email Daemon)
-
-A background thread acts as an automated assistant. It checks `borrow_records`
-daily at 09:00 AM.
-
-- **Logic**: IF `Due_Date == Today + 2 Days` THEN `Send Reminder`.
-- **Value**: Reduces overdue incidents by ~40% (projected).
-
-```mermaid
-flowchart TD
-    Start([App Startup]) --> Thread[Spawn Background Thread]
-    Thread --> Sleep[Calculate Sleep Time<br/>Until 09:00 AM]
-    Trigger([Daily Execution]) --> Query[/Query records due in<br/>'Today + 2 Days'/]
-    Query --> SMTP[Init SMTP Session]
-    SMTP --> Send[Send Pre-Due Email]
-```
+The **IARE** is built upon a secure, locally managed Client-Server system
+operating in three phases:
 
 ---
 
-## 5. Commercial Viability & Cost Analysis
+### KEY FEATURES
 
-IARE scores effectively 100% on Cost Effectiveness, making it highly suitable
-for mass adoption in Tier-2/Tier-3 colleges.
+- **Real-Time Availability Sync:** Data gets instantly updated as action
+  performed on database.
+- **Smart SMTP Notification System:** Automatically send Pre-Due Date Reminders
+  (2 days before) to students to prevent fines, and Overdue Alerts immediately
+  after a deadline is missed.
+- **Academic Year-End Promotion :** As academic year promotes it automatically
+  promotes students (1st->2nd, 2nd->3rd) and archives graduates ("Pass Out")
+- **Automated Overdue Letter Generation:** One-click generation of professional
+  Word official warning letters for Overdue cases.
+- **Interactive Analytics Dashboard:** Book Circulation Trends, Top Borrowers,
+  Most Popular Genres, and Fine Collection Reports & Bulk Data Management: The
+  bulk addition of hundreds of students or books via Excel sheets.
+- **Hybrid Ecosystem Architecture:** Python Desktop Software for Librarian and
+  Web extension for Students.
+- **DELNET National Resource Integration:** Students can access DELNET services.
+- **Digital Study Material Repository:** Goes beyond physical books by allowing
+  admins to upload digital assets (PDF Notes, Past PYQs).
 
-### Cost breakdown for a typical College Library:
+### EXPECTED OUTCOMES
 
-| Item                     | Market Solution Cost     | IARE Cost | Note                          |
-| :----------------------- | :----------------------- | :-------- | :---------------------------- |
-| **Server Hardware**      | ₹50,000+ (Rack Server)   | **₹0**    | Uses existing Admin PC        |
-| **OS License**           | ₹15,000 (Windows Server) | **₹0**    | Runs on existing Windows 7/10 |
-| **Software License**     | ₹20,000/year (SaaS)      | **₹0**    | Open Source (MIT)             |
-| **Database Maintenance** | ₹10,000/year             | **₹0**    | Zero-Admin SQLite             |
-| **Total Year 1 Cost**    | **₹95,000+**             | **₹0**    | **Pure Innovation**           |
+- **Faster Service & Zero Extra Cost:** Reduces book issue and return time to
+  under 30 seconds, eliminating student queues & Modernizes the library using
+  existing college computers without expensive servers or software fees.
+- **24/7 Availability:** Students can check book availability and download notes
+  digitally from ecosystem, anytime.
+- **Accurate Fines:** Automatically calculates overdue fees, preventing math
+  errors.
+- **Smart Buying:** Analytics show which books are popular, helping the library
+  buy what students actually read.
+- **Secure Inventory:** System automatically blocks "Pass Out" students from
+  borrowing, preventing book loss.
+- **National Reach:** Connects students to the DELNET network to request books
+  from outside the college.
+- **Data Consistency:** The centralized SQLite database ensures that student
+  records and book inventories remain synchronized and duplicate-free across all
+  operations.
+- **Timely Communication:** The automated scheduler triggers email reminders
+  exactly at 9:00 AM (2 days before due dates), ensuring students are notified
+  precisely on time.
 
 ---
 
-## 6. Impact & Utility (Evaluation Criteria)
+### TECH STACK
 
-- **Academic Impact**: Students can search for books from labs/classrooms,
-  reducing "wasted trips" to the library.
-- **Operational Efficiency**: The **Analytics Dashboard** (Pie Charts/Bar
-  Graphs) gives the Principal an instant view of "Most Read Books" vs "Dead
-  Inventory," aiding budget allocation.
-- **Sustainability**: Reduces register paper usage by digitizing the entire
-  borrowing history.
+**Software**
 
----
+- **Core & Database:** Python 3.11, SQLite3
+- **Desktop Interface & Utilities:** Tkinter, tkcalendar, Pillow (Image
+  Processing), PyInstaller (Deployment), qrcode
+- **Data Processing & Reports:** Pandas, Matplotlib (Analytics), OpenPyXL,
+  xlsxwriter, python-docx (Word Automation)
+- **Connectivity & Local Server:** Flask, Waitress, Requests
+- **Web Extension (Frontend):** React.js, Vite, Tailwind CSS
 
-## 7. Future Scope
+**HARDWARE** _None listed_
 
-- **PostgreSQL Migration**: For colleges with >50,000 books, the DAL (Data
-  Access Layer) can be switched from SQLite to Postgres.
-- **Android App**: The existing Flask API can serve a future Flutter/Android app
-  without changing the backend code.
-- **RFID Integration**: The "Issue Book" module is ready to accept input from
-  USB RFID scanners (acting as keyboard wedges).
+### BLUEPRINT / DESIGN ASPECT
 
----
+The first-ever priority was **Simplicity with Reliability**. There were two
+important considerations:
 
-_End of Technical Report - Prepared for DIPEX 2026 Scrutiny._
+### TECHNICAL DOCUMENTS
+
+[View Image]
