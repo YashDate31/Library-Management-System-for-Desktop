@@ -158,3 +158,98 @@ important considerations:
 ### TECHNICAL DOCUMENTS
 
 [View Image]
+
+---
+
+# Impact & Classification
+
+**VALUE ADDITION**
+
+- Cost-Free Deployment
+- Offline Independence
+- Student Empowerment
+- Error-Free Accounting
+
+**APPLICATION AREAS**
+
+- School & College Libraries
+- Coaching Institutes
+
+**SOCIAL IMPACT** The greatest impact that our project produces is the removal
+of the 'barrier' that was existing between students and books. Students
+previously wasted time physically moving to the library to simply check whether
+a book was available. The **Web Extension** now opens the library _24/7 on
+students laptops_.
+
+For institution of higher education, this eliminates disorganized paperwork. The
+librarian now saves countless hours per day because late fines, warning letters,
+and reports are all processed automatically. The library shifts from being a
+manual storage facility to a total modern hub because this system enables faster
+learning with reduced frustration.
+
+**COMMERCIAL VIABILITY** The **Integrated Academic Resource Ecosystem (IARE)**
+is very commercially viable, as it is addressed to a huge, underserved market:
+small to medium-sized educational institutions.
+
+Evidently, most of the software used in libraries currently is too costly (with
+a high subscription fee) and too complex (requiring hosting server). Our
+software, therefore, addresses this problem as a **one-time investment**
+solution that is also **cost-effective**. The software, which is produced using
+open-source components (Python, SQLite, React), incurs a zero license fee for
+both developers and clients.
+
+Key Commercial Strengths:
+
+---
+
+# Institute, District & Team
+
+### INSTITUTE DETAILS
+
+**Government Polytechnic, Awasari (khurd)** Program: Diploma
+
+### LOCATION
+
+**Pune** District Registered
+
+### PROJECT GUIDE / MENTOR
+
+**Ajita Sanjay Patil** Department not specified ajitapatilgpa@gmail.com
+7972207199
+
+### TEAM MEMBERS (4)
+
+1. **Yash Vijay Date** Computer Engineering yashdate36@gmail.com 9527266485
+
+2. **Yash Ajay Magar** Computer Engineering yashajaymagar10@gmail.com 9579559257
+
+3. **Sharvari Sachin Rokade** Computer Engineering sharvari.ssr@gmail.com
+   9511775458
+
+4. **Aryan Ramesh Pohakar** Computer Engineering pohakar.aryan20@gmail.com
+   9767308669
+
+---
+
+# Support Requirements
+
+**Incubation Support Needed** `YES`
+
+**Industry Sponsored** `NO`
+
+---
+
+# Principal Signed Form
+
+_Download the template, sign it, and upload the scanned PDF._
+
+[Download Template]
+
+> Ensure the form is signed and stamped by the college principal before
+> uploading.
+
+**Document Already Uploaded** You have successfully uploaded your signed form.
+No further action is required.
+
+_Declaration: By uploading, I declare this project is original work and has not
+been submitted to any other competition._
