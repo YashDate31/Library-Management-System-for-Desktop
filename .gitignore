@@ -11,6 +11,7 @@ ENV/
 # PyInstaller outputs (ignore at any depth)
 **/build/
 **/dist/
+!LibraryApp/Web-Extension/frontend/dist/
 # Keep spec files in source control
 
 # Logs and caches
