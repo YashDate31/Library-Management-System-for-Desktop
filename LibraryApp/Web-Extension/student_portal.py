@@ -12,6 +12,21 @@ from email.mime.multipart import MIMEMultipart
 from functools import wraps
 import time
 from collections import defaultdict
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+# Setup path to import database.py from parent directory
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from database import PostgresConnectionWrapper
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+except ImportError:
+    pass
+
 
 # --- Configuration ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -238,27 +253,66 @@ def cleanup_logs():
     except Exception as e:
         print(f"Log cleanup failed: {e}")
 
-def get_library_db():
-    """Read-Only Connection to Core Data"""
-    db_path = os.path.join(os.path.dirname(BASE_DIR), 'library.db')
+def get_db_connection(local_db_name):
+    """Generic connection factory: Postgres (if env) or Local SQLite"""
+    database_url = os.getenv('DATABASE_URL')
+    if database_url:
+        try:
+            conn = psycopg2.connect(database_url)
+            return PostgresConnectionWrapper(conn)
+        except Exception as e:
+            print(f"Cloud DB Connection Error: {e}")
+            # Fallback to local if connection fails?
+            # For Web Portal, maybe we just want to fail if configured for cloud.
+            pass
+            
+    # Local SQLite fallback
+    if local_db_name == 'library.db':
+        db_path = os.path.join(os.path.dirname(BASE_DIR), 'library.db')
+    else:
+        db_path = os.path.join(BASE_DIR, 'portal.db')
+        
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
+def get_library_db():
+    """Read-Only Connection to Core Data"""
+    # If generic DB is used, both library and portal data are in the same Postgres DB
+    return get_db_connection('library.db')
+
 def get_portal_db():
     """Read-Write Connection to Sandbox Data"""
-    db_path = os.path.join(BASE_DIR, 'portal.db')
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
+    # If generic DB is used, both library and portal data are in the same Postgres DB
+    return get_db_connection('portal.db')
+
+def create_table_safe(cursor, table_name, pg_sql, sqlite_sql):
+    """Helper to create tables with backend-specific syntax"""
+    database_url = os.getenv('DATABASE_URL')
+    if database_url:
+        try:
+            cursor.execute(pg_sql)
+        except Exception as e:
+            print(f"Table creation warning ({table_name}): {e}")
+    else:
+        cursor.execute(sqlite_sql)
 
 def init_portal_db():
     """Initialize the Sandbox DB for Requests and Notes"""
     conn = get_portal_db()
     cursor = conn.cursor()
     
-    # Requests Table (Profile Updates, Book Renewals, etc.)
-    cursor.execute("""
+    # Requests Table
+    create_table_safe(cursor, 'requests', '''
+        CREATE TABLE IF NOT EXISTS requests (
+            req_id SERIAL PRIMARY KEY,
+            enrollment_no TEXT,
+            request_type TEXT,
+            details TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''', '''
         CREATE TABLE IF NOT EXISTS requests (
             req_id INTEGER PRIMARY KEY AUTOINCREMENT,
             enrollment_no TEXT,
@@ -267,20 +321,35 @@ def init_portal_db():
             status TEXT DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+    ''')
     
-    # Auth Table (Shadow Auth)
-    cursor.execute("""
+    # Auth Table
+    create_table_safe(cursor, 'student_auth', '''
+        CREATE TABLE IF NOT EXISTS student_auth (
+            enrollment_no TEXT PRIMARY KEY,
+            password TEXT NOT NULL,
+            is_first_login INTEGER DEFAULT 1,
+            last_changed TIMESTAMP
+        )
+    ''', '''
         CREATE TABLE IF NOT EXISTS student_auth (
             enrollment_no TEXT PRIMARY KEY,
             password TEXT NOT NULL,
             is_first_login INTEGER DEFAULT 1, -- 1=True, 0=False
             last_changed DATETIME
         )
-    """)
-    
-    # Notices Table (Broadcast System)
-    cursor.execute("""
+    ''')
+
+    # Notices Table
+    create_table_safe(cursor, 'notices', '''
+        CREATE TABLE IF NOT EXISTS notices (
+            id SERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''', '''
         CREATE TABLE IF NOT EXISTS notices (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
@@ -288,12 +357,19 @@ def init_portal_db():
             active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+    ''')
     
-
-    
-    # Create Deletion Requests Table
-    cursor.execute('''
+    # Deletion Requests
+    create_table_safe(cursor, 'deletion_requests', '''
+        CREATE TABLE IF NOT EXISTS deletion_requests (
+            id SERIAL PRIMARY KEY,
+            student_id TEXT NOT NULL,
+            reason TEXT,
+            status TEXT DEFAULT 'pending',
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(student_id) REFERENCES students(enrollment_no)
+        )
+    ''', '''
         CREATE TABLE IF NOT EXISTS deletion_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id TEXT NOT NULL,
@@ -304,8 +380,8 @@ def init_portal_db():
         )
     ''')
 
-    # User Settings Table (Overrides & Preferences)
-    cursor.execute("""
+    # User Settings
+    create_table_safe(cursor, 'user_settings', '''
         CREATE TABLE IF NOT EXISTS user_settings (
             enrollment_no TEXT PRIMARY KEY,
             email TEXT,
@@ -315,10 +391,31 @@ def init_portal_db():
             language TEXT DEFAULT 'English',
             data_consent INTEGER DEFAULT 1
         )
-    """)
+    ''', '''
+        CREATE TABLE IF NOT EXISTS user_settings (
+            enrollment_no TEXT PRIMARY KEY,
+            email TEXT,
+            library_alerts INTEGER DEFAULT 0,
+            loan_reminders INTEGER DEFAULT 1,
+            theme TEXT DEFAULT 'light',
+            language TEXT DEFAULT 'English',
+            data_consent INTEGER DEFAULT 1
+        )
+    ''')
 
-    # Notifications Table (Persistent History)
-    cursor.execute("""
+    # Notifications
+    create_table_safe(cursor, 'user_notifications', '''
+        CREATE TABLE IF NOT EXISTS user_notifications (
+            id SERIAL PRIMARY KEY,
+            enrollment_no TEXT,
+            type TEXT,
+            title TEXT,
+            message TEXT,
+            link TEXT,
+            is_read INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''', '''
         CREATE TABLE IF NOT EXISTS user_notifications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             enrollment_no TEXT,
@@ -329,10 +426,20 @@ def init_portal_db():
             is_read INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
-    """)
-    
-    # Book Waitlist / Notify Me Table
-    cursor.execute("""
+    ''')
+
+    # Book Waitlist
+    create_table_safe(cursor, 'book_waitlist', '''
+        CREATE TABLE IF NOT EXISTS book_waitlist (
+            id SERIAL PRIMARY KEY,
+            enrollment_no TEXT NOT NULL,
+            book_id TEXT NOT NULL,
+            book_title TEXT,
+            notified INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(enrollment_no, book_id)
+        )
+    ''', '''
         CREATE TABLE IF NOT EXISTS book_waitlist (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             enrollment_no TEXT NOT NULL,
@@ -342,10 +449,18 @@ def init_portal_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(enrollment_no, book_id)
         )
-    """)
-    
-    # Access Logs Table (Observability)
-    cursor.execute("""
+    ''')
+
+    # Access Logs
+    create_table_safe(cursor, 'access_logs', '''
+        CREATE TABLE IF NOT EXISTS access_logs (
+            id SERIAL PRIMARY KEY,
+            endpoint TEXT,
+            method TEXT,
+            status INTEGER,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''', '''
         CREATE TABLE IF NOT EXISTS access_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             endpoint TEXT,
@@ -353,10 +468,25 @@ def init_portal_db():
             status INTEGER,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
-    """)
-    
-    # Study Materials Table (File Upload System)
-    cursor.execute("""
+    ''')
+
+    # Study Materials
+    create_table_safe(cursor, 'study_materials', '''
+        CREATE TABLE IF NOT EXISTS study_materials (
+            id SERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT,
+            filename TEXT NOT NULL,
+            original_filename TEXT,
+            file_size INTEGER,
+            branch TEXT DEFAULT 'Computer',
+            year TEXT NOT NULL,
+            category TEXT,
+            uploaded_by TEXT DEFAULT 'Library Admin',
+            upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            active INTEGER DEFAULT 1
+        )
+    ''', '''
         CREATE TABLE IF NOT EXISTS study_materials (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
@@ -371,10 +501,19 @@ def init_portal_db():
             upload_date DATETIME DEFAULT CURRENT_TIMESTAMP,
             active INTEGER DEFAULT 1
         )
-    """)
+    ''')
 
-    # Ratings Table
-    cursor.execute("""
+    # Ratings
+    create_table_safe(cursor, 'book_ratings', '''
+        CREATE TABLE IF NOT EXISTS book_ratings (
+            id SERIAL PRIMARY KEY,
+            book_id TEXT NOT NULL,
+            enrollment_no TEXT NOT NULL,
+            rating INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(book_id, enrollment_no)
+        )
+    ''', '''
         CREATE TABLE IF NOT EXISTS book_ratings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             book_id TEXT NOT NULL,
@@ -383,7 +522,8 @@ def init_portal_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(book_id, enrollment_no)
         )
-    """)
+    ''')
+
     
     conn.commit()
     conn.close()

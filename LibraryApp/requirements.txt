@@ -10,3 +10,7 @@ Flask
 qrcode
 waitress
 requests
+psycopg2-binary
+python-dotenv
+gunicorn
+sqlalchemy
