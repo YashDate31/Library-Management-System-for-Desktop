@@ -2,34 +2,174 @@ import sqlite3
 import os
 import sys
 from datetime import datetime
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # dotenv not available, assume env vars are set by system or not needed (local mode)
+    pass
+
+# Try importing psycopg2 for PostgreSQL support
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    POSTGRES_AVAILABLE = True
+except ImportError:
+    POSTGRES_AVAILABLE = False
+    psycopg2 = None
+    RealDictCursor = None
+
+
+
+
+class PostgresRow:
+    """Wrapper for Postgres dict rows to support both index and key access (like sqlite3.Row)"""
+    def __init__(self, data):
+        self._data = data
+        self._values = list(data.values())
+    
+    def __getitem__(self, item):
+        if isinstance(item, int):
+            return self._values[item]
+        return self._data[item]
+    
+    def keys(self):
+        return self._data.keys()
+    
+    def __iter__(self):
+        # sqlite3.Row iterates over values
+        return iter(self._values)
+
+class PostgresCursorWrapper:
+    """
+    Wrapper to make psycopg2 cursor behave like sqlite3 cursor.
+    - Replaces '?' placeholders with '%s'
+    - Supports row_factory style access (dict-like)
+    """
+    def __init__(self, cursor):
+        self.cursor = cursor
+        self.rowcount = -1
+
+    def execute(self, sql, params=None):
+        # Convert SQLite '?' placeholders to Postgres '%s'
+        pg_sql = sql.replace('?', '%s')
+        
+        try:
+            if params:
+                self.cursor.execute(pg_sql, params)
+            else:
+                self.cursor.execute(pg_sql)
+            self.rowcount = self.cursor.rowcount
+            return self.cursor
+        except Exception as e:
+            # Re-raise or handle constraints
+            raise e
+
+    def fetchone(self):
+        row = self.cursor.fetchone()
+        return PostgresRow(row) if row else None
+
+    def fetchall(self):
+        rows = self.cursor.fetchall()
+        return [PostgresRow(row) for row in rows] if rows else []
+        
+    def close(self):
+        self.cursor.close()
+
+class PostgresConnectionWrapper:
+    """Wrapper for Postgres connection to mimic sqlite3 connection"""
+    def __init__(self, conn):
+        self.conn = conn
+    
+    def cursor(self):
+        return PostgresCursorWrapper(self.conn.cursor(cursor_factory=RealDictCursor))
+    
+    def commit(self):
+        self.conn.commit()
+    
+    def close(self):
+        self.conn.close()
+        
+    def execute(self, sql, params=None):
+        # Shortcut execute support used in some places
+        cursor = self.cursor()
+        cursor.execute(sql, params)
+        return cursor
+
 
 class Database:
     def __init__(self):
-        # Create database in a persistent location
-        # For executable, use the directory where the executable is located
-        if hasattr(sys, '_MEIPASS'):
-            # Running as PyInstaller executable
-            self.db_path = os.path.join(os.path.dirname(sys.executable), 'library.db')
-        else:
-            # Running as script
-            self.db_path = os.path.join(os.path.dirname(__file__), 'library.db')
+        # Check if we should use Cloud DB (PostgreSQL)
+        # Only if psycopg2 is available AND DATABASE_URL is set
+        self.database_url = os.getenv('DATABASE_URL')
+        self.use_cloud = POSTGRES_AVAILABLE and bool(self.database_url)
         
-        print(f"Database will be created at: {self.db_path}")
+        self.db_path = ""
+        
+        if self.use_cloud:
+            print(f"Database: Using Cloud PostgreSQL")
+        else:
+            # Fallback to local SQLite
+            # Create database in a persistent location
+            # For executable, use the directory where the executable is located
+            if hasattr(sys, '_MEIPASS'):
+                # Running as PyInstaller executable
+                self.db_path = os.path.join(os.path.dirname(sys.executable), 'library.db')
+            else:
+                # Running as script
+                self.db_path = os.path.join(os.path.dirname(__file__), 'library.db')
+            
+            print(f"Database: Using Local SQLite at {self.db_path}")
+            
         self.init_database()
     
     def get_connection(self):
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        conn.execute('PRAGMA foreign_keys = ON')
-        return conn
+        if self.use_cloud:
+            try:
+                conn = psycopg2.connect(self.database_url)
+                return PostgresConnectionWrapper(conn)
+            except Exception as e:
+                print(f"Cloud DB Connection Failed: {e}. Falling back to clean State if possible, or erroring.")
+                # We might want to fallback? But 'Hybrid' implies syncing.
+                # For this request, "If DATABASE_URL is missing, fall back". 
+                # If present but fails, we usually error out.
+                raise e
+        else:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            conn.execute('PRAGMA foreign_keys = ON')
+            return conn
     
+    def create_table_safe(self, cursor, table_name, pg_sql, sqlite_sql):
+        """Execute appropriate CREATE TABLE based on backend"""
+        if self.use_cloud:
+            try:
+                cursor.execute(pg_sql)
+            except Exception as e:
+                # Postgres might throw error if valid table exists but we try to create it?
+                # IF NOT EXISTS should handle it.
+                print(f"Warning creating table {table_name}: {e}")
+        else:
+            cursor.execute(sqlite_sql)
+            
     def init_database(self):
         """Initialize the database with required tables"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
-        # Create students table
-        cursor.execute('''
+        # Create tables
+        self.create_table_safe(cursor, 'students', '''
+            CREATE TABLE IF NOT EXISTS students (
+                id SERIAL PRIMARY KEY,
+                enrollment_no TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL,
+                email TEXT,
+                phone TEXT,
+                department TEXT,
+                year TEXT,
+                date_registered DATE DEFAULT CURRENT_DATE
+            )
+        ''', sqlite_sql='''
             CREATE TABLE IF NOT EXISTS students (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 enrollment_no TEXT UNIQUE NOT NULL,
@@ -42,9 +182,20 @@ class Database:
             )
         ''')
         
-        # Create books table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS books (
+        self.create_table_safe(cursor, 'books', '''
+             CREATE TABLE IF NOT EXISTS books (
+                id SERIAL PRIMARY KEY,
+                book_id TEXT UNIQUE NOT NULL,
+                title TEXT NOT NULL,
+                author TEXT NOT NULL,
+                isbn TEXT,
+                category TEXT,
+                total_copies INTEGER DEFAULT 1,
+                available_copies INTEGER DEFAULT 1,
+                date_added DATE DEFAULT CURRENT_DATE
+            )
+        ''', sqlite_sql='''
+             CREATE TABLE IF NOT EXISTS books (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 book_id TEXT UNIQUE NOT NULL,
                 title TEXT NOT NULL,
@@ -57,8 +208,20 @@ class Database:
             )
         ''')
         
-        # Create transactions table
-        cursor.execute('''
+        self.create_table_safe(cursor, 'transactions', '''
+            CREATE TABLE IF NOT EXISTS transactions (
+                id SERIAL PRIMARY KEY,
+                enrollment_no TEXT NOT NULL,
+                book_id TEXT NOT NULL,
+                borrow_date DATE NOT NULL,
+                due_date DATE NOT NULL,
+                return_date DATE,
+                fine INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'active',
+                FOREIGN KEY (enrollment_no) REFERENCES students(enrollment_no),
+                FOREIGN KEY (book_id) REFERENCES books(book_id)
+            )
+        ''', sqlite_sql='''
             CREATE TABLE IF NOT EXISTS transactions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 enrollment_no TEXT NOT NULL,
@@ -72,8 +235,24 @@ class Database:
                 FOREIGN KEY (book_id) REFERENCES books(book_id)
             )
         ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS borrow_records (
+
+        # borrow_records (active system)
+        self.create_table_safe(cursor, 'borrow_records', '''
+             CREATE TABLE IF NOT EXISTS borrow_records (
+                id SERIAL PRIMARY KEY,
+                enrollment_no TEXT NOT NULL,
+                book_id TEXT NOT NULL,
+                borrow_date DATE NOT NULL,
+                due_date DATE NOT NULL,
+                return_date DATE,
+                status TEXT DEFAULT 'borrowed',
+                fine INTEGER DEFAULT 0,
+                academic_year TEXT,
+                FOREIGN KEY (enrollment_no) REFERENCES students (enrollment_no) ON DELETE RESTRICT ON UPDATE CASCADE,
+                FOREIGN KEY (book_id) REFERENCES books (book_id) ON DELETE RESTRICT ON UPDATE CASCADE
+            )
+        ''', sqlite_sql='''
+             CREATE TABLE IF NOT EXISTS borrow_records (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 enrollment_no TEXT NOT NULL,
                 book_id TEXT NOT NULL,
@@ -88,8 +267,19 @@ class Database:
             )
         ''')
         
-        # Create promotion_history table
-        cursor.execute('''
+        self.create_table_safe(cursor, 'promotion_history', '''
+            CREATE TABLE IF NOT EXISTS promotion_history (
+                id SERIAL PRIMARY KEY,
+                enrollment_no TEXT NOT NULL,
+                student_name TEXT NOT NULL,
+                old_year TEXT NOT NULL,
+                new_year TEXT NOT NULL,
+                letter_number TEXT,
+                academic_year TEXT,
+                promotion_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (enrollment_no) REFERENCES students (enrollment_no) ON DELETE RESTRICT ON UPDATE CASCADE
+            )
+        ''', sqlite_sql='''
             CREATE TABLE IF NOT EXISTS promotion_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 enrollment_no TEXT NOT NULL,
@@ -102,10 +292,18 @@ class Database:
                 FOREIGN KEY (enrollment_no) REFERENCES students (enrollment_no) ON DELETE RESTRICT ON UPDATE CASCADE
             )
         ''')
-        
-        # Create academic_years table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS academic_years (
+
+        self.create_table_safe(cursor, 'academic_years', '''
+             CREATE TABLE IF NOT EXISTS academic_years (
+                id SERIAL PRIMARY KEY,
+                year_name TEXT UNIQUE NOT NULL,
+                start_date DATE,
+                end_date DATE,
+                is_active INTEGER DEFAULT 0,
+                created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''', sqlite_sql='''
+             CREATE TABLE IF NOT EXISTS academic_years (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 year_name TEXT UNIQUE NOT NULL,
                 start_date DATE,
@@ -118,12 +316,33 @@ class Database:
         conn.commit()
         
         # Migration: Add fine column if it doesn't exist
-        cursor.execute("PRAGMA table_info(borrow_records)")
-        columns = [col[1] for col in cursor.fetchall()]
-        if 'fine' not in columns:
-            cursor.execute("ALTER TABLE borrow_records ADD COLUMN fine INTEGER DEFAULT 0")
-            conn.commit()
-            print("Migration: Added 'fine' column to borrow_records table")
+        # Migration: Add fine column if it doesn't exist (SQLite specific logic usually, but let's check basic columns)
+        # For Cloud DB, we assume schema is managed or initially created correct. 
+        # But if we need to migrate schema on existing Cloud DB, we check too.
+        
+        # Check column existence safely
+        has_fine = False
+        try:
+            if self.use_cloud:
+                # Postgres check
+                cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name='borrow_records' AND column_name='fine'")
+                if cursor.fetchone():
+                    has_fine = True
+            else:
+                # SQLite check
+                cursor.execute("PRAGMA table_info(borrow_records)")
+                columns = [col[1] for col in cursor.fetchall()]
+                if 'fine' in columns:
+                    has_fine = True
+
+            if not has_fine:
+                cursor.execute("ALTER TABLE borrow_records ADD COLUMN fine INTEGER DEFAULT 0")
+                conn.commit()
+                print("Migration: Added 'fine' column to borrow_records table")
+
+        except Exception as e:
+            print(f"Migration check warning: {e}")
+
         
         conn.close()
         
