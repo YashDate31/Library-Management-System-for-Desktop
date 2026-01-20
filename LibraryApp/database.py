@@ -1017,7 +1017,7 @@ class Database:
                 SELECT enrollment_no, COUNT(*) as count 
                 FROM students 
                 GROUP BY enrollment_no 
-                HAVING count > 1
+                HAVING COUNT(*) > 1
             """)
             duplicates = cursor.fetchall()
             if duplicates:
@@ -1028,7 +1028,7 @@ class Database:
                 SELECT book_id, COUNT(*) as count 
                 FROM books 
                 GROUP BY book_id 
-                HAVING count > 1
+                HAVING COUNT(*) > 1
             """)
             dup_books = cursor.fetchall()
             if dup_books:

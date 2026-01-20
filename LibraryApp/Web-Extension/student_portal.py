@@ -247,7 +247,8 @@ def cleanup_logs():
     try:
         conn = get_portal_db()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM access_logs WHERE timestamp < date('now', '-7 days')")
+        cutoff_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+        cursor.execute("DELETE FROM access_logs WHERE timestamp < ?", (cutoff_date,))
         conn.commit()
         conn.close()
         print("System: Cleaned up old access logs.")
@@ -1883,7 +1884,7 @@ def api_admin_all_requests():
     
     # Fetch general requests (profile_update, renewal, book_reservation, etc.)
     cursor.execute("""
-        SELECT id as req_id, enrollment_no, request_type, details, status, created_at
+        SELECT req_id, enrollment_no, request_type, details, status, created_at
         FROM requests
         WHERE status = 'pending'
         ORDER BY created_at DESC

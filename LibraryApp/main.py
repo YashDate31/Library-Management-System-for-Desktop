@@ -95,6 +95,94 @@ ADMIN_USERNAME = "gpa"
 ADMIN_PASSWORD = "gpa123"
 
 class LibraryApp:
+    def run_in_background_thread(self, target, callback, **kwargs):
+        """Helper to run a function in a background thread and callback on main thread."""
+        def wrapper():
+            try:
+                result = target(**kwargs)
+                # Schedule callback on main thread
+                self.root.after(0, lambda: callback(result))
+            except Exception as e:
+                print(f"Background thread error: {e}")
+                self.root.after(0, lambda: callback(e)) # Pass error to callback
+        
+        threading.Thread(target=wrapper, daemon=True).start()
+
+    def _fetch_analysis_data(self, days=30, enrollment_no=None, book_id=None):
+        """Fetch all analysis data in a background thread."""
+        data = {}
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+            
+            # 1. Borrow Status
+            cursor.execute("SELECT CASE WHEN br.status = 'borrowed' THEN 'Currently Issued' ELSE 'Available' END as status, COUNT(DISTINCT b.book_id) as count FROM books b LEFT JOIN borrow_records br ON b.book_id = br.book_id AND br.status = 'borrowed' GROUP BY status")
+            data['borrow_status'] = cursor.fetchall()
+
+            # 2. Student Activity (Fixed for Postgres with simple HAVING)
+            cursor.execute("SELECT s.year, COUNT(br.id) as borrow_count FROM students s LEFT JOIN borrow_records br ON s.enrollment_no = br.enrollment_no AND br.borrow_date >= ? GROUP BY s.year HAVING COUNT(br.id) > 0 ORDER BY borrow_count DESC", (start_date,))
+            data['student_activity'] = cursor.fetchall()
+
+            # 3. Inventory & Overdue
+            cursor.execute("SELECT COALESCE(SUM(total_copies),0) as total, COALESCE(SUM(available_copies),0) as available FROM books")
+            total_copies, total_available = cursor.fetchone()
+            today = datetime.now().strftime('%Y-%m-%d')
+            cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE status='borrowed' AND due_date < ?", (today,))
+            overdue = cursor.fetchone()[0] or 0
+            data['inventory'] = {'total_copies': total_copies, 'total_available': total_available, 'overdue': overdue}
+
+            # 4. Daily Trend
+            cursor.execute("SELECT borrow_date, COUNT(*) FROM borrow_records WHERE borrow_date >= ? GROUP BY borrow_date ORDER BY borrow_date", (start_date,))
+            data['daily_trend'] = cursor.fetchall()
+
+            # 5. Popular Books
+            cursor.execute("SELECT b.title, COUNT(br.id) as borrow_count FROM books b INNER JOIN borrow_records br ON b.book_id = br.book_id WHERE br.borrow_date >= ? GROUP BY b.book_id, b.title ORDER BY borrow_count DESC, b.title ASC LIMIT 10", (start_date,))
+            data['popular_books'] = cursor.fetchall()
+
+            # 6. Least Popular (Complex Query)
+            cursor.execute("SELECT b.title, COALESCE(COUNT(br.id), 0) as borrow_count FROM books b LEFT JOIN borrow_records br ON b.book_id = br.book_id AND br.borrow_date >= ? GROUP BY b.book_id, b.title HAVING COALESCE(COUNT(br.id), 0) = (SELECT MIN(cnt) FROM (SELECT COALESCE(COUNT(br2.id), 0) as cnt FROM books b2 LEFT JOIN borrow_records br2 ON b2.book_id = br2.book_id AND br2.borrow_date >= ? GROUP BY b2.book_id) t) ORDER BY b.title ASC LIMIT 10", (start_date, start_date))
+            data['least_popular'] = cursor.fetchall()
+            
+            # 7. Summary Stats
+            cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE borrow_date >= ?", (start_date,))
+            total_borrowings = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE return_date >= ? AND return_date IS NOT NULL", (start_date,))
+            total_returns = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(DISTINCT enrollment_no) FROM borrow_records WHERE borrow_date >= ?", (start_date,))
+            active_students = cursor.fetchone()[0]
+            # Fines (calc in python)
+            cursor.execute("SELECT return_date, due_date FROM borrow_records WHERE return_date > due_date AND return_date IS NOT NULL AND return_date >= ?", (start_date,))
+            fines_data = cursor.fetchall()
+            data['summary'] = {
+                'total_borrowings': total_borrowings,
+                'total_returns': total_returns,
+                'overdue_count': overdue, # Reused from inventory
+                'active_students': active_students,
+                'fines_data': fines_data
+            }
+
+            # 8. Focused Insights (access via kwargs generally, but fetch here if provided)
+            if enrollment_no:
+                cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE enrollment_no=? AND borrow_date>=?", (enrollment_no, start_date))
+                s_total = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE enrollment_no=? AND borrow_date>=? AND status='borrowed'", (enrollment_no, start_date))
+                s_active = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE enrollment_no=? AND return_date>=? AND return_date IS NOT NULL", (enrollment_no, start_date))
+                s_returned = cursor.fetchone()[0]
+                data['student_specific'] = {'total': s_total, 'active': s_active, 'returned': s_returned}
+            
+            if book_id:
+                cursor.execute("SELECT title, total_copies, available_copies FROM books WHERE book_id=?", (book_id,))
+                b_row = cursor.fetchone()
+                data['book_specific'] = {'row': b_row} if b_row else None
+
+            conn.close()
+            return data
+        except Exception as e:
+            print(f"Data fetch error: {e}")
+            return e # Return error object
+
     def import_students_excel_new(self):
         """Import students from Excel with year selection (robust new workflow)."""
         import tkinter as tk
@@ -104,7 +192,7 @@ class LibraryApp:
         # 1. Year selection dialog
         year_dialog = tk.Toplevel(self.root)
         year_dialog.title("Select Student Year")
-        year_dialog.geometry("400x350")  # Increased size
+        year_dialog.geometry("400x350")
         year_dialog.resizable(False, False)
         year_dialog.configure(bg='white')
         year_dialog.transient(self.root)
@@ -207,9 +295,36 @@ class LibraryApp:
         if not file_path:
             return
 
-        # 3. Read Excel and import students
+        # 3. Import in background thread
+        # Show indeterminate progress
+        self.import_progress_dialog = tk.Toplevel(self.root)
+        self.import_progress_dialog.title("Importing Students")
+        self.import_progress_dialog.geometry("300x150")
+        self.import_progress_dialog.resizable(False, False)
+        self.import_progress_dialog.transient(self.root)
+        self.import_progress_dialog.grab_set()
+        
+        # Center dialog
+        x = (self.root.winfo_screenwidth() // 2) - (300 // 2)
+        y = (self.root.winfo_screenheight() // 2) - (150 // 2)
+        self.import_progress_dialog.geometry(f"+{x}+{y}")
+        
+        tk.Label(self.import_progress_dialog, text="Importing students...\nPlease wait, this may take a moment.", pady=20).pack()
+        
+        pb = ttk.Progressbar(self.import_progress_dialog, mode='indeterminate')
+        pb.pack(fill=tk.X, padx=20, pady=10)
+        pb.start(10)
+
+        # Run worker
+        self.run_in_background_thread(self._import_students_worker, self._on_import_complete, file_path=file_path, default_year=default_year)
+
+    def _import_students_worker(self, file_path, default_year):
+        """Worker function for importing students from Excel"""
+        import pandas as pd
+        summary = {'added': 0, 'skipped': 0, 'duplicate': 0, 'errors': 0, 'error_list': []}
         try:
             df = pd.read_excel(file_path)
+            # Normalize columns
             df.columns = df.columns.str.lower().str.replace(' ', '_')
             column_map = {
                 'enrollment': 'enrollment_no',
@@ -217,16 +332,13 @@ class LibraryApp:
                 'enrollment_number': 'enrollment_no'
             }
             df.rename(columns={k: v for k, v in column_map.items() if k in df.columns}, inplace=True)
+            
+            # Validation
             required = ['enrollment_no', 'name']
             missing = [c for c in required if c not in df.columns]
             if missing:
-                messagebox.showerror("Error", f"Missing required columns: {', '.join(missing)}")
-                return
-            added = 0
-            skipped = 0
-            duplicate = 0
-            errors = 0
-            error_list = []
+                return Exception(f"Missing required columns: {', '.join(missing)}")
+            
             for idx, row in df.iterrows():
                 row_no = idx + 2
                 try:
@@ -236,35 +348,61 @@ class LibraryApp:
                     phone = str(row.get('phone', '')).strip()
                     department = str(row.get('department', 'Computer')).strip() or 'Computer'
                     year = default_year
+                    
                     if not enrollment or not name or enrollment.lower() == 'nan' or name.lower() == 'nan':
-                        skipped += 1
+                        summary['skipped'] += 1
                         continue
+                        
                     success, message = self.db.add_student(enrollment, name, email, phone, department, year)
                     if success:
-                        added += 1
+                        summary['added'] += 1
                     else:
                         if 'exists' in message.lower() or 'duplicate' in message.lower():
-                            duplicate += 1
+                            summary['duplicate'] += 1
                         else:
-                            errors += 1
-                            error_list.append(f"Row {row_no}: {message}")
+                            summary['errors'] += 1
+                            summary['error_list'].append(f"Row {row_no}: {message}")
                 except Exception as e:
-                    errors += 1
-                    error_list.append(f"Row {row_no}: {e}")
-            summary = (
-                f"Import completed!\n\nAdded: {added}\nDuplicates: {duplicate}\n"
-                f"Skipped (missing enrollment/name): {skipped}\nErrors: {errors}"
-            )
-            if error_list:
-                summary += "\n\nFirst few errors:\n" + "\n".join(error_list[:5])
-                if len(error_list) > 5:
-                    summary += f"\n... and {len(error_list) - 5} more errors."
-            messagebox.showinfo("Import Results", summary)
-            if added or duplicate:
-                self.refresh_students()
-                self.refresh_dashboard()
+                    summary['errors'] += 1
+                    summary['error_list'].append(f"Row {row_no}: {e}")
+            
+            return summary
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to import Excel file: {e}")
+            return e
+
+    def _on_import_complete(self, result):
+        """Callback for import completion"""
+        try:
+            if hasattr(self, 'import_progress_dialog') and self.import_progress_dialog:
+                self.import_progress_dialog.destroy()
+            
+            from tkinter import messagebox
+            if isinstance(result, Exception):
+                messagebox.showerror("Import Error", f"Failed to import Excel file: {result}")
+                return
+            
+            # Show summary
+            summary = result
+            msg = (
+                f"Import completed!\n\n"
+                f"Added: {summary['added']}\n"
+                f"Duplicates: {summary['duplicate']}\n"
+                f"Skipped: {summary['skipped']}\n"
+                f"Errors: {summary['errors']}"
+            )
+            
+            if summary['error_list']:
+                msg += "\n\nFirst few errors:\n" + "\n".join(summary['error_list'][:5])
+            
+            messagebox.showinfo("Import Results", msg)
+            
+            if summary['added'] > 0:
+                self.refresh_students()
+                if hasattr(self, 'refresh_dashboard'):
+                    self.refresh_dashboard()
+
+        except Exception as e:
+            print(f"Error in import callback: {e}")
 
     def __init__(self, root):
         self.root = root
@@ -286,18 +424,25 @@ class LibraryApp:
         # Initialize database
         self.db = Database()
         
-        # Run data integrity check on startup
-        print("Running database integrity check...")
-        integrity_result = self.db.verify_data_integrity()
-        if integrity_result['status'] == 'issues_found':
-            print(f"⚠️  Found {integrity_result['total_issues']} integrity issues")
-            print(f"✅ Auto-fixed {integrity_result['total_fixes']} issues")
-            if integrity_result['total_issues'] > integrity_result['total_fixes']:
-                print("⚠️  Some issues require manual attention - check Admin panel")
-        elif integrity_result['status'] == 'ok':
-            print("✅ Database integrity verified - all checks passed")
-        else:
-            print(f"❌ Integrity check error: {integrity_result.get('error', 'Unknown')}")
+        # Run data integrity check on startup (Background Thread to prevent freezing)
+        import threading
+        def _check_integrity_thread():
+            print("Running database integrity check...")
+            try:
+                integrity_result = self.db.verify_data_integrity()
+                if integrity_result['status'] == 'issues_found':
+                    print(f"⚠️  Found {integrity_result['total_issues']} integrity issues")
+                    print(f"✅ Auto-fixed {integrity_result['total_fixes']} issues")
+                    if integrity_result['total_issues'] > integrity_result['total_fixes']:
+                        print("⚠️  Some issues require manual attention - check Admin panel")
+                elif integrity_result['status'] == 'ok':
+                    print("✅ Database integrity verified - all checks passed")
+                else:
+                    print(f"❌ Integrity check error: {integrity_result.get('error', 'Unknown')}")
+            except Exception as e:
+                print(f"Error during integrity check: {e}")
+
+        threading.Thread(target=_check_integrity_thread, daemon=True).start()
 
         # Notify user if calendar support missing
         if DateEntry is None:
@@ -5265,13 +5410,9 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     b.title as book_title,
                     br.borrow_date,
                     br.due_date,
-                    COALESCE(br.return_date, 'Not returned') as return_date,
+                    br.return_date,
                     br.status,
-                    CASE 
-                        WHEN br.status = 'borrowed' AND date('now') > br.due_date 
-                        THEN CAST(julianday('now') - julianday(br.due_date) AS INT)
-                        ELSE 0 
-                    END as days_overdue,
+                    0 as days_overdue,
                     COALESCE(br.academic_year, 'N/A') as academic_year
                 FROM borrow_records br
                 JOIN students s ON br.enrollment_no = s.enrollment_no
@@ -5287,12 +5428,20 @@ Note: This is an automated email. Please find the attached formal overdue letter
             from datetime import datetime as _dt
             today = _dt.now().date()
             for rec in records:
-                (enroll, student_name, book_id, title, borrow_date, due_date, return_date, status, days_overdue, academic_year) = rec
+                (enroll, student_name, book_id, title, borrow_date, due_date, return_date_raw, status, _, academic_year) = rec
+                
+                # Handle return_date normalization (None/Date -> String)
+                if return_date_raw is None:
+                    return_date_str = 'Not returned'
+                else:
+                    return_date_str = str(return_date_raw)
+
                 # Determine effective overdue days & fine
                 try:
-                    due_d = _dt.strptime(due_date, '%Y-%m-%d').date()
+                    due_d = _dt.strptime(str(due_date), '%Y-%m-%d').date()
                 except Exception:
                     due_d = None
+                
                 fine = 0
                 if status == 'borrowed':
                     # still out; overdue based on today
@@ -5302,14 +5451,21 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 else:
                     # returned; compute late based on return_date
                     try:
-                        ret_d = _dt.strptime(return_date, '%Y-%m-%d').date()
+                        # Use raw if date object, or parse if string
+                        if hasattr(return_date_raw, 'year'):
+                             ret_d = return_date_raw
+                             # Postgres returns date object, but Python datetime.date doesn't strictly have comparison with None same way
+                             if isinstance(ret_d, datetime): ret_d = ret_d.date() 
+                        else:
+                             ret_d = _dt.strptime(return_date_str, '%Y-%m-%d').date()
+                             
                         if due_d and ret_d > due_d:
                             overdue_days = (ret_d - due_d).days
                             fine = overdue_days * self.get_fine_per_day()
                     except Exception:
                         pass
                 # Keep fine as numeric for downstream display logic, add academic_year
-                formatted_records.append((enroll, student_name, book_id, title, borrow_date, due_date, return_date, status, fine, academic_year))
+                formatted_records.append((enroll, student_name, book_id, title, borrow_date, due_date, return_date_str, status, fine, academic_year))
             return formatted_records
         except Exception as e:
             print(f"Error getting records: {e}")
@@ -11479,7 +11635,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
 
     
     def refresh_analysis(self):
-        """Refresh all analysis charts based on selected time period"""
+        """Refresh all analysis charts based on selected time period (Threaded implementation)"""
         if not MATPLOTLIB_AVAILABLE:
             return
         
@@ -11508,35 +11664,28 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 pass
         _clear(self.borrow_status_frame)
         _clear(self.student_activity_frame)
-        if hasattr(self, 'daily_trend_frame'):
-            _clear(self.daily_trend_frame)
-        if hasattr(self, 'popular_books_frame'):
-            _clear(self.popular_books_frame)
-        if hasattr(self, 'least_popular_books_frame'):
-            _clear(self.least_popular_books_frame)
-        if hasattr(self, 'inventory_overdue_frame'):
-            _clear(self.inventory_overdue_frame)
+        if hasattr(self, 'daily_trend_frame'): _clear(self.daily_trend_frame)
+        if hasattr(self, 'popular_books_frame'): _clear(self.popular_books_frame)
+        if hasattr(self, 'least_popular_books_frame'): _clear(self.least_popular_books_frame)
+        if hasattr(self, 'inventory_overdue_frame'): _clear(self.inventory_overdue_frame)
         _clear(self.stats_summary_frame)
+        
         # Clear focused frames
         for w in self.student_specific_frame.winfo_children():
-            if isinstance(w, FigureCanvasTkAgg):
-                w.get_tk_widget().destroy()
-            else:
-                w.destroy()
+            if isinstance(w, FigureCanvasTkAgg): w.get_tk_widget().destroy()
+            else: w.destroy()
         for w in self.book_specific_frame.winfo_children():
-            if isinstance(w, FigureCanvasTkAgg):
-                w.get_tk_widget().destroy()
-            else:
-                w.destroy()
-        # Keep frames in place (they live near the filters); just clear content
+            if isinstance(w, FigureCanvasTkAgg): w.get_tk_widget().destroy()
+            else: w.destroy()
+
+        # Show Loading Indicator
+        tk.Label(self.stats_summary_frame, text="⏳ Loading analysis data...", font=('Segoe UI', 12), bg=self.colors['primary'], fg='#666').pack(pady=20)
         
-        # Get time period
         days = int(self.analysis_period.get())
-        start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-        
-        # Update filter summary label
         en = self.analysis_filter.get('enrollment_no')
         bk = self.analysis_filter.get('book_id')
+        
+        # Update filter summary label
         parts = []
         if en:
             s_name = self.get_student_name(en)
@@ -11545,55 +11694,78 @@ Note: This is an automated email. Please find the attached formal overdue letter
             b_title = self.get_book_title(bk)
             parts.append(f"Book: {bk} ({b_title or 'Unknown'})")
         self.analysis_filter_summary.config(text=' | '.join(parts) if parts else 'No focused filter applied')
+        
+        # Run in background
+        self.run_in_background_thread(
+            self._fetch_analysis_data, 
+            self._on_analysis_data_ready, 
+            days=days, enrollment_no=en, book_id=bk
+        )
 
-        # Generate concise set of charts
-        # Always show: Book Status (pie), Student Activity (pie), and Inventory/Overdue (donut)
-        self.create_borrow_status_pie()
-        self.create_student_activity_pie(days)
-        self.create_inventory_overdue_donut()
-        # Popular and Least Popular Books - always show for book demand analysis
-        self.create_popular_books_chart(days)
-        self.create_least_popular_books_chart(days)
-        # Optional charts when Compact Mode is OFF
-        if hasattr(self, 'analysis_compact_mode') and not self.analysis_compact_mode.get():
-            self.create_daily_trend_chart(days)
-        # Summary always
-        self.create_summary_stats(days)
+    def _on_analysis_data_ready(self, result):
+        try:
+            # Clear loading indicator
+            for w in self.stats_summary_frame.winfo_children():
+                w.destroy()
+                
+            if isinstance(result, Exception):
+                tk.Label(self.stats_summary_frame, text=f"Error loading analysis: {result}", fg="red", bg=self.colors['primary']).pack()
+                return
 
-        # Focused insights
-        # Pack side-by-side if any filter is present
-        if en or bk:
-            if en:
+            data = result
+            days = int(self.analysis_period.get())
+
+            # Render Charts with injected Data
+            self.create_borrow_status_pie(data=data.get('borrow_status'))
+            self.create_student_activity_pie(days, data=data.get('student_activity'))
+            self.create_inventory_overdue_donut(data=data.get('inventory'))
+            
+            self.create_popular_books_chart(days, data=data.get('popular_books'))
+            self.create_least_popular_books_chart(days, data=data.get('least_popular'))
+            
+            if hasattr(self, 'analysis_compact_mode') and not self.analysis_compact_mode.get():
+                self.create_daily_trend_chart(days, data=data.get('daily_trend'))
+            
+            self.create_summary_stats(days, data=data.get('summary'))
+            
+            # Focused Insights
+            if 'student_specific' in data and data['student_specific']:
                 if not self.student_specific_frame.winfo_manager():
                     self.student_specific_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
-                self.create_student_specific_pie(days, en)
-            if bk:
+                self.create_student_specific_pie(days, self.analysis_filter.get('enrollment_no'), data=data.get('student_specific'))
+
+            if 'book_specific' in data and data['book_specific']:
                 if not self.book_specific_frame.winfo_manager():
                     self.book_specific_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0))
-                self.create_book_specific_pie(days, bk)
+                self.create_book_specific_pie(days, self.analysis_filter.get('book_id'), data=data.get('book_specific'))
+        except Exception as e:
+            print(f"Error in _on_analysis_data_ready: {e}")
     
-    def create_borrow_status_pie(self):
+    def create_borrow_status_pie(self, data=None):
         """Create pie chart showing book status distribution"""
         try:
             # Get data
-            conn = self.db.get_connection()
-            cursor = conn.cursor()
-            
-            # Count books by status
-            cursor.execute("""
-                SELECT 
-                    CASE 
-                        WHEN br.status = 'borrowed' THEN 'Currently Issued'
-                        ELSE 'Available'
-                    END as status,
-                    COUNT(DISTINCT b.book_id) as count
-                FROM books b
-                LEFT JOIN borrow_records br ON b.book_id = br.book_id AND br.status = 'borrowed'
-                GROUP BY status
-            """)
-            
-            results = cursor.fetchall()
-            conn.close()
+            if data is not None:
+                results = data
+            else:
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                
+                # Count books by status
+                cursor.execute("""
+                    SELECT 
+                        CASE 
+                            WHEN br.status = 'borrowed' THEN 'Currently Issued'
+                            ELSE 'Available'
+                        END as status,
+                        COUNT(DISTINCT b.book_id) as count
+                    FROM books b
+                    LEFT JOIN borrow_records br ON b.book_id = br.book_id AND br.status = 'borrowed'
+                    GROUP BY status
+                """)
+                
+                results = cursor.fetchall()
+                conn.close()
             
             if not results:
                 # Clear frame then show no-data message
@@ -11675,30 +11847,33 @@ Note: This is an automated email. Please find the attached formal overdue letter
         except Exception as e:
             print(f"Error creating borrow status pie chart: {e}")
     
-    def create_student_activity_pie(self, days):
+    def create_student_activity_pie(self, days, data=None):
         """Create pie chart showing student activity levels"""
         try:
             # Get data
-            conn = self.db.get_connection()
-            cursor = conn.cursor()
-            
-            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-            
-            # Count students by activity level
-            cursor.execute("""
-                SELECT 
-                    s.year,
-                    COUNT(br.id) as borrow_count
-                FROM students s
-                LEFT JOIN borrow_records br ON s.enrollment_no = br.enrollment_no 
-                    AND br.borrow_date >= ?
-                GROUP BY s.year
-                HAVING borrow_count > 0
-                ORDER BY borrow_count DESC
-            """, (start_date,))
-            
-            results = cursor.fetchall()
-            conn.close()
+            if data is not None:
+                results = data
+            else:
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                
+                start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+                
+                # Count students by activity level
+                cursor.execute("""
+                    SELECT 
+                        s.year,
+                        COUNT(br.id) as borrow_count
+                    FROM students s
+                    LEFT JOIN borrow_records br ON s.enrollment_no = br.enrollment_no 
+                        AND br.borrow_date >= ?
+                    GROUP BY s.year
+                    HAVING COUNT(br.id) > 0
+                    ORDER BY borrow_count DESC
+                """, (start_date,))
+                
+                results = cursor.fetchall()
+                conn.close()
             
             if not results:
                 # Always render a placeholder donut so the chart area is not blank
@@ -11830,20 +12005,26 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 pass
             print(f"Error creating student activity pie chart: {e}")
 
-    def create_inventory_overdue_donut(self):
+    def create_inventory_overdue_donut(self, data=None):
         """Create a nested donut pie showing Available vs Issued (outer), and inner ring splitting Issued into On-time vs Overdue."""
         try:
-            conn = self.db.get_connection()
-            cur = conn.cursor()
-            # Sum copies
-            cur.execute("SELECT COALESCE(SUM(total_copies),0), COALESCE(SUM(available_copies),0) FROM books")
-            total_copies, total_available = cur.fetchone()
+            if data:
+                total_copies = data.get('total_copies', 0)
+                total_available = data.get('total_available', 0)
+                overdue = data.get('overdue', 0)
+            else:
+                conn = self.db.get_connection()
+                cur = conn.cursor()
+                # Sum copies
+                cur.execute("SELECT COALESCE(SUM(total_copies),0), COALESCE(SUM(available_copies),0) FROM books")
+                total_copies, total_available = cur.fetchone()
+                # Overdue issued count (by transactions)
+                today = datetime.now().strftime('%Y-%m-%d')
+                cur.execute("SELECT COUNT(*) FROM borrow_records WHERE status='borrowed' AND due_date < ?", (today,))
+                overdue = cur.fetchone()[0] or 0
+                conn.close()
+
             total_issued = max((total_copies or 0) - (total_available or 0), 0)
-            # Overdue issued count (by transactions)
-            today = datetime.now().strftime('%Y-%m-%d')
-            cur.execute("SELECT COUNT(*) FROM borrow_records WHERE status='borrowed' AND due_date < ?", (today,))
-            overdue = cur.fetchone()[0] or 0
-            conn.close()
 
             on_time = max(total_issued - overdue, 0)
 
@@ -11877,8 +12058,9 @@ Note: This is an automated email. Please find the attached formal overdue letter
             fig.patch.set_facecolor('white')
 
             # Outer ring
-            wedges1, _ = ax.pie(outer_sizes, radius=1.0, labels=outer_labels, labeldistance=1.05,
+            res1 = ax.pie(outer_sizes, radius=1.0, labels=outer_labels, labeldistance=1.05,
                                 colors=outer_colors, startangle=90, wedgeprops=dict(width=0.3, edgecolor='white'))
+            wedges1 = res1[0]
 
             # Inner ring
             def _autopct(pct, allvals=inner_sizes):
@@ -11893,10 +12075,11 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     return f"{pct:.1f}%\n({val})"
                 except:
                     return ""
-            wedges2, _, _ = ax.pie(inner_sizes, radius=1.0-0.3, labels=None,
+            res2 = ax.pie(inner_sizes, radius=1.0-0.3, labels=None,
                                    colors=inner_colors, startangle=90,
                                    autopct=_autopct,
                                    wedgeprops=dict(width=0.3, edgecolor='white'))
+            wedges2 = res2[0]
             # Center text
             ax.text(0, 0, f"Total\n{int(total_copies or 0)}", ha='center', va='center', fontsize=11, fontweight='bold')
             ax.set_title('Inventory & Overdue Breakdown', fontsize=12, fontweight='bold')
@@ -11916,27 +12099,30 @@ Note: This is an automated email. Please find the attached formal overdue letter
         except Exception as e:
             print(f"Error creating inventory/overdue donut: {e}")
     
-    def create_daily_trend_chart(self, days):
+    def create_daily_trend_chart(self, days, data=None):
         """Create bar chart showing daily borrowing trends"""
         try:
             # Get data
-            conn = self.db.get_connection()
-            cursor = conn.cursor()
-            
-            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-            
-            cursor.execute("""
-                SELECT 
-                    borrow_date,
-                    COUNT(*) as daily_count
-                FROM borrow_records 
-                WHERE borrow_date >= ?
-                GROUP BY borrow_date
-                ORDER BY borrow_date
-            """, (start_date,))
-            
-            results = cursor.fetchall()
-            conn.close()
+            if data is not None:
+                results = data
+            else:
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                
+                start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+                
+                cursor.execute("""
+                    SELECT 
+                        borrow_date,
+                        COUNT(*) as daily_count
+                    FROM borrow_records 
+                    WHERE borrow_date >= ?
+                    GROUP BY borrow_date
+                    ORDER BY borrow_date
+                """, (start_date,))
+                
+                results = cursor.fetchall()
+                conn.close()
             
             if not results:
                 no_data_label = tk.Label(
@@ -11986,29 +12172,32 @@ Note: This is an automated email. Please find the attached formal overdue letter
         except Exception as e:
             print(f"Error creating daily trend chart: {e}")
     
-    def create_popular_books_chart(self, days):
+    def create_popular_books_chart(self, days, data=None):
         """Create bar chart showing most popular books"""
         try:
             # Get data
-            conn = self.db.get_connection()
-            cursor = conn.cursor()
-            
-            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-            
-            cursor.execute("""
-                SELECT 
-                    b.title,
-                    COUNT(br.id) as borrow_count
-                FROM books b
-                INNER JOIN borrow_records br ON b.book_id = br.book_id
-                WHERE br.borrow_date >= ?
-                GROUP BY b.book_id, b.title
-                ORDER BY borrow_count DESC, b.title ASC
-                LIMIT 10
-            """, (start_date,))
-            
-            results = cursor.fetchall()
-            conn.close()
+            if data is not None:
+                results = data
+            else:
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                
+                start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+                
+                cursor.execute("""
+                    SELECT 
+                        b.title,
+                        COUNT(br.id) as borrow_count
+                    FROM books b
+                    INNER JOIN borrow_records br ON b.book_id = br.book_id
+                    WHERE br.borrow_date >= ?
+                    GROUP BY b.book_id, b.title
+                    ORDER BY borrow_count DESC, b.title ASC
+                    LIMIT 10
+                """, (start_date,))
+                
+                results = cursor.fetchall()
+                conn.close()
             
             if not results:
                 no_data_label = tk.Label(
@@ -12056,38 +12245,41 @@ Note: This is an automated email. Please find the attached formal overdue letter
         except Exception as e:
             print(f"Error creating popular books chart: {e}")
 
-    def create_least_popular_books_chart(self, days):
+    def create_least_popular_books_chart(self, days, data=None):
         """Create bar chart showing least popular books (books with least borrows or zero borrows)"""
         try:
             # Get data
-            conn = self.db.get_connection()
-            cursor = conn.cursor()
-            
-            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-            
-            # Get books with lowest borrow count in the period (prioritize zero borrows)
-            # First get the minimum count that's been borrowed (to exclude books with higher counts)
-            cursor.execute("""
-                SELECT 
-                    b.title,
-                    COALESCE(COUNT(br.id), 0) as borrow_count
-                FROM books b
-                LEFT JOIN borrow_records br ON b.book_id = br.book_id AND br.borrow_date >= ?
-                GROUP BY b.book_id, b.title
-                HAVING borrow_count = (
-                    SELECT MIN(cnt) FROM (
-                        SELECT COALESCE(COUNT(br2.id), 0) as cnt
-                        FROM books b2
-                        LEFT JOIN borrow_records br2 ON b2.book_id = br2.book_id AND br2.borrow_date >= ?
-                        GROUP BY b2.book_id
+            if data is not None:
+                results = data
+            else:
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                
+                start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+                
+                # Get books with lowest borrow count in the period (prioritize zero borrows)
+                # First get the minimum count that's been borrowed (to exclude books with higher counts)
+                cursor.execute("""
+                    SELECT 
+                        b.title,
+                        COALESCE(COUNT(br.id), 0) as borrow_count
+                    FROM books b
+                    LEFT JOIN borrow_records br ON b.book_id = br.book_id AND br.borrow_date >= ?
+                    GROUP BY b.book_id, b.title
+                    HAVING COALESCE(COUNT(br.id), 0) = (
+                        SELECT MIN(cnt) FROM (
+                            SELECT COALESCE(COUNT(br2.id), 0) as cnt
+                            FROM books b2
+                            LEFT JOIN borrow_records br2 ON b2.book_id = br2.book_id AND br2.borrow_date >= ?
+                            GROUP BY b2.book_id
+                        )
                     )
-                )
-                ORDER BY b.title ASC
-                LIMIT 10
-            """, (start_date, start_date))
-            
-            results = cursor.fetchall()
-            conn.close()
+                    ORDER BY b.title ASC
+                    LIMIT 10
+                """, (start_date, start_date))
+                
+                results = cursor.fetchall()
+                conn.close()
             
             if not results:
                 no_data_label = tk.Label(
@@ -12136,19 +12328,24 @@ Note: This is an automated email. Please find the attached formal overdue letter
             print(f"Error creating least popular books chart: {e}")
 
     # ---------------------- Focused Insights ----------------------
-    def create_student_specific_pie(self, days, enrollment_no):
+    def create_student_specific_pie(self, days, enrollment_no, data=None):
         """Pie: student's borrow status in period (borrowed vs returned)."""
         try:
-            conn = self.db.get_connection()
-            cur = conn.cursor()
-            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-            cur.execute("SELECT COUNT(*) FROM borrow_records WHERE enrollment_no=? AND borrow_date>=?", (enrollment_no, start_date))
-            total = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM borrow_records WHERE enrollment_no=? AND borrow_date>=? AND status='borrowed'", (enrollment_no, start_date))
-            active = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM borrow_records WHERE enrollment_no=? AND return_date>=? AND return_date IS NOT NULL", (enrollment_no, start_date))
-            returned = cur.fetchone()[0]
-            conn.close()
+            if data:
+                active = data.get('active', 0)
+                returned = data.get('returned', 0)
+                # total = data.get('total', 0)
+            else:
+                conn = self.db.get_connection()
+                cur = conn.cursor()
+                start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+                cur.execute("SELECT COUNT(*) FROM borrow_records WHERE enrollment_no=? AND borrow_date>=?", (enrollment_no, start_date))
+                total = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM borrow_records WHERE enrollment_no=? AND borrow_date>=? AND status='borrowed'", (enrollment_no, start_date))
+                active = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM borrow_records WHERE enrollment_no=? AND return_date>=? AND return_date IS NOT NULL", (enrollment_no, start_date))
+                returned = cur.fetchone()[0]
+                conn.close()
             sizes = [active, returned]
             labels = ["Currently Issued", "Returned"]
             if sum(sizes) == 0:
@@ -12168,14 +12365,17 @@ Note: This is an automated email. Please find the attached formal overdue letter
         except Exception as e:
             print(f"Student-specific pie error: {e}")
 
-    def create_book_specific_pie(self, days, book_id):
+    def create_book_specific_pie(self, days, book_id, data=None):
         """Pie: book's copies status currently (available vs borrowed)."""
         try:
-            conn = self.db.get_connection()
-            cur = conn.cursor()
-            cur.execute("SELECT title, total_copies, available_copies FROM books WHERE book_id=?", (book_id,))
-            row = cur.fetchone()
-            conn.close()
+            if data:
+                row = data.get('row')
+            else:
+                conn = self.db.get_connection()
+                cur = conn.cursor()
+                cur.execute("SELECT title, total_copies, available_copies FROM books WHERE book_id=?", (book_id,))
+                row = cur.fetchone()
+                conn.close()
             if not row:
                 lbl = tk.Label(self.book_specific_frame, text=f"Book {book_id} not found", bg=self.colors['primary'], fg='#c00', font=('Segoe UI', 11, 'bold'))
                 lbl.pack(fill=tk.X, padx=10, pady=10)
@@ -12244,7 +12444,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
         cur.execute(
             "SELECT s.enrollment_no, s.name, COUNT(br.id) as borrows FROM students s "
             "LEFT JOIN borrow_records br ON s.enrollment_no=br.enrollment_no AND br.borrow_date>=? "
-            "WHERE s.year=? GROUP BY s.enrollment_no, s.name HAVING borrows>0 ORDER BY borrows DESC",
+            "WHERE s.year=? GROUP BY s.enrollment_no, s.name HAVING COUNT(br.id)>0 ORDER BY borrows DESC",
             (start_date, year)
         )
         rows = cur.fetchall()
@@ -12380,48 +12580,60 @@ Note: This is an automated email. Please find the attached formal overdue letter
         except Exception:
             return None
     
-    def create_summary_stats(self, days):
+    def create_summary_stats(self, days, data=None):
         """Create summary statistics display"""
         try:
             # Get comprehensive stats
-            conn = self.db.get_connection()
-            cursor = conn.cursor()
+            if data:
+                total_borrowings = data.get('total_borrowings', 0)
+                total_returns = data.get('total_returns', 0)
+                overdue_count = data.get('overdue_count', 0)
+                active_students = data.get('active_students', 0)
+                fines_raw = data.get('fines_data', [])
+            else:
+                conn = self.db.get_connection()
+                cursor = conn.cursor()
+                
+                start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+                
+                # Total borrowings in period
+                cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE borrow_date >= ?", (start_date,))
+                total_borrowings = cursor.fetchone()[0]
+                
+                # Total returns in period
+                cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE return_date >= ? AND return_date IS NOT NULL", (start_date,))
+                total_returns = cursor.fetchone()[0]
+                
+                # Currently overdue
+                today = datetime.now().strftime('%Y-%m-%d')
+                cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE status = 'borrowed' AND due_date < ?", (today,))
+                overdue_count = cursor.fetchone()[0]
+                
+                # Active students (who borrowed in period)
+                cursor.execute("SELECT COUNT(DISTINCT enrollment_no) FROM borrow_records WHERE borrow_date >= ?", (start_date,))
+                active_students = cursor.fetchone()[0]
+                
+                # Total fines collected (approximation)
+                # Calculate fines in Python to be DB-agnostic (avoid julianday vs EXTRACT differences)
+                cursor.execute("""
+                    SELECT return_date, due_date 
+                    FROM borrow_records 
+                    WHERE return_date > due_date AND return_date IS NOT NULL AND return_date >= ?
+                """, (start_date,))
+                fines_raw = cursor.fetchall()
+                conn.close()
             
-            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-            
-            # Total borrowings in period
-            cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE borrow_date >= ?", (start_date,))
-            total_borrowings = cursor.fetchone()[0]
-            
-            # Total returns in period
-            cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE return_date >= ? AND return_date IS NOT NULL", (start_date,))
-            total_returns = cursor.fetchone()[0]
-            
-            # Currently overdue
-            today = datetime.now().strftime('%Y-%m-%d')
-            cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE status = 'borrowed' AND due_date < ?", (today,))
-            overdue_count = cursor.fetchone()[0]
-            
-            # Active students (who borrowed in period)
-            cursor.execute("SELECT COUNT(DISTINCT enrollment_no) FROM borrow_records WHERE borrow_date >= ?", (start_date,))
-            active_students = cursor.fetchone()[0]
-            
-            # Total fines collected (approximation)
-            cursor.execute("""
-                SELECT SUM(
-                    CASE 
-                        WHEN return_date > due_date 
-                        THEN (julianday(return_date) - julianday(due_date)) * ?
-                        ELSE 0 
-                    END
-                ) as total_fines
-                FROM borrow_records 
-                WHERE return_date >= ? AND return_date IS NOT NULL
-            """, (self.get_fine_per_day(), start_date))
-            
-            total_fines = cursor.fetchone()[0] or 0
-            
-            conn.close()
+            fine_sum = 0
+            fine_per_day = self.get_fine_per_day()
+            for r_date, d_date in fines_raw:
+                # Handle string dates vs date objects
+
+                if isinstance(r_date, str): r_date = datetime.strptime(r_date, '%Y-%m-%d').date()
+                if isinstance(d_date, str): d_date = datetime.strptime(d_date, '%Y-%m-%d').date()
+                days_late = (r_date - d_date).days
+                fine_sum += days_late * fine_per_day
+                
+            total_fines = fine_sum
             
             # Create stats display
             stats_container = tk.Frame(self.stats_summary_frame, bg=self.colors['primary'])
@@ -12533,7 +12745,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 LEFT JOIN borrow_records br ON s.enrollment_no = br.enrollment_no 
                     AND br.borrow_date >= ?
                 GROUP BY s.year
-                HAVING borrow_count > 0
+                HAVING COUNT(br.id) > 0
                 ORDER BY borrow_count DESC
             """, (start_date,))
             
@@ -12687,7 +12899,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 LEFT JOIN borrow_records br ON s.enrollment_no = br.enrollment_no 
                     AND br.borrow_date >= ?
                 GROUP BY s.year
-                HAVING borrow_count > 0
+                HAVING COUNT(br.id) > 0
                 ORDER BY borrow_count DESC
             """, (start_date,))
             
