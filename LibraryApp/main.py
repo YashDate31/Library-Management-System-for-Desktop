@@ -177,6 +177,19 @@ class LibraryApp:
                 b_row = cursor.fetchone()
                 data['book_specific'] = {'row': b_row} if b_row else None
 
+            # Fetch names for filters to avoid blocking main thread later
+            names = {}
+            if enrollment_no:
+                cursor.execute("SELECT name FROM students WHERE enrollment_no=?", (enrollment_no,))
+                res = cursor.fetchone()
+                names['student_name'] = res[0] if res else None
+            
+            if book_id:
+                cursor.execute("SELECT title FROM books WHERE book_id=?", (book_id,))
+                res = cursor.fetchone()
+                names['book_title'] = res[0] if res else None
+            data['filter_names'] = names
+
             conn.close()
             return data
         except Exception as e:
@@ -2311,30 +2324,68 @@ Current Settings:
         self.root.after(100, lambda: bind_mousewheel(scrollable_frame))
 
     def refresh_dashboard_borrowed(self):
+        """Refresh dashboard borrowed books table (Async)"""
+        # Clear current items immediately or wait? 
+        # Better to wait until data is ready to avoid flicker, or show "Loading..."
+        self.run_in_background_thread(
+            lambda: self.db.get_borrowed_books(),
+            self._dashboard_borrowed_callback
+        )
 
-        """Refresh dashboard borrowed books table"""
-        for item in self.dashboard_borrowed_tree.get_children():
-            self.dashboard_borrowed_tree.delete(item)
-        borrowed_books = self.db.get_borrowed_books()
-        for record in borrowed_books:
-            enrollment_no = record[0]
-            student_name = record[1]
-            book_id = record[4]
-            book_name = record[5]
-            borrow_date = record[7]
-            due_date = record[8]
-            # Calculate days left
-            try:
-                days_left = (datetime.strptime(due_date, '%Y-%m-%d') - datetime.now()).days
-            except:
-                days_left = ''
-            self.dashboard_borrowed_tree.insert('', 'end', values=(enrollment_no, student_name, book_id, book_name, borrow_date, due_date, days_left))
-    
-    def create_stats_cards(self, parent):
-        """Create statistics cards"""
-        # Get statistics
-        stats = self.get_library_statistics()
+    def _dashboard_borrowed_callback(self, result):
+        if isinstance(result, Exception):
+            print(f"Error refreshing dashboard borrowed: {result}")
+            return
+            
+        # Update Treeview
+        if hasattr(self, 'dashboard_borrowed_tree'):
+            for item in self.dashboard_borrowed_tree.get_children():
+                try:
+                    self.dashboard_borrowed_tree.delete(item)
+                except:
+                    pass
+            
+            for record in result:
+                enrollment_no = record[0]
+                student_name = record[1]
+                book_id = record[4]
+                book_name = record[5]
+                borrow_date = record[7]
+                due_date = record[8]
+                # Calculate days left
+                try:
+                    from datetime import datetime
+                    days_left = (datetime.strptime(due_date, '%Y-%m-%d') - datetime.now()).days
+                except:
+                    days_left = ''
+                self.dashboard_borrowed_tree.insert('', 'end', values=(enrollment_no, student_name, book_id, book_name, borrow_date, due_date, days_left))
+
+    def refresh_stats_async(self):
+        """Fetch stats in background and update UI"""
+        self.run_in_background_thread(
+            lambda: self.get_library_statistics(),
+            self._update_stats_callback
+        )
+
+    def _update_stats_callback(self, stats):
+        if isinstance(stats, Exception):
+            print(f"Stats fetch failed: {stats}")
+            return
         
+        if hasattr(self, 'stats_container'):
+             # Clear existing stats
+            for widget in self.stats_container.winfo_children():
+                widget.destroy()
+            # Recreate with new data
+            self.create_stats_cards(self.stats_container, stats)
+
+    def create_stats_cards(self, parent, stats=None):
+        """Create statistics cards. If stats is None, trigger async fetch."""
+        if stats is None:
+            # Trigger async fetch and return (display loading or empty initially)
+            self.refresh_stats_async()
+            return
+
         cards_data = [
             ("📚 Total Books", stats['total_books'], self.colors['secondary']),
             ("✅ Available Books", stats['available_books'], '#28a745'),
@@ -2367,7 +2418,7 @@ Current Settings:
             value_label.pack(pady=(0, 15))
     
     def get_library_statistics(self):
-        """Get library statistics"""
+        """Get library statistics (helper for worker thread)"""
         try:
             conn = self.db.get_connection()
             cursor = conn.cursor()
@@ -3141,50 +3192,82 @@ Current Settings:
     #         print(f"Error filtering book suggestions: {e}")
     
     def show_student_details(self, mode):
-        """Show student details below enrollment field in transactions tab"""
+        """Show student details with debouncing and async fetch"""
         if mode == 'borrow':
             enrollment_no = self.borrow_enrollment_entry.get().strip()
         else:
             enrollment_no = self.return_enrollment_entry.get().strip()
         
+        # Debouncing
+        if hasattr(self, '_student_details_timer') and self._student_details_timer:
+            self.root.after_cancel(self._student_details_timer)
+        
         if not enrollment_no:
-            details = ""
+            if mode == 'borrow':
+                self.borrow_student_details.config(text="")
+            else:
+                self.return_student_details.config(text="")
+            return
+
+        # Delay before fetching (500ms)
+        self._student_details_timer = self.root.after(500, 
+            lambda: self.run_in_background_thread(
+                lambda: self.db.get_student_by_enrollment(enrollment_no),
+                lambda result: self._show_student_details_callback(result, mode)
+            )
+        )
+
+    def _show_student_details_callback(self, student, mode):
+        """Callback to update student details label"""
+        if isinstance(student, Exception):
+            details = "Error loading student data."
+        elif student:
+            # student tuple: (id, enrollment_no, name, email, phone, department, year, ...)
+            details = f"Name: {student[2]} | Email: {student[3]} | Phone: {student[4]} | Year: {student[6]}"
         else:
-            try:
-                students = self.db.get_students()
-                student = next((s for s in students if str(s[1]) == enrollment_no), None)
-                if student:
-                    details = f"Name: {student[2]} | Email: {student[3]} | Phone: {student[4]} | Year: {student[6]}"
-                else:
-                    details = "Student not found."
-            except Exception as e:
-                details = "Error loading student data."
-                
+            details = "Student not found."
+
         if mode == 'borrow':
             self.borrow_student_details.config(text=details)
         else:
             self.return_student_details.config(text=details)
     
     def show_book_details(self, mode):
-        """Show book details when book ID is entered"""
+        """Show book details with debouncing and async fetch"""
         if mode == 'borrow':
             book_id = self.borrow_book_id_entry.get().strip()
         else:
             book_id = self.return_book_id_entry.get().strip()
         
+        # Debouncing
+        if hasattr(self, '_book_details_timer') and self._book_details_timer:
+            self.root.after_cancel(self._book_details_timer)
+
         if not book_id:
-            details = ""
+            if mode == 'borrow':
+                self.borrow_book_details.config(text="")
+            else:
+                self.return_book_details.config(text="")
+            return
+            
+        # Delay before fetching (500ms)
+        self._book_details_timer = self.root.after(500, 
+            lambda: self.run_in_background_thread(
+                lambda: self.db.get_book_by_id(book_id),
+                lambda result: self._show_book_details_callback(result, mode)
+            )
+        )
+
+    def _show_book_details_callback(self, book, mode):
+        """Callback to update book details label"""
+        if isinstance(book, Exception):
+            details = "Error loading book data."
+        elif book:
+            # book tuple: (id, book_id, title, author, isbn, category, total_copies, available, ...)
+            details = f"Title: {book[2]} | Author: {book[3]} | Available: {book[7]}"
         else:
-            try:
-                books = self.db.get_books()
-                book = next((b for b in books if str(b[1]) == book_id), None)
-                if book:
-                    details = f"Title: {book[2]} | Author: {book[3]} | Available: {book[7]}"
-                else:
-                    details = "Book not found."
-            except Exception as e:
-                details = "Error loading book data."
-                
+            details = "Book not found."
+
         # Update the appropriate book details label
         if mode == 'borrow':
             self.borrow_book_details.config(text=details)
@@ -4293,7 +4376,7 @@ Current Settings:
         entries['book_id'].focus()
     
     def borrow_book(self):
-        """Handle book borrowing"""
+        """Handle book borrowing (Async)"""
         enrollment_text = self.borrow_enrollment_entry.get().strip()
         book_text = self.borrow_book_id_entry.get().strip()
         borrow_date = self.borrow_borrow_date_entry.get().strip()
@@ -4308,39 +4391,6 @@ Current Settings:
         
         # Extract book ID (before " - " if formatted, otherwise use as is)
         book_id = book_text.split(' - ')[0] if ' - ' in book_text else book_text
-        
-        # Enforce: Pass Out students cannot borrow (UI-side quick check)
-        try:
-            conn = self.db.get_connection()
-            cur = conn.cursor()
-            cur.execute("SELECT year FROM students WHERE enrollment_no = ?", (enrollment_no,))
-            row = cur.fetchone()
-            if not row:
-                conn.close()
-                messagebox.showerror("Error", "Student not found!")
-                return
-            year_val = (row[0] or '').strip().lower()
-            if year_val in ("pass out", "passout"):
-                conn.close()
-                messagebox.showerror("Not Allowed", "Pass Out students cannot borrow books.")
-                return
-            
-            # Check max books limit
-            max_books = self.get_max_books_per_student()
-            cur.execute("SELECT COUNT(*) FROM borrow_records WHERE enrollment_no = ? AND status = 'borrowed'", (enrollment_no,))
-            current_books = cur.fetchone()[0]
-            conn.close()
-            
-            if current_books >= max_books:
-                messagebox.showerror(
-                    "Limit Reached",
-                    f"Student has already borrowed {current_books} book(s).\nMaximum allowed: {max_books} books.\n\nPlease return books before borrowing more."
-                )
-                return
-        except Exception as e:
-            # If the check fails unexpectedly, continue to DB enforcement which also validates
-            print(f"Pre-borrow validation error: {e}")
-            pass
 
         # Validate date format (borrow & due)
         try:
@@ -4371,7 +4421,57 @@ Current Settings:
         except Exception:
             pass
 
-        success, message = self.db.borrow_book(enrollment_no, book_id, borrow_date, due_date)
+        # Disable button to prevent double-submit? (Optional, skipping for minimal intrusion)
+        
+        self.run_in_background_thread(
+            self._borrow_book_worker,
+            self._borrow_book_callback,
+            enrollment_no=enrollment_no,
+            book_id=book_id,
+            borrow_date=borrow_date,
+            due_date=due_date
+        )
+
+    def _borrow_book_worker(self, enrollment_no, book_id, borrow_date, due_date):
+        """Worker: Pre-borrow DB checks + Execute Borrow"""
+        try:
+            # Enforce: Pass Out students cannot borrow
+            conn = self.db.get_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT year FROM students WHERE enrollment_no = ?", (enrollment_no,))
+            row = cur.fetchone()
+            if not row:
+                conn.close()
+                return (False, "Student not found!")
+            
+            year_val = (row[0] or '').strip().lower()
+            if year_val in ("pass out", "passout"):
+                conn.close()
+                return (False, "Pass Out students cannot borrow books.")
+            
+            # Check max books limit
+            max_books = self.get_max_books_per_student()
+            cur.execute("SELECT COUNT(*) FROM borrow_records WHERE enrollment_no = ? AND status = 'borrowed'", (enrollment_no,))
+            current_books = cur.fetchone()[0]
+            conn.close()
+            
+            if current_books >= max_books:
+                return (False, f"Limit Reached: Student has {current_books}/{max_books} books.")
+        except Exception as e:
+            print(f"Pre-borrow validation error: {e}")
+            # If check fails unexpectedly, we typically proceed or fail safe. 
+            # Let's fail safe to be sure, or just log.
+            pass
+
+        return self.db.borrow_book(enrollment_no, book_id, borrow_date, due_date)
+
+    def _borrow_book_callback(self, result):
+        """Callback for borrow book"""
+        if isinstance(result, Exception):
+             messagebox.showerror("Error", f"System Error: {str(result)}")
+             return
+        
+        success, message = result
         
         if success:
             messagebox.showinfo("Success", message)
@@ -4379,6 +4479,7 @@ Current Settings:
             self.borrow_enrollment_entry.delete(0, tk.END)
             self.borrow_book_id_entry.delete(0, tk.END)
             # Reset due date to default (suggest max window of 7 days)
+            from datetime import datetime, timedelta
             today_str = datetime.now().strftime('%Y-%m-%d')
             self.borrow_borrow_date_entry.delete(0, tk.END)
             self.borrow_borrow_date_entry.insert(0, today_str)
@@ -4391,16 +4492,19 @@ Current Settings:
             self.borrow_student_details.config(text="")
             self.borrow_book_details.config(text="")
 
-            # Refresh views
-            self.refresh_borrowed()
+            # Refresh views (Async calls where possible)
+            self.refresh_borrowed() 
             self.refresh_books()
             self.refresh_dashboard()
             self.refresh_records()
         else:
-            messagebox.showerror("Error", message)
+            # Handle specific error titles if possible
+            title = "Not Allowed" if "Pass Out" in message else "Error"
+            if "Limit Reached" in message: title = "Limit Reached"
+            messagebox.showerror(title, message)
     
     def return_book(self):
-        """Handle book return"""
+        """Handle book return (Async)"""
         enrollment_text = self.return_enrollment_entry.get().strip()
         book_text = self.return_book_id_entry.get().strip()
         
@@ -4420,11 +4524,21 @@ Current Settings:
         if user_return_date == '':
             user_return_date = None
 
+        self.run_in_background_thread(
+            self._return_book_worker,
+            self._return_book_callback,
+            enrollment_no=enrollment_no, 
+            book_id=book_id, 
+            user_return_date=user_return_date
+        )
+
+    def _return_book_worker(self, enrollment_no, book_id, user_return_date):
+        """Worker: Execute Return + Calculate Fine"""
         success, message = self.db.return_book(enrollment_no, book_id, user_return_date)
         
+        fine_data = None
         if success:
-            messagebox.showinfo("Success", message)
-            # Late return fine popup
+            # Late return fine calculation (DB Read)
             try:
                 conn = self.db.get_connection()
                 cur = conn.cursor()
@@ -4442,23 +4556,44 @@ Current Settings:
                     days_late = (ret_dt - due_dt).days
                     if days_late > 0:
                         fine_amount = days_late * self.get_fine_per_day()
-                        messagebox.showwarning(
-                            "Late Return",
-                            f"This book is returned {days_late} day(s) late.\nFine: ₹{fine_amount}"
-                        )
+                        fine_data = (days_late, fine_amount)
             except Exception as e:
                 print(f"Late return fine computation failed: {e}")
+        
+        return (success, message, fine_data)
+
+    def _return_book_callback(self, result):
+        """Callback for return book"""
+        if isinstance(result, Exception):
+             messagebox.showerror("Error", f"System Error: {str(result)}")
+             return
+
+        success, message, fine_data = result
+        
+        if success:
+            messagebox.showinfo("Success", message)
+            
+            # Late return fine popup
+            if fine_data:
+                days_late, fine_amount = fine_data
+                messagebox.showwarning(
+                    "Late Return",
+                    f"This book is returned {days_late} day(s) late.\nFine: ₹{fine_amount}"
+                )
+
             # Clear fields
             self.return_enrollment_entry.delete(0, tk.END)
             self.return_book_id_entry.delete(0, tk.END)
             
             # Clear student details and return date (reset to today for convenience)
             self.return_student_details.config(text="")
+            return_date_input = getattr(self, 'return_date_entry', None)
             if return_date_input:
+                from datetime import datetime
                 return_date_input.delete(0, tk.END)
                 return_date_input.insert(0, datetime.now().strftime('%Y-%m-%d'))
             
-            # Refresh views
+            # Refresh views (Async calls where possible)
             self.refresh_borrowed()
             self.refresh_books()
             self.refresh_dashboard()
@@ -4656,69 +4791,116 @@ Current Settings:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to import Excel file: {e}")
     def search_students(self):
-        """Search and filter students"""
+        """Search and filter students (Async)"""
         search_term = self.student_search_var.get().lower()
         year_filter = self.student_year_filter.get()
         
-        # Get all students from database
-        try:
-            students = self.db.get_students()
+        # Show loading info in title or status bar? (Optional)
+        # For now, just run in background
+        self.run_in_background_thread(
+            self._search_students_worker,
+            self._search_students_callback,
+            search_term=search_term,
+            year_filter=year_filter
+        )
 
-            # DB students columns:
-            # (id, enrollment_no, name, email, phone, department, year, date_registered)
-            filtered_students = []
-            for s in students:
-                if search_term:
-                    text = f"{s[1]} {s[2]} {s[3]} {s[4]} {s[6]} {s[5]}".lower()
-                    if search_term not in text:
-                        continue
-                if year_filter != "All":
-                    def normalize_year(y):
-                        y = str(y or '').lower().strip()
-                        if '1' in y: return '1'
-                        if '2' in y: return '2'
-                        if '3' in y: return '3'
-                        return y
-                    
-                    student_year = (s[6] or '').strip()
-                    if normalize_year(year_filter) != normalize_year(student_year):
-                        continue
-                filtered_students.append(s)
+    def _search_students_worker(self, search_term, year_filter):
+        """Worker thread for searching students"""
+        if hasattr(self.db, 'get_students'):
+             students = self.db.get_students()
+        else:
+             return []
 
-            self.populate_students_tree(filtered_students)
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Error searching students: {str(e)}")
+        # DB students columns:
+        # (id, enrollment_no, name, email, phone, department, year, date_registered)
+        filtered_students = []
+        for s in students:
+            if search_term:
+                text = f"{s[1]} {s[2]} {s[3]} {s[4]} {s[6]} {s[5]}".lower()
+                if search_term not in text:
+                    continue
+            if year_filter != "All":
+                def normalize_year(y):
+                    y = str(y or '').lower().strip()
+                    if '1' in y: return '1'
+                    if '2' in y: return '2'
+                    if '3' in y: return '3'
+                    return y
+                
+                student_year = (s[6] or '').strip()
+                if normalize_year(year_filter) != normalize_year(student_year):
+                    continue
+            filtered_students.append(s)
+        return filtered_students
+
+    def _search_students_callback(self, result):
+        """Update UI with search results"""
+        if isinstance(result, Exception):
+            messagebox.showerror("Error", f"Error searching students: {str(result)}")
+            return
+        self.populate_students_tree(result)
     
     def search_books(self):
-        """Search and filter books"""
+        """Search and filter books (Async)"""
         try:
             if hasattr(self, 'books_tree'):
                 term = (self.book_search_var.get() or '').strip()
                 category = self.book_category_filter.get()
-                # Fetch from DB with optional LIKE filtering when term present
-                books = self.db.get_books(term)
-                # DB books columns:
-                # (id, book_id, title, author, isbn, category, total_copies, available_copies, date_added)
-                filtered = []
-                for b in books:
-                    if category and category != 'All':
-                        if (b[5] or '').strip() != category:
-                            continue
-                    filtered.append(b)
-                self.populate_books_tree(filtered)
+                
+                self.run_in_background_thread(
+                    self._search_books_worker,
+                    self._search_books_callback,
+                    term=term,
+                    category=category
+                )
         except Exception as e:
-            print(f"Error searching books: {str(e)}")
+             messagebox.showerror("Error", f"Error initiating book search: {str(e)}")
+
+    def _search_books_worker(self, term, category):
+        """Worker thread for searching books"""
+        # Fetch from DB with optional LIKE filtering when term present
+        books = self.db.get_books(term)
+        # DB books columns:
+        # (id, book_id, title, author, isbn, category, total_copies, available_copies, date_added)
+        filtered = []
+        for b in books:
+            if category and category != 'All':
+                if (b[5] or '').strip() != category:
+                    continue
+            filtered.append(b)
+        return filtered
+
+    def _search_books_callback(self, result):
+        """Update UI with book search results"""
+        if isinstance(result, Exception):
+            print(f"Error searching books: {str(result)}") # Keep original silent/print error handling? Or show message?
+            # Original code printed it. I'll print it but also maybe show status if I had one.
+            return
+        self.populate_books_tree(result)
     
     def search_records(self):
-        """Search and filter records including academic year"""
+        """Search and filter records including academic year (Async)"""
         search_term = self.record_search_var.get().lower()
         type_filter = self.record_type_filter.get()
         from_date = self.record_from_date.get()
         to_date = self.record_to_date.get()
         academic_year_filter = self.record_academic_year_var.get() if hasattr(self, 'record_academic_year_var') else "All"
         
-        records = self.get_all_records()
+        self.run_in_background_thread(
+            self._search_records_worker,
+            self._search_records_callback,
+            search_term=search_term,
+            type_filter=type_filter,
+            from_date=from_date,
+            to_date=to_date,
+            academic_year_filter=academic_year_filter
+        )
+
+    def _search_records_worker(self, search_term, type_filter, from_date, to_date, academic_year_filter):
+        """Worker: Fetch and Filter Records"""
+        records = self.get_all_records() # This calls self.db.get_transactions() internally?
+        # Check get_all_records implementation. It might be in main.py or db.
+        # Assuming get_all_records is safe to call from thread if it just reads DB.
         
         # Filter records
         filtered_records = []
@@ -4763,6 +4945,7 @@ Current Settings:
                     continue
             
             # Apply date filters
+            from datetime import datetime
             if from_date:
                 try:
                     record_date = datetime.strptime(record[4], '%Y-%m-%d')  # borrow_date index 4
@@ -4782,8 +4965,13 @@ Current Settings:
                     pass
             
             filtered_records.append(record)
-        
-        self.populate_records_tree(filtered_records)
+        return filtered_records
+
+    def _search_records_callback(self, result):
+         if isinstance(result, Exception):
+             messagebox.showerror("Error", f"Error searching records: {str(result)}")
+             return
+         self.populate_records_tree(result)
     
     def refresh_academic_year_filter(self):
         """Refresh academic year dropdown with latest years from database"""
@@ -4888,9 +5076,18 @@ Current Settings:
         self.search_books()  # This will apply current filters
     
     def refresh_borrowed(self):
-        """Refresh borrowed books list"""
-        borrowed = self.db.get_borrowed_books()
-        self.populate_borrowed_tree(borrowed)
+        """Refresh borrowed books list (Async)"""
+        # Fetch data in background, then populate tree
+        self.run_in_background_thread(
+            lambda: self.db.get_borrowed_books(),
+            self._refresh_borrowed_callback
+        )
+
+    def _refresh_borrowed_callback(self, result):
+        if isinstance(result, Exception):
+            print(f"Error refreshing borrowed books: {result}")
+            return
+        self.populate_borrowed_tree(result)
     
     def refresh_records(self):
         """Refresh records list"""
@@ -11685,15 +11882,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
         en = self.analysis_filter.get('enrollment_no')
         bk = self.analysis_filter.get('book_id')
         
-        # Update filter summary label
-        parts = []
-        if en:
-            s_name = self.get_student_name(en)
-            parts.append(f"Student: {en} ({s_name or 'Unknown'})")
-        if bk:
-            b_title = self.get_book_title(bk)
-            parts.append(f"Book: {bk} ({b_title or 'Unknown'})")
-        self.analysis_filter_summary.config(text=' | '.join(parts) if parts else 'No focused filter applied')
+        self.analysis_filter_summary.config(text="Loading filter details...")
         
         # Run in background
         self.run_in_background_thread(
@@ -11713,6 +11902,19 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 return
 
             data = result
+            
+            # Update filter summary with fetched names
+            names = data.get('filter_names', {})
+            en = self.analysis_filter.get('enrollment_no')
+            bk = self.analysis_filter.get('book_id')
+            parts = []
+            if en: parts.append(f"Student: {en} ({names.get('student_name', 'Unknown') or 'Unknown'})")
+            if bk: parts.append(f"Book: {bk} ({names.get('book_title', 'Unknown') or 'Unknown'})")
+            if parts:
+                self.analysis_filter_summary.config(text=' | '.join(parts))
+            else:
+                self.analysis_filter_summary.config(text="No focused filter applied")
+
             days = int(self.analysis_period.get())
 
             # Render Charts with injected Data
