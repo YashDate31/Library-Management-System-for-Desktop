@@ -42,7 +42,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 def get_or_create_secret_key():
     """Get secret key from env variable, or generate and persist one locally"""
     # 1. Check environment variable first
-    env_key = os.environ.get('FLASK_SECRET_KEY')
+    env_key = os.environ.get('FLASK_SECRET_KEY') or os.environ.get('SECRET_KEY')
     if env_key:
         return env_key
     

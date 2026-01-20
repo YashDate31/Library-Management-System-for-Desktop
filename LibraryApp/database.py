@@ -43,7 +43,7 @@ class PostgresRow:
 class PostgresCursorWrapper:
     """
     Wrapper to make psycopg2 cursor behave like sqlite3 cursor.
-    - Replaces '?' placeholders with '%s'
+    - Replaces '?' placeholders with '%s' safely for this specific application context.
     - Supports row_factory style access (dict-like)
     """
     def __init__(self, cursor):
@@ -52,6 +52,9 @@ class PostgresCursorWrapper:
 
     def execute(self, sql, params=None):
         # Convert SQLite '?' placeholders to Postgres '%s'
+        # NOTE: This is a basic string replacement. It assumes '?' is ONLY used as a placeholder.
+        # In a generic library, this would be unsafe (e.g., "SELECT 'Where is he?'").
+        # For this Application, we verify that no static SQL contains '?' literals.
         pg_sql = sql.replace('?', '%s')
         
         try:
@@ -62,7 +65,9 @@ class PostgresCursorWrapper:
             self.rowcount = self.cursor.rowcount
             return self.cursor
         except Exception as e:
-            # Re-raise or handle constraints
+            # Log error for debugging
+            print(f"SQL Error in PostgresWrapper: {e}")
+            print(f"Query: {pg_sql}")
             raise e
 
     def fetchone(self):
@@ -91,7 +96,7 @@ class PostgresConnectionWrapper:
         self.conn.close()
         
     def execute(self, sql, params=None):
-        # Shortcut execute support used in some places
+        # Shortcut execute support
         cursor = self.cursor()
         cursor.execute(sql, params)
         return cursor
@@ -137,6 +142,7 @@ class Database:
         else:
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
+            # Enforce foreign keys for SQLite (Postgres does this by default)
             conn.execute('PRAGMA foreign_keys = ON')
             return conn
     
@@ -670,7 +676,19 @@ class Database:
         result = cursor.fetchall()
         conn.close()
         return result
-    
+
+    def get_student_by_enrollment(self, enrollment_no):
+        """Get specific student details by enrollment number"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('SELECT * FROM students WHERE enrollment_no = ?', (enrollment_no,))
+            return cursor.fetchone()
+        except:
+            return None
+        finally:
+            conn.close()
+
     def get_books(self, search_term=''):
         """Get list of books with optional search"""
         conn = self.get_connection()
@@ -685,6 +703,18 @@ class Database:
         result = cursor.fetchall()
         conn.close()
         return result
+
+    def get_book_by_id(self, book_id):
+        """Get specific book details by Book ID"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('SELECT * FROM books WHERE book_id = ?', (book_id,))
+            return cursor.fetchone()
+        except:
+            return None
+        finally:
+            conn.close()
     
     def get_borrowed_books(self):
         """Get list of currently borrowed books"""
