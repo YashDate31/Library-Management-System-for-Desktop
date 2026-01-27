@@ -1,6 +1,6 @@
 {
-    "fine_per_day": 5,
-    "loan_period_days": 5,
+    "fine_per_day": 7,
+    "loan_period_days": 7,
     "max_books_per_student": 5,
     "admin_password": "gpa1"
 }
