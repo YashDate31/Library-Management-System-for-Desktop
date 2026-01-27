@@ -1,66 +1,63 @@
 # Project Overview
 
-**CURRENT STAGE** Testing Phase
+**CURRENT STAGE** Scaling & Cloud Integration Phase
 
-**OBJECTIVE** To bridge the gap between physical libraries and digital learners.
-Our goal is to democratize access by building a hybrid ecosystem-parlaying
-secure desktop administration with a seamless browser extension-that gives
-students instant, 24/7 access to books and study material directly in their
-workflow.
+**OBJECTIVE** To democratize access to academic resources by building a
+**Cloud-Native Hybrid Ecosystem** that bridges the gap between physical
+libraries and digital learners. We combine standardized desktop administration
+with a robust, cloud-synced browser extension to give students instant, 24/7
+access to books and study materials directly in their workflow.
 
 ### ABSTRACT
 
-Most college libraries are fixed in the past. For students to check a book's
-availability or to download notes, they actually have to visit the library.
-Resources and learners are quite disconnected from each other. We built the
-Integrated Academic Resource Ecosystem-IARE-to solve this "last mile" problem.
-Unlike other management systems, IARE is a hybrid solution. It couples a strong
-Python Desktop Application for librarians with a lightweight Web Extension for
-students. We didn't want to develop yet another awkward portal. Our extension
-resides noiselessly in the browser, giving students instant access to the
-catalogue and study materials. We even extended the reach of the library beyond
-campus; the system includes DELNET integration allowing students to request
-books directly from the national library network through the extension, which
-the librarian then processes. This transforms the library from a physical room
-to a 24/7 digital assistant.
+Traditional college libraries are often isolated data islands. For students to
+check availability or download notes, they must physically visit the library. We
+built the **Integrated Academic Resource Ecosystem (IARE)** to solve this "last
+mile" problem using modern cloud technologies. unlike legacy systems, IARE is a
+**Hybrid Cloud Solution**. It couples a powerful **Python Desktop Application**
+for librarians with a lightweight, cloud-connected **Web Extension/Portal** for
+students.
+
+By migrating to a **Supabase (PostgreSQL)** backend, the system now ensures
+real-time synchronization between the librarian's desktop and the student's
+browser, regardless of location. The system also integrates **DELNET** to allow
+students to request books from the national library network directly through the
+extension. This transforms the library from a room with books into a pervasive
+digital assistant.
 
 ---
 
 # PROBLEM STATEMENT
 
-The conventional university libraries are **functionally isolated**. They depend
-on rigid computer software that can be used only by the librarians, making the
-students unaware of the same. For searching or accessing study notes, the
-students have to actually come to the library, which is not necessary.
-
-Current technology that already exists may be costly or existent only within a
-large portal that students do not browse often. Thus, it creates a significant
-**resource gap** whereas resources abound within the SFL, students cannot easily
-access or research these resources beyond the physical SFL boundaries.
+1. **Functional Isolation:** Libraries depend on rigid, local-only software.
+   Students are unaware of new arrivals or availability unless they are
+   physically present.
+2. **Resource Gap:** Digital notes, question papers, and references are often
+   scattered or inaccessible remotely.
+3. **Legacy Tech:** Existing solutions are either expensive,
+   enterprise-monolithic portals that students avoid, or archaic offline desktop
+   apps.
 
 # PROPOSED SOLUTION
 
-We suggest that an "**Integrated Academic Resource Ecosystem**" or "**IARE**" is
-developed as a **hybrid solution** that approaches library connectivity with a
-new and innovative perspective where "**library administration**" is unbundled
-from
+We propose the "**Integrated Academic Resource Ecosystem (IARE)**" – a
+**Cloud-Native Hybrid Platform** that unbundles library administration from
+access:
 
-**For Administration:** Create a secure Desktop Application in Python for
-managing this heavy lifting. The new system is more than an ordinary library
-management system that does inventory and fine calculations alone because it has
-an intelligent automation system designed for queueing automated due letters to
-offenders as well as producing analyses of activities and monthly reports.The
-new system is fast and can function even when it is offline.
+**For Administration (The Powerhouse):** A secure, Python-based **Desktop
+Application** for heavy lifting. It connects to a cloud-hosted **PostgreSQL
+Database (Supabase)**, allowing librarians to manage inventory, queue automated
+due letters, and analyze borrowing trends with the speed of a native app but the
+connectivity of the cloud.
 
-**For Students:** Rather than designing a portal, we came up with a lightweight
-Web Extension. The Web Extension is integrated into the browser so that students
-can access and download study materials instantly. We also implemented a
-**DELNET Request** service so that students can request national inter-library
-materials, and the librarian can receive and process these requests.
+**For Students (The Access Point):** A lightweight **React Web
+Extension/Portal**. It connects directly to the same cloud database, offering
+instant search, real-time availability status, and digital downloads. It resides
+silently in the browser, meeting students where they already are.
 
-This approach solves the problem of **accessibility** because it provides
-**resources**, both **local and national**, as well as **automated management
-capabilities**, to the users.
+**Key Innovation:** The shift from local SQLite to **Supabase (PostgreSQL)**
+implies that the library is "always online." A student checking a book at
+midnight sees the exact same status as the librarian at 9:00 AM.
 
 ---
 
@@ -68,96 +65,101 @@ capabilities**, to the users.
 
 ### METHODOLOGY
 
-_Focus: The engineering approach, architecture, and development life cycle._
+_Focus: Cloud-First Hybrid Engineering_
 
-The project follows a **Hybrid Modular Architecture** developed using **Agile
-Methodology**, thus allowing the iterative development of the desktop and web
-modules.
+The project follows a **Hybrid Cloud Architecture**, leveraging the best of
+desktop performance and cloud scalability.
 
-**1. Requirement Analysis:** This gave us the insight about how all the physical
-records in the library are not an option that can be availed by the students,
-hence, the two modules in which the project will be divided-a powerhouse called
-the Admin Panel and the lighter Web Extension that will provide access remotely.
+**1. Requirement Analysis:** Identified the need for high-performance local
+management (scanning, fine calculation) vs. high-availability remote access
+(searching, reserving).
 
 **2. Architectural Design:**
 
-**3. Integration Strategy:** Custom "**Bridge API**" - simulated here by local
-file serving, provided a means for the browser extension to read library records
-without compromising the main database's security against write access.
+- **Database Layer:** **Supabase (PostgreSQL)** acts as the single source of
+  truth.
+- **Admin Layer:** Python (Tkinter) Desktop App connects via `psycopg2` / API.
+- **Student Layer:** React Application (hosted on Vercel/Render) connects via
+  Supabase Client.
+
+**3. Integration Strategy:** A "Shared Cloud State" model. The desktop app and
+web app read/write to the same Supabase instance, ensuring 0ms latency in data
+consistency.
 
 ### WORKING MECHANISM
 
-The **IARE** is built upon a secure, locally managed Client-Server system
-operating in three phases:
+The **IARE** operates as a secure Client-Server system:
+
+1. **Librarian Action:** Scans a book return in the Desktop App.
+2. **Cloud Sync:** Desktop App updates the **Supabase PostgreSQL** record
+   immediately.
+3. **User Update:** Student looking at the Web Portal sees the book status flip
+   to "Available" instantly.
 
 ---
 
-### KEY FEATURES
+# KEY FEATURES
 
-- **Real-Time Availability Sync:** Data gets instantly updated as action
-  performed on database.
-- **Smart SMTP Notification System:** Automatically send Pre-Due Date Reminders
-  (2 days before) to students to prevent fines, and Overdue Alerts immediately
-  after a deadline is missed.
-- **Academic Year-End Promotion :** As academic year promotes it automatically
-  promotes students (1st->2nd, 2nd->3rd) and archives graduates ("Pass Out")
-- **Automated Overdue Letter Generation:** One-click generation of professional
-  Word official warning letters for Overdue cases.
-- **Interactive Analytics Dashboard:** Book Circulation Trends, Top Borrowers,
-  Most Popular Genres, and Fine Collection Reports & Bulk Data Management: The
-  bulk addition of hundreds of students or books via Excel sheets.
-- **Hybrid Ecosystem Architecture:** Python Desktop Software for Librarian and
-  Web extension for Students.
-- **DELNET National Resource Integration:** Students can access DELNET services.
-- **Digital Study Material Repository:** Goes beyond physical books by allowing
-  admins to upload digital assets (PDF Notes, Past PYQs).
+- **Cloud-Native Real-Time Sync:** Powered by Supabase, ensuring data
+  consistency across all devices instantly.
+- **Smart Notification System:** Automated email triggers for "Pre-Due"
+  reminders (2 days prior) and "Overdue" alerts using cloud-scheduled jobs or
+  background threads.
+- **Seamless Graduate Promotion:** Automated logic to promote students (1st->2nd
+  Year) and archive alumni ("Pass Out") at the year's end.
+- **Automated Document Generation:** One-click generation of professional
+  Word/PDF warning letters for overdue cases.
+- **Interactive Analytics:** Python-driven dashboards showing Circulation
+  Trends, Top Borrowers, and Genre Popularity.
+- **DELNET Integration:** A built-in request pipeline for inter-library loans
+  from the National Library Network.
+- **Digital Repository:** Secure cloud storage for PDF Notes, Previous Year
+  Questions (PYQs), and research papers.
 
 ### EXPECTED OUTCOMES
 
-- **Faster Service & Zero Extra Cost:** Reduces book issue and return time to
-  under 30 seconds, eliminating student queues & Modernizes the library using
-  existing college computers without expensive servers or software fees.
-- **24/7 Availability:** Students can check book availability and download notes
-  digitally from ecosystem, anytime.
-- **Accurate Fines:** Automatically calculates overdue fees, preventing math
-  errors.
-- **Smart Buying:** Analytics show which books are popular, helping the library
-  buy what students actually read.
-- **Secure Inventory:** System automatically blocks "Pass Out" students from
-  borrowing, preventing book loss.
-- **National Reach:** Connects students to the DELNET network to request books
-  from outside the college.
-- **Data Consistency:** The centralized SQLite database ensures that student
-  records and book inventories remain synchronized and duplicate-free across all
-  operations.
-- **Timely Communication:** The automated scheduler triggers email reminders
-  exactly at 9:00 AM (2 days before due dates), ensuring students are notified
-  precisely on time.
+- **24/7 Accessibility:** Library is open on every student's laptop, anytime,
+  anywhere.
+- **Zero Infrastructure Cost:** Using serverless technologies
+  (Supabase/Render/Vercel) eliminates the need for expensive on-premise servers.
+- **Operational Efficiency:** Reduces book issue/return time to <30 seconds.
+- **Data Integrity:** PostgreSQL ensures ACID compliance and robust data
+  handling compared to file-based databases.
+- **National Connectivity:** Bridges the local college with the national DELNET
+  infrastructure.
 
 ---
 
-### TECH STACK
+# TECH STACK
 
-**Software**
+### Software & Cloud Infrastructure
 
-- **Core & Database:** Python 3.11, SQLite3
-- **Desktop Interface & Utilities:** Tkinter, tkcalendar, Pillow (Image
-  Processing), PyInstaller (Deployment), qrcode
-- **Data Processing & Reports:** Pandas, Matplotlib (Analytics), OpenPyXL,
-  xlsxwriter, python-docx (Word Automation)
-- **Connectivity & Local Server:** Flask, Waitress, Requests
-- **Web Extension (Frontend):** React.js, Vite, Tailwind CSS
+- **Core Database:** **Supabase (PostgreSQL)** - The scalable, cloud-native
+  backend.
+- **Desktop Admin App:**
+  - **Language:** Python 3.11+
+  - **GUI:** Tkinter (CustomTkinter for modern UI)
+  - **Data/Logic:** Pandas, Matplotlib, ReportLab/Python-docx
+  - **Connectivity:** `psycopg2-binary`, `requests`, `python-dotenv`
+- **Web Portal / Extension:**
+  - **Framework:** React.js + Vite
+  - **Styling:** Tailwind CSS (Modern, Responsive)
+  - **Hosting:** Vercel / Render
+- **Backend Services:**
+  - **API:** Flask (for specialized endpoints), Gunicorn (Production Server)
+  - **Auth:** Supabase Auth / Custom Hash-Based Auth
 
-**HARDWARE** _None listed_
+### HARDWARE
+
+- Standard Windows Desktop/Laptop for Administration.
+- Any web-enabled device for Students.
 
 ### BLUEPRINT / DESIGN ASPECT
 
-The first-ever priority was **Simplicity with Reliability**. There were two
-important considerations:
-
-### TECHNICAL DOCUMENTS
-
-[View Image]
+**Priority:** "Simplicity with Reliability." The design decouples the heavy
+processing (Admin) from the high-read-traffic (Student), bridged by a robust
+Cloud Database. This ensures that heavy student traffic never slows down the
+librarian's work.
 
 ---
 
@@ -165,40 +167,26 @@ important considerations:
 
 **VALUE ADDITION**
 
-- Cost-Free Deployment
-- Offline Independence
-- Student Empowerment
-- Error-Free Accounting
+- **Modernization:** Leaps from paper/legacy software to Cloud-Native.
+- **Cost-Efficiency:** Utilizes Free-Tier of modern Cloud providers (Supabase,
+  Vercel).
+- **Scalability:** Can handle thousands of records without local hardware
+  upgrades.
 
 **APPLICATION AREAS**
 
-- School & College Libraries
-- Coaching Institutes
+- Government Polytechnics & Engineering Colleges.
+- Research Institutions requiring hybrid physical-digital access.
 
-**SOCIAL IMPACT** The greatest impact that our project produces is the removal
-of the 'barrier' that was existing between students and books. Students
-previously wasted time physically moving to the library to simply check whether
-a book was available. The **Web Extension** now opens the library _24/7 on
-students laptops_.
+**SOCIAL IMPACT** We remove the physical barrier to knowledge. By placing the
+library in the browser, we integrate reading into the student's digital life. It
+saves hundreds of librarian hours through automation (fines, reports, letters),
+transforming them from "storekeepers" to "knowledge facilitators."
 
-For institution of higher education, this eliminates disorganized paperwork. The
-librarian now saves countless hours per day because late fines, warning letters,
-and reports are all processed automatically. The library shifts from being a
-manual storage facility to a total modern hub because this system enables faster
-learning with reduced frustration.
-
-**COMMERCIAL VIABILITY** The **Integrated Academic Resource Ecosystem (IARE)**
-is very commercially viable, as it is addressed to a huge, underserved market:
-small to medium-sized educational institutions.
-
-Evidently, most of the software used in libraries currently is too costly (with
-a high subscription fee) and too complex (requiring hosting server). Our
-software, therefore, addresses this problem as a **one-time investment**
-solution that is also **cost-effective**. The software, which is produced using
-open-source components (Python, SQLite, React), incurs a zero license fee for
-both developers and clients.
-
-Key Commercial Strengths:
+**COMMERCIAL VIABILITY** IARE targets the massive "Digital Transformation"
+market in education. Unlike expensive proprietary ERPs, IARE is lightweight,
+modular, and can be deployed in minutes using modern CI/CD pipelines. It is a
+**Low-Code / No-Code maintenance** solution for the institute.
 
 ---
 
@@ -206,50 +194,34 @@ Key Commercial Strengths:
 
 ### INSTITUTE DETAILS
 
-**Government Polytechnic, Awasari (khurd)** Program: Diploma
+**Government Polytechnic, Awasari (khurd)** _Program:_ Diploma in Computer
+Engineering
 
 ### LOCATION
 
-**Pune** District Registered
+**Pune** District
 
 ### PROJECT GUIDE / MENTOR
 
-**Ajita Sanjay Patil** Department not specified ajitapatilgpa@gmail.com
-7972207199
+**Ajita Sanjay Patil** _Department:_ Computer Engineering _Email:_
+ajitapatilgpa@gmail.com
 
-### TEAM MEMBERS (4)
+### TEAM MEMBERS
 
-1. **Yash Vijay Date** Computer Engineering yashdate36@gmail.com 9527266485
-
-2. **Yash Ajay Magar** Computer Engineering yashajaymagar10@gmail.com 9579559257
-
-3. **Sharvari Sachin Rokade** Computer Engineering sharvari.ssr@gmail.com
-   9511775458
-
-4. **Aryan Ramesh Pohakar** Computer Engineering pohakar.aryan20@gmail.com
-   9767308669
+1. **Yash Vijay Date** - _Lead Developer & Architect_ - yashdate36@gmail.com
+2. **Yash Ajay Magar** - _Backend & Database_ - yashajaymagar10@gmail.com
+3. **Sharvari Sachin Rokade** - _Frontend & UI/UX_ - sharvari.ssr@gmail.com
+4. **Aryan Ramesh Pohakar** - _Documentation & Testing_ -
+   pohakar.aryan20@gmail.com
 
 ---
 
 # Support Requirements
 
-**Incubation Support Needed** `YES`
-
-**Industry Sponsored** `NO`
+**Incubation Support Needed:** `YES` **Industry Sponsored:** `NO`
 
 ---
 
 # Principal Signed Form
 
-_Download the template, sign it, and upload the scanned PDF._
-
-[Download Template]
-
-> Ensure the form is signed and stamped by the college principal before
-> uploading.
-
-**Document Already Uploaded** You have successfully uploaded your signed form.
-No further action is required.
-
-_Declaration: By uploading, I declare this project is original work and has not
-been submitted to any other competition._
+_Declaration: By uploading, I declare this project is original work._
