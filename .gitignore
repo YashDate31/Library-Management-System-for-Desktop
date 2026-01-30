@@ -56,3 +56,6 @@ LibraryApp/Web-Extension/.secret_key
 
 # OneDrive temp files
 ~$*
+
+# Environment variables
+.env
