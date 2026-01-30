@@ -25,8 +25,12 @@ try:
     from database import PostgresConnectionWrapper
     import psycopg2
     from psycopg2.extras import RealDictCursor
+    POSTGRES_AVAILABLE = True
 except ImportError:
-    pass
+    PostgresConnectionWrapper = None
+    psycopg2 = None
+    RealDictCursor = None
+    POSTGRES_AVAILABLE = False
 
 
 # --- Configuration ---
@@ -258,14 +262,13 @@ def cleanup_logs():
 def get_db_connection(local_db_name):
     """Generic connection factory: Postgres (if env) or Local SQLite"""
     database_url = os.getenv('DATABASE_URL')
-    if database_url:
+    if database_url and POSTGRES_AVAILABLE:
         try:
             conn = psycopg2.connect(database_url)
             return PostgresConnectionWrapper(conn)
         except Exception as e:
             print(f"Cloud DB Connection Error: {e}")
-            # Fallback to local if connection fails?
-            # For Web Portal, maybe we just want to fail if configured for cloud.
+            # Fallback to local if connection fails
             pass
             
     # Local SQLite fallback
@@ -1565,6 +1568,66 @@ def get_book_details(book_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/books/<book_id>/rate', methods=['POST'])
+def api_rate_book(book_id):
+    """Submit or update a book rating"""
+    if 'student_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        enrollment_no = session['student_id']
+        data = request.get_json()
+        rating = data.get('rating')
+        
+        if not rating or not isinstance(rating, int) or rating < 1 or rating > 5:
+            return jsonify({'error': 'Rating must be an integer between 1 and 5'}), 400
+        
+        portal_conn = get_portal_db()
+        portal_cursor = portal_conn.cursor()
+        
+        # Check if user already rated this book
+        portal_cursor.execute(
+            "SELECT id FROM book_ratings WHERE enrollment_no = ? AND book_id = ?",
+            (enrollment_no, str(book_id))
+        )
+        existing = portal_cursor.fetchone()
+        
+        if existing:
+            # Update existing rating
+            portal_cursor.execute(
+                "UPDATE book_ratings SET rating = ?, created_at = CURRENT_TIMESTAMP WHERE enrollment_no = ? AND book_id = ?",
+                (rating, enrollment_no, str(book_id))
+            )
+        else:
+            # Insert new rating
+            portal_cursor.execute(
+                "INSERT INTO book_ratings (enrollment_no, book_id, rating) VALUES (?, ?, ?)",
+                (enrollment_no, str(book_id), rating)
+            )
+        
+        portal_conn.commit()
+        
+        # Get updated rating stats
+        portal_cursor.execute(
+            "SELECT AVG(rating), COUNT(rating) FROM book_ratings WHERE book_id = ?",
+            (str(book_id),)
+        )
+        stats = portal_cursor.fetchone()
+        
+        new_avg = round(stats[0], 1) if stats[0] else 0
+        new_count = stats[1] if stats[1] else 0
+        
+        portal_conn.close()
+        
+        return jsonify({
+            'status': 'success',
+            'new_avg': new_avg,
+            'new_count': new_count
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/books/<book_id>/notify', methods=['POST'])
 def add_to_waitlist(book_id):
     """Add student to waitlist for out-of-stock book."""
@@ -2097,7 +2160,7 @@ def api_admin_approve_request(req_id):
     cursor = conn.cursor()
     
     # Get the request details
-    cursor.execute("SELECT * FROM requests WHERE id = ?", (req_id,))
+    cursor.execute("SELECT * FROM requests WHERE req_id = ?", (req_id,))
     req = cursor.fetchone()
     
     if not req:
@@ -2105,7 +2168,7 @@ def api_admin_approve_request(req_id):
         return jsonify({'status': 'error', 'message': 'Request not found'}), 404
     
     # Update status to approved
-    cursor.execute("UPDATE requests SET status = 'approved' WHERE id = ?", (req_id,))
+    cursor.execute("UPDATE requests SET status = 'approved' WHERE req_id = ?", (req_id,))
     
     # NOTIFICATION TRIGGER: Notify student
     # Parse details to get book name
@@ -2247,10 +2310,10 @@ def api_admin_reject_request(req_id):
     conn = get_portal_db()
     cursor = conn.cursor()
     
-    cursor.execute("UPDATE requests SET status = 'rejected' WHERE id = ?", (req_id,))
+    cursor.execute("UPDATE requests SET status = 'rejected' WHERE req_id = ?", (req_id,))
     
     # Get enrollment to notify
-    cursor.execute("SELECT enrollment_no, request_type FROM requests WHERE id = ?", (req_id,))
+    cursor.execute("SELECT enrollment_no, request_type, details FROM requests WHERE req_id = ?", (req_id,))
     req = cursor.fetchone()
     
     if req:

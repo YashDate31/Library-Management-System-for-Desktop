@@ -55,9 +55,11 @@ export default function BookDetailModal({ isOpen, onClose, bookId }) {
 
     try {
       const { data } = await axios.post(`/api/books/${book.book_id}/rate`, { rating });
-      if (data.success) {
+      if (data.status === 'success') {
         setRatingStats({ avg: data.new_avg, count: data.new_count });
         addToast('Rating submitted!', 'success');
+      } else {
+        throw new Error(data.error || 'Failed to submit rating');
       }
     } catch (e) {
       addToast('Failed to submit rating', 'error');
