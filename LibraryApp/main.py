@@ -26,6 +26,12 @@ import time
 import socket
 import qrcode
 from PIL import ImageTk, Image
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib import colors as rl_colors
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 # Add Web-Extension directory to path to allow import
 sys.path.append(os.path.join(os.path.dirname(__file__), 'Web-Extension'))
@@ -80,6 +86,23 @@ except Exception:
 # Add the current directory to path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from database import Database
+from login_loader import LoginLoader
+from autocomplete_widget import AutocompleteEntry
+
+# Performance Optimization Modules
+try:
+    from database_pool import get_pool, ConnectionPool
+    from email_batch_service import EmailBatchService, send_overdue_emails_async
+    from sync_manager import create_sync_manager, SyncManager
+    from config_manager import get_config, ConfigManager
+    PERFORMANCE_MODULES_AVAILABLE = True
+except Exception as e:
+    print(f"Performance modules not available: {e}")
+    PERFORMANCE_MODULES_AVAILABLE = False
+    ConnectionPool = None
+    EmailBatchService = None
+    SyncManager = None
+    ConfigManager = None
 
 # ---------------------------------------------------------------------------
 # Application Version (update this each time you create a new packaged build)
@@ -437,8 +460,39 @@ class LibraryApp:
         # Initialize database
         self.db = Database()
         
+        # Initialize performance optimization systems
+        if PERFORMANCE_MODULES_AVAILABLE:
+            try:
+                self.config_manager = get_config()
+                self.connection_pool = get_pool(self.db)
+                self.email_batch_service = EmailBatchService(
+                    max_workers=self.config_manager.get_email_config()['max_workers'],
+                    batch_size=self.config_manager.get_email_config()['batch_size']
+                )
+                self.sync_manager = create_sync_manager(self.db)
+                # Start auto-sync if enabled
+                if self.config_manager.is_sync_enabled():
+                    sync_interval = self.config_manager.get_sync_interval()
+                    threading.Thread(
+                        target=self.sync_manager.auto_sync_daemon,
+                        args=(sync_interval,),
+                        daemon=True
+                    ).start()
+                    print(f"✅ Auto-sync started (interval: {sync_interval} minutes)")
+                print("✅ Performance optimization modules loaded successfully")
+            except Exception as e:
+                print(f"⚠️ Performance modules initialization failed: {e}")
+                self.config_manager = None
+                self.connection_pool = None
+                self.email_batch_service = None
+                self.sync_manager = None
+        else:
+            self.config_manager = None
+            self.connection_pool = None
+            self.email_batch_service = None
+            self.sync_manager = None
+        
         # Run data integrity check on startup (Background Thread to prevent freezing)
-        import threading
         def _check_integrity_thread():
             print("Running database integrity check...")
             try:
@@ -456,6 +510,33 @@ class LibraryApp:
                 print(f"Error during integrity check: {e}")
 
         threading.Thread(target=_check_integrity_thread, daemon=True).start()
+        
+        # Auto-resume sync if overdue (after app restart)
+        if PERFORMANCE_MODULES_AVAILABLE and self.sync_manager:
+            def _check_and_resume_sync():
+                try:
+                    time.sleep(3)  # Wait for app to fully initialize
+                    sync_log_path = os.path.join(os.path.dirname(self.db.db_path), 'sync_log.json')
+                    if os.path.exists(sync_log_path):
+                        with open(sync_log_path, 'r') as f:
+                            data = json.load(f)
+                            last_sync = data.get('last_sync', '2000-01-01 00:00:00')
+                            last_sync_dt = datetime.strptime(last_sync, '%Y-%m-%d %H:%M:%S')
+                            minutes_since = (datetime.now() - last_sync_dt).total_seconds() / 60
+                            sync_interval = self.config_manager.get_sync_interval()
+                            
+                            if minutes_since >= sync_interval:
+                                print(f"⚠️  Sync overdue ({int(minutes_since)} min since last sync)")
+                                print("🔄 Triggering catch-up sync...")
+                                result = self.sync_manager.sync_now(direction='both')
+                                if 'error' not in result:
+                                    print(f"✅ Catch-up sync completed: {result.get('records_synced', 0)} records")
+                                else:
+                                    print(f"❌ Catch-up sync failed: {result.get('error')}")
+                except Exception as e:
+                    print(f"Error checking sync status: {e}")
+            
+            threading.Thread(target=_check_and_resume_sync, daemon=True).start()
 
         # Notify user if calendar support missing
         if DateEntry is None:
@@ -1311,26 +1392,27 @@ Government Polytechnic Awasari (Kh)"""
         thread.start()
 
     def create_login_interface(self):
-        """Render the login screen with college branding"""
+        """Render the login screen with dark card design"""
         for w in self.root.winfo_children():
             w.destroy()
 
         root = self.root
-        root.configure(bg=self.colors['primary'])
-
-        wrapper = tk.Frame(root, bg=self.colors['primary'])
-        wrapper.pack(fill=tk.BOTH, expand=True)
-
-        # Small top spacer so content is nearer the top-middle
-        tk.Frame(wrapper, height=40, bg=self.colors['primary']).pack(fill=tk.X)
-
-        # Top branding area: logo + titles
-        branding = tk.Frame(wrapper, bg=self.colors['primary'])
-        branding.pack(pady=(0, 10))
-
-        # Logo (reuse same file as main header if present).
-        # When running as EXE, images are in the PyInstaller temp dir (sys._MEIPASS).
-        logo_path = None
+        
+        # Light gray/white background
+        main_bg = '#e8ecef'
+        bg_frame = tk.Frame(root, bg=main_bg)
+        bg_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Center container frame
+        center_frame = tk.Frame(bg_frame, bg=main_bg)
+        center_frame.place(relx=0.5, rely=0.5, anchor='center')
+        
+        # Logo/Branding section (above the card)
+        branding = tk.Frame(center_frame, bg=main_bg)
+        branding.pack(pady=(0, 25))
+        
+        # Try to load college logo
+        logo_loaded = False
         try:
             from PIL import Image, ImageTk
             if hasattr(sys, '_MEIPASS'):
@@ -1340,93 +1422,180 @@ Government Polytechnic Awasari (Kh)"""
             for candidate in ("logo.png", "college_logo.png", "college_logo.jpg"):
                 p = os.path.join(base_dir, candidate)
                 if os.path.exists(p):
-                    logo_path = p
+                    img = Image.open(p)
+                    img.thumbnail((90, 90), Image.Resampling.LANCZOS)
+                    self.login_logo_photo = ImageTk.PhotoImage(img)
+                    tk.Label(branding, image=self.login_logo_photo, bg=main_bg).pack(pady=(0, 15))
+                    logo_loaded = True
                     break
-            if logo_path:
-                img = Image.open(logo_path)
-                img.thumbnail((96, 96), Image.Resampling.LANCZOS)
-                self.login_logo_photo = ImageTk.PhotoImage(img)
-                tk.Label(branding, image=self.login_logo_photo, bg=self.colors['primary']).pack(pady=(0, 8))
-            else:
-                raise FileNotFoundError
         except Exception:
+            pass
+        
+        # If no logo found, show a decorative book icon
+        if not logo_loaded:
             tk.Label(
                 branding,
                 text="📚",
-                font=('Segoe UI', 40, 'bold'),
-                bg=self.colors['primary'],
-                fg=self.colors['secondary']
-            ).pack(pady=(0, 8))
-
-        # College name (big title)
+                font=('Segoe UI', 48),
+                bg=main_bg,
+                fg='#2c7a7b'
+            ).pack(pady=(0, 15))
+        
+        # College Name - Teal/Cyan color, italic
         tk.Label(
             branding,
             text="Government Polytechnic Awasari (Kh)",
-            font=('Segoe UI', 24, 'bold'),
-            bg=self.colors['primary'],
-            fg=self.colors['accent']
+            font=('Segoe UI', 20, 'bold italic'),
+            bg=main_bg,
+            fg='#2c7a7b'
         ).pack()
-
-        # Department / app name (subtitle)
+        
+        # Subtitle - Library of Computer Department
         tk.Label(
             branding,
             text="Library of Computer Department",
-            font=('Segoe UI', 14),
-            bg=self.colors['primary'],
-            fg='#666666'
-        ).pack(pady=(6, 0))
-
-        # Login card with subtle shadow
-        card_outer = tk.Frame(wrapper, bg=self.colors['primary'])
-        card_outer.pack(pady=(16, 0))
-
-        shadow = tk.Frame(card_outer, bg='#d0d7e2')
-        shadow.pack(padx=2, pady=2)
-
-        card = tk.Frame(shadow, bg='#3a5373', bd=0, relief='flat', padx=50, pady=36)
+            font=('Segoe UI', 11),
+            bg=main_bg,
+            fg='#6b7280'
+        ).pack(pady=(5, 0))
+        
+        # Dark blue/slate login card
+        card_color = '#3d5a73'
+        card = tk.Frame(center_frame, bg=card_color, padx=45, pady=35)
         card.pack()
-
-        tk.Label(card, text="Admin Login", font=('Segoe UI', 20, 'bold'), bg='#3a5373', fg='white').pack(pady=(0,14))
-
-        tk.Label(card, text="Username", font=('Segoe UI', 10, 'bold'), bg='#3a5373', fg='white').pack(anchor='w')
-        user_entry = tk.Entry(card, font=('Segoe UI', 11), width=28, bg='#2b3e56', fg='white', insertbackground='white', relief='solid', bd=1)
-        user_entry.pack(pady=(2,12), ipady=6)
-
-        tk.Label(card, text="Password", font=('Segoe UI', 10, 'bold'), bg='#3a5373', fg='white').pack(anchor='w')
-        pass_entry = tk.Entry(card, font=('Segoe UI', 11), show='*', width=28, bg='#2b3e56', fg='white', insertbackground='white', relief='solid', bd=1)
-        pass_entry.pack(pady=(2,18), ipady=6)
+        
+        # "Admin Login" header inside card
+        tk.Label(
+            card,
+            text="Admin Login",
+            font=('Segoe UI', 16, 'bold'),
+            bg=card_color,
+            fg='white'
+        ).pack(pady=(0, 25))
+        
+        # Username label and field
+        tk.Label(
+            card,
+            text="Username",
+            font=('Segoe UI', 10),
+            bg=card_color,
+            fg='#d1d5db',
+            anchor='w'
+        ).pack(fill=tk.X, pady=(0, 5))
+        
+        user_entry = tk.Entry(
+            card,
+            font=('Segoe UI', 12),
+            width=30,
+            bg='#4a6a82',
+            fg='white',
+            insertbackground='white',
+            relief='flat',
+            bd=0
+        )
+        user_entry.pack(fill=tk.X, ipady=10, padx=2)
+        
+        # Password label and field
+        tk.Label(
+            card,
+            text="Password",
+            font=('Segoe UI', 10),
+            bg=card_color,
+            fg='#d1d5db',
+            anchor='w'
+        ).pack(fill=tk.X, pady=(20, 5))
+        
+        pass_entry = tk.Entry(
+            card,
+            font=('Segoe UI', 12),
+            width=30,
+            bg='#4a6a82',
+            fg='white',
+            insertbackground='white',
+            relief='flat',
+            bd=0,
+            show='●'
+        )
+        pass_entry.pack(fill=tk.X, ipady=10, padx=2)
 
         def do_login():
             username = user_entry.get().strip()
             password = pass_entry.get().strip()
-            # Use stored password from settings, fallback to hardcoded default
+                
             stored_password = self.library_settings.get('admin_password', ADMIN_PASSWORD)
             
             if username == ADMIN_USERNAME and password == stored_password:
+                for w in self.root.winfo_children():
+                    w.destroy()
+                # Go directly to main interface (no loader)
                 self.create_main_interface()
             else:
-                messagebox.showerror('Login Error','Invalid username or password!')
+                messagebox.showerror('Login Error', 'Invalid username or password!', parent=self.root)
 
+        # Cyan Login button with lock icon
+        btn_color = '#22d3ee'
+        btn_hover = '#06b6d4'
         login_btn = tk.Button(
             card,
-            text='👨‍💻 Login',
-            font=('Segoe UI',12,'bold'),
-            bg='#00bcd4', fg='white', bd=0, relief='flat', cursor='hand2',
+            text='🔒  Login',
+            font=('Segoe UI', 12, 'bold'),
+            bg=btn_color,
+            fg='#1e3a5f',
+            bd=0,
+            relief='flat',
+            cursor='hand2',
             command=do_login,
-            activebackground='#0097a7', activeforeground='white'
+            activebackground=btn_hover,
+            activeforeground='#1e3a5f',
+            width=28
         )
-        login_btn.pack(fill=tk.X, ipady=8)
+        login_btn.pack(fill=tk.X, ipady=10, pady=(30, 0))
+        
+        # Hover effects for button
+        def on_enter(e):
+            login_btn.config(bg=btn_hover)
+        def on_leave(e):
+            login_btn.config(bg=btn_color)
+        login_btn.bind('<Enter>', on_enter)
+        login_btn.bind('<Leave>', on_leave)
+        
+        # Forgot Password link
+        forgot_link = tk.Label(
+            card,
+            text="Forgot Password?",
+            font=('Segoe UI', 9),
+            bg=card_color,
+            fg='#93c5fd',
+            cursor='hand2'
+        )
+        forgot_link.pack(pady=(15, 0))
+        
+        def on_forgot_enter(e):
+            forgot_link.config(fg='#bfdbfe', font=('Segoe UI', 9, 'underline'))
+        def on_forgot_leave(e):
+            forgot_link.config(fg='#93c5fd', font=('Segoe UI', 9))
+        forgot_link.bind('<Enter>', on_forgot_enter)
+        forgot_link.bind('<Leave>', on_forgot_leave)
+        forgot_link.bind('<Button-1>', lambda e: messagebox.showinfo("Forgot Password", "Please contact the library administrator to reset your password.", parent=self.root))
+        
+        # Version number at bottom of card
+        tk.Label(
+            card,
+            text=f"v{APP_VERSION}",
+            font=('Segoe UI', 8, 'italic'),
+            bg=card_color,
+            fg='#6b7280'
+        ).pack(pady=(15, 0))
 
         def handle_enter(event):
-            # If entries no longer exist (e.g., after login), ignore
             try:
                 if not (user_entry.winfo_exists() and pass_entry.winfo_exists()):
                     return 'break'
             except Exception:
                 return 'break'
             do_login()
-            return 'break'  # Stop propagation (avoid duplicate triggers)
-        # Bind to the login card so it's automatically cleaned up when the login UI is destroyed
+            return 'break'
+        
         card.bind('<Return>', handle_enter)
         user_entry.focus()
     
@@ -1466,6 +1635,7 @@ Government Polytechnic Awasari (Kh)"""
         self.create_transactions_tab()
         self.create_records_tab()  # New records tab
         self.create_analysis_tab()  # New analysis tab with charts
+        self.create_reports_tab()  # Reports tab with Excel and PDF export
         self.create_admin_tab()  # Admin Settings tab
         self.create_student_portal_tab()  # Student Portal tab
         
@@ -1843,6 +2013,1350 @@ Government Polytechnic Awasari (Kh)"""
 
         # Populate dashboard issued books
         self.refresh_dashboard_borrowed()
+
+    def create_reports_tab(self):
+        """Create enhanced reports tab with calendar date pickers and improved UI"""
+        reports_frame = tk.Frame(self.notebook, bg='#f0f2f5')
+        self.notebook.add(reports_frame, text="📄 Reports")
+        
+        # Main scrollable container
+        canvas = tk.Canvas(reports_frame, bg='#f0f2f5', highlightthickness=0)
+        scrollbar = ttk.Scrollbar(reports_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg='#f0f2f5')
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas_window = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        def resize_frame(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+        canvas.bind('<Configure>', resize_frame)
+        
+        # Mouse wheel scrolling
+        def _on_mousewheel(event):
+            try:
+                if canvas.winfo_exists():
+                    canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            except Exception:
+                pass
+        
+        def bind_mousewheel(widget):
+            widget.bind("<MouseWheel>", _on_mousewheel)
+            for child in widget.winfo_children():
+                bind_mousewheel(child)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Enhanced Header with gradient effect simulation
+        header_frame = tk.Frame(scrollable_frame, bg='white', relief='flat', bd=0)
+        header_frame.pack(fill=tk.X, padx=30, pady=(20, 15))
+        
+        # Add subtle shadow
+        shadow = tk.Frame(scrollable_frame, bg='#d0d0d0', height=2)
+        shadow.pack(fill=tk.X, padx=30)
+        
+        header_content = tk.Frame(header_frame, bg='white')
+        header_content.pack(fill=tk.X, padx=30, pady=20)
+        
+        title_container = tk.Frame(header_content, bg='white')
+        title_container.pack(anchor='w')
+        
+        tk.Label(
+            title_container,
+            text="📄",
+            font=('Segoe UI', 36),
+            bg='white',
+            fg=self.colors['secondary']
+        ).pack(side=tk.LEFT)
+        
+        title_text_frame = tk.Frame(title_container, bg='white')
+        title_text_frame.pack(side=tk.LEFT, padx=(15, 0))
+        
+        tk.Label(
+            title_text_frame,
+            text="Reports & Export Center",
+            font=('Segoe UI', 26, 'bold'),
+            bg='white',
+            fg='#1a1a2e'
+        ).pack(anchor='w')
+        
+        tk.Label(
+            title_text_frame,
+            text="📊 Export comprehensive reports • 📅 Use calendar to select dates • 🎯 No mandatory filters",
+            font=('Segoe UI', 11),
+            bg='white',
+            fg='#666'
+        ).pack(anchor='w', pady=(3, 0))
+        
+        # Content area
+        content_frame = tk.Frame(scrollable_frame, bg='#f0f2f5')
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=10)
+        
+        # Helper function to create enhanced report cards with calendar
+        def create_report_card(parent, title, icon, description, color, report_type):
+            # Card with shadow
+            card_container = tk.Frame(parent, bg='#f0f2f5')
+            
+            shadow_frame = tk.Frame(card_container, bg='#c8c8c8')
+            shadow_frame.pack(padx=3, pady=3, fill=tk.BOTH, expand=True)
+            
+            card = tk.Frame(shadow_frame, bg='white', padx=30, pady=25)
+            card.pack(fill=tk.BOTH, expand=True)
+            
+            # Card header with icon
+            header = tk.Frame(card, bg='white')
+            header.pack(fill=tk.X, pady=(0, 12))
+            
+            # Larger, rounded icon
+            icon_frame = tk.Frame(header, bg=color, width=50, height=50)
+            icon_frame.pack(side=tk.LEFT)
+            icon_frame.pack_propagate(False)
+            
+            icon_label = tk.Label(
+                icon_frame,
+                text=icon,
+                font=('Segoe UI', 22),
+                bg=color,
+                fg='white'
+            )
+            icon_label.pack(expand=True)
+            
+            title_frame = tk.Frame(header, bg='white')
+            title_frame.pack(side=tk.LEFT, padx=(15, 0), fill=tk.X, expand=True)
+            
+            tk.Label(
+                title_frame,
+                text=title,
+                font=('Segoe UI', 16, 'bold'),
+                bg='white',
+                fg='#1a1a2e'
+            ).pack(anchor='w')
+            
+            tk.Label(
+                title_frame,
+                text=description,
+                font=('Segoe UI', 10),
+                bg='white',
+                fg='#777',
+                justify='left',
+                wraplength=350
+            ).pack(anchor='w', pady=(2, 0))
+            
+            # Separator
+            sep = tk.Frame(card, bg='#e0e0e0', height=1)
+            sep.pack(fill=tk.X, pady=(0, 15))
+            
+            # Filters section - OPTIONAL
+            filters_section = tk.Frame(card, bg='#f8f9fa', relief='flat')
+            filters_section.pack(fill=tk.X, pady=(0, 15))
+            
+            filters_header = tk.Frame(filters_section, bg='#f8f9fa')
+            filters_header.pack(fill=tk.X, padx=15, pady=(12, 8))
+            
+            tk.Label(
+                filters_header,
+                text="🔍 Optional Filters",
+                font=('Segoe UI', 11, 'bold'),
+                bg='#f8f9fa',
+                fg='#333'
+            ).pack(side=tk.LEFT)
+            
+            tk.Label(
+                filters_header,
+                text="(Leave empty to export all data)",
+                font=('Segoe UI', 9, 'italic'),
+                bg='#f8f9fa',
+                fg='#888'
+            ).pack(side=tk.LEFT, padx=(10, 0))
+            
+            # Date range with calendar pickers
+            date_frame = tk.Frame(filters_section, bg='#f8f9fa')
+            date_frame.pack(fill=tk.X, padx=15, pady=(0, 10))
+            
+            # From Date
+            from_container = tk.Frame(date_frame, bg='#f8f9fa')
+            from_container.pack(side=tk.LEFT, padx=(0, 20))
+            
+            tk.Label(
+                from_container,
+                text="📅 From Date:",
+                font=('Segoe UI', 9, 'bold'),
+                bg='#f8f9fa',
+                fg='#555'
+            ).pack(anchor='w')
+            
+            try:
+                from_cal = DateEntry(
+                    from_container,
+                    width=15,
+                    background=color,
+                    foreground='white',
+                    borderwidth=2,
+                    font=('Segoe UI', 10),
+                    date_pattern='yyyy-mm-dd'
+                )
+                from_cal.pack(pady=(3, 0))
+                # Clear initial date
+                from_cal.delete(0, tk.END)
+            except Exception:
+                from_cal = tk.Entry(from_container, font=('Segoe UI', 10), width=15)
+                from_cal.pack(pady=(3, 0))
+            
+            # To Date
+            to_container = tk.Frame(date_frame, bg='#f8f9fa')
+            to_container.pack(side=tk.LEFT)
+            
+            tk.Label(
+                to_container,
+                text="📅 To Date:",
+                font=('Segoe UI', 9, 'bold'),
+                bg='#f8f9fa',
+                fg='#555'
+            ).pack(anchor='w')
+            
+            try:
+                to_cal = DateEntry(
+                    to_container,
+                    width=15,
+                    background=color,
+                    foreground='white',
+                    borderwidth=2,
+                    font=('Segoe UI', 10),
+                    date_pattern='yyyy-mm-dd'
+                )
+                to_cal.pack(pady=(3, 0))
+                # Clear initial date
+                to_cal.delete(0, tk.END)
+            except Exception:
+                to_cal = tk.Entry(to_container, font=('Segoe UI', 10), width=15)
+                to_cal.pack(pady=(3, 0))
+            
+            # Quick date presets
+            preset_frame = tk.Frame(date_frame, bg='#f8f9fa')
+            preset_frame.pack(side=tk.LEFT, padx=(20, 0))
+            
+            tk.Label(
+                preset_frame,
+                text="⚡ Quick:",
+                font=('Segoe UI', 9, 'bold'),
+                bg='#f8f9fa',
+                fg='#555'
+            ).pack(anchor='w')
+            
+            preset_btns = tk.Frame(preset_frame, bg='#f8f9fa')
+            preset_btns.pack(pady=(3, 0))
+            
+            def set_last_7_days():
+                from_cal.delete(0, tk.END)
+                to_cal.delete(0, tk.END)
+                from_cal.insert(0, (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d'))
+                to_cal.insert(0, datetime.now().strftime('%Y-%m-%d'))
+            
+            def set_last_30_days():
+                from_cal.delete(0, tk.END)
+                to_cal.delete(0, tk.END)
+                from_cal.insert(0, (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'))
+                to_cal.insert(0, datetime.now().strftime('%Y-%m-%d'))
+            
+            def set_this_year():
+                from_cal.delete(0, tk.END)
+                to_cal.delete(0, tk.END)
+                from_cal.insert(0, f"{datetime.now().year}-01-01")
+                to_cal.insert(0, datetime.now().strftime('%Y-%m-%d'))
+            
+            def clear_dates():
+                from_cal.delete(0, tk.END)
+                to_cal.delete(0, tk.END)
+            
+            for text, cmd, bg_col in [
+                ("7 Days", set_last_7_days, '#007bff'),
+                ("30 Days", set_last_30_days, '#007bff'),
+                ("This Year", set_this_year, '#007bff'),
+                ("Clear", clear_dates, '#6c757d')
+            ]:
+                btn = tk.Button(
+                    preset_btns,
+                    text=text,
+                    font=('Segoe UI', 8),
+                    bg=bg_col,
+                    fg='white',
+                    relief='flat',
+                    padx=8,
+                    pady=3,
+                    cursor='hand2',
+                    command=cmd
+                )
+                btn.pack(side=tk.LEFT, padx=2)
+                
+                # Hover effect
+                def on_enter(e, b=btn, col=bg_col):
+                    if col == '#6c757d':
+                        b.config(bg='#5a6268')
+                    else:
+                        b.config(bg='#0056b3')
+                
+                def on_leave(e, b=btn, col=bg_col):
+                    b.config(bg=col)
+                
+                btn.bind('<Enter>', on_enter)
+                btn.bind('<Leave>', on_leave)
+            
+            # Additional type-specific filters
+            filter_var = tk.StringVar(value="All")
+            
+            if report_type in ["students", "books", "transactions"]:
+                type_filter_frame = tk.Frame(filters_section, bg='#f8f9fa')
+                type_filter_frame.pack(fill=tk.X, padx=15, pady=(0, 12))
+                
+                if report_type == "students":
+                    label_text = "👥 Year Filter:"
+                    values = ["All", "1st Year", "2nd Year", "3rd Year", "Pass Out"]
+                elif report_type == "books":
+                    label_text = "📚 Category Filter:"
+                    values = ["All", "Technology", "Textbook", "Research"]
+                else:  # transactions
+                    label_text = "📖 Status Filter:"
+                    values = ["All", "Active", "Returned", "Overdue"]
+                
+                tk.Label(
+                    type_filter_frame,
+                    text=label_text,
+                    font=('Segoe UI', 9, 'bold'),
+                    bg='#f8f9fa',
+                    fg='#555'
+                ).pack(side=tk.LEFT, padx=(0, 10))
+                
+                filter_combo = ttk.Combobox(
+                    type_filter_frame,
+                    textvariable=filter_var,
+                    values=values,
+                    state="readonly",
+                    width=20,
+                    font=('Segoe UI', 10)
+                )
+                filter_combo.pack(side=tk.LEFT)
+            
+            # Export buttons section
+            export_section = tk.Frame(card, bg='white')
+            export_section.pack(fill=tk.X, pady=(5, 0))
+            
+            def get_filter_values():
+                date_from = from_cal.get().strip() if hasattr(from_cal, 'get') else ""
+                date_to = to_cal.get().strip() if hasattr(to_cal, 'get') else ""
+                return date_from, date_to, filter_var.get()
+            
+            # Preview button
+            preview_btn = tk.Button(
+                export_section,
+                text="👁️ Preview Data",
+                font=('Segoe UI', 11, 'bold'),
+                bg='#17a2b8',
+                fg='white',
+                relief='flat',
+                padx=25,
+                pady=12,
+                cursor='hand2',
+                command=lambda: self._preview_report(report_type, *get_filter_values())
+            )
+            preview_btn.pack(side=tk.LEFT, padx=(0, 10))
+            
+            # Excel button
+            excel_btn = tk.Button(
+                export_section,
+                text="📊 Export Excel",
+                font=('Segoe UI', 11, 'bold'),
+                bg='#28a745',
+                fg='white',
+                relief='flat',
+                padx=25,
+                pady=12,
+                cursor='hand2',
+                command=lambda: self._export_report(report_type, 'excel', *get_filter_values())
+            )
+            excel_btn.pack(side=tk.LEFT, padx=(0, 10))
+            
+            # PDF button
+            pdf_btn = tk.Button(
+                export_section,
+                text="📑 Export PDF",
+                font=('Segoe UI', 11, 'bold'),
+                bg='#dc3545',
+                fg='white',
+                relief='flat',
+                padx=25,
+                pady=12,
+                cursor='hand2',
+                command=lambda: self._export_report(report_type, 'pdf', *get_filter_values())
+            )
+            pdf_btn.pack(side=tk.LEFT)
+            
+            # Hover effects with smooth transitions
+            def create_hover(btn, normal_bg, hover_bg):
+                def on_enter(e):
+                    btn.config(bg=hover_bg)
+                def on_leave(e):
+                    btn.config(bg=normal_bg)
+                btn.bind('<Enter>', on_enter)
+                btn.bind('<Leave>', on_leave)
+            
+            create_hover(preview_btn, '#17a2b8', '#138496')
+            create_hover(excel_btn, '#28a745', '#218838')
+            create_hover(pdf_btn, '#dc3545', '#c82333')
+            
+            return card_container
+        
+        # Create report cards in 2-column grid
+        # Row 1: Students and Books
+        row1 = tk.Frame(content_frame, bg='#f0f2f5')
+        row1.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
+        row1.grid_columnconfigure(0, weight=1)
+        row1.grid_columnconfigure(1, weight=1)
+        
+        students_card = create_report_card(
+            row1,
+            "Students Report",
+            "👥",
+            "Complete roster of all registered students with enrollment details and academic information",
+            '#2E86AB',
+            'students'
+        )
+        students_card.grid(row=0, column=0, sticky='nsew', padx=(0, 10))
+        
+        books_card = create_report_card(
+            row1,
+            "Books Catalog",
+            "📚",
+            "Comprehensive library inventory with book status, categories, and availability",
+            '#28a745',
+            'books'
+        )
+        books_card.grid(row=0, column=1, sticky='nsew', padx=(10, 0))
+        
+        # Row 2: Transactions and Overdue
+        row2 = tk.Frame(content_frame, bg='#f0f2f5')
+        row2.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
+        row2.grid_columnconfigure(0, weight=1)
+        row2.grid_columnconfigure(1, weight=1)
+        
+        transactions_card = create_report_card(
+            row2,
+            "Transactions Log",
+            "📖",
+            "Detailed history of all book loans, returns, and current borrowing status",
+            '#6f42c1',
+            'transactions'
+        )
+        transactions_card.grid(row=0, column=0, sticky='nsew', padx=(0, 10))
+        
+        overdue_card = create_report_card(
+            row2,
+            "Overdue Analysis",
+            "⚠️",
+            "Active overdue books with student contacts, days late, and calculated fines",
+            '#dc3545',
+            'overdue'
+        )
+        overdue_card.grid(row=0, column=1, sticky='nsew', padx=(10, 0))
+        
+        # Row 3: Promotion and Activity
+        row3 = tk.Frame(content_frame, bg='#f0f2f5')
+        row3.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
+        row3.grid_columnconfigure(0, weight=1)
+        row3.grid_columnconfigure(1, weight=1)
+        
+        promotion_card = create_report_card(
+            row3,
+            "Promotion History",
+            "⬆️",
+            "Complete record of student year progressions with academic year tracking",
+            '#17a2b8',
+            'promotions'
+        )
+        promotion_card.grid(row=0, column=0, sticky='nsew', padx=(0, 10))
+        
+        activity_card = create_report_card(
+            row3,
+            "Admin Activity Audit",
+            "📋",
+            "Comprehensive audit trail of all system operations and administrative actions",
+            '#ffc107',
+            'admin_activity'
+        )
+        activity_card.grid(row=0, column=1, sticky='nsew', padx=(10, 0))
+        
+        # Bind mousewheel after all widgets created
+        self.root.after(100, lambda: bind_mousewheel(scrollable_frame))
+    
+    def _preview_report(self, report_type, date_from, date_to, filter_value):
+        """Preview report data in a dialog before exporting"""
+        try:
+            # Get report data
+            if report_type == 'students':
+                data = self._get_students_report_data(filter_value, date_from, date_to)
+                title = "Students Report Preview"
+                columns = ['Enrollment No', 'Name', 'Email', 'Phone', 'Year', 'Registration Date']
+            elif report_type == 'books':
+                data = self._get_books_report_data(filter_value, date_from, date_to)
+                title = "Books Report Preview"
+                columns = ['Book ID', 'Title', 'Author', 'Category', 'Status', 'Condition', 'Added Date']
+            elif report_type == 'transactions':
+                data = self._get_transactions_report_data(filter_value, date_from, date_to)
+                title = "Transactions Report Preview"
+                columns = ['Enrollment', 'Student', 'Book ID', 'Book', 'Issue', 'Due', 'Return', 'Status', 'Fine']
+            elif report_type == 'overdue':
+                data = self._get_overdue_report_data(date_from, date_to)
+                title = "Overdue Books Preview"
+                columns = ['Enrollment', 'Student', 'Phone', 'Book ID', 'Title', 'Issue', 'Due', 'Days', 'Fine']
+            elif report_type == 'promotions':
+                data = self._get_promotions_report_data(date_from, date_to)
+                title = "Promotion History Preview"
+                columns = ['Date', 'Action', 'Students', 'From', 'To', 'Details']
+            elif report_type == 'admin_activity':
+                data = self._get_admin_activity_report_data(date_from, date_to)
+                title = "Admin Activity Preview"
+                columns = ['Timestamp', 'Action', 'Details', 'User']
+            else:
+                return
+            
+            if not data:
+                messagebox.showinfo("Preview", "No data available with the selected filters.")
+                return
+            
+            # Create preview dialog
+            preview_dialog = tk.Toplevel(self.root)
+            preview_dialog.title(title)
+            preview_dialog.geometry("1000x600")
+            preview_dialog.configure(bg='white')
+            preview_dialog.transient(self.root)
+            
+            # Header
+            header = tk.Frame(preview_dialog, bg=self.colors['secondary'], height=60)
+            header.pack(fill=tk.X)
+            header.pack_propagate(False)
+            
+            tk.Label(
+                header,
+                text=f"👁️ {title}",
+                font=('Segoe UI', 16, 'bold'),
+                bg=self.colors['secondary'],
+                fg='white'
+            ).pack(side=tk.LEFT, padx=20, pady=15)
+            
+            tk.Label(
+                header,
+                text=f"Total Records: {len(data)}",
+                font=('Segoe UI', 12),
+                bg=self.colors['secondary'],
+                fg='#FFD700'
+            ).pack(side=tk.RIGHT, padx=20)
+            
+            # Tree frame
+            tree_frame = tk.Frame(preview_dialog, bg='white')
+            tree_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+            
+            # Create treeview
+            tree = ttk.Treeview(tree_frame, columns=columns, show='headings', height=20)
+            
+            # Configure columns
+            for col in columns:
+                tree.heading(col, text=col)
+                tree.column(col, width=100, anchor='center')
+            
+            # Add scrollbars
+            vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+            hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
+            tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+            
+            tree.grid(row=0, column=0, sticky='nsew')
+            vsb.grid(row=0, column=1, sticky='ns')
+            hsb.grid(row=1, column=0, sticky='ew')
+            
+            tree_frame.grid_rowconfigure(0, weight=1)
+            tree_frame.grid_columnconfigure(0, weight=1)
+            
+            # Insert data
+            for row_data in data:
+                tree.insert('', tk.END, values=row_data)
+            
+            # Close button
+            tk.Button(
+                preview_dialog,
+                text="✓ Close Preview",
+                font=('Segoe UI', 11, 'bold'),
+                bg=self.colors['secondary'],
+                fg='white',
+                relief='flat',
+                padx=30,
+                pady=10,
+                cursor='hand2',
+                command=preview_dialog.destroy
+            ).pack(pady=(0, 20))
+            
+        except Exception as e:
+            messagebox.showerror("Preview Error", f"Failed to preview report:\n{str(e)}")
+            print(f"Preview error: {e}")
+    
+    def _log_admin_activity(self, action, details):
+        """Log admin activity to database"""
+        try:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            
+            # Create admin_activity table if it doesn't exist (works for both SQLite and PostgreSQL)
+            try:
+                c.execute('''CREATE TABLE IF NOT EXISTS admin_activity (
+                    id SERIAL PRIMARY KEY,
+                    timestamp TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    details TEXT,
+                    admin_user TEXT
+                )''')
+                conn.commit()
+            except:
+                # Table already exists, continue
+                pass
+            
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            c.execute('''INSERT INTO admin_activity (timestamp, action, details, admin_user)
+                        VALUES (?, ?, ?, ?)''', (timestamp, action, details, 'Admin'))
+            
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"Error logging admin activity: {e}")
+    
+    def _export_report(self, report_type, format_type, date_from, date_to, filter_value):
+        """Export report to Excel or PDF format"""
+        try:
+            # Clean date inputs
+            if date_from == "YYYY-MM-DD" or not date_from:
+                date_from = None
+            if date_to == "YYYY-MM-DD" or not date_to:
+                date_to = None
+            
+            # Get report data based on type
+            if report_type == 'students':
+                data = self._get_students_report_data(filter_value, date_from, date_to)
+                title = "Students Report"
+                columns = ['Enrollment No', 'Name', 'Email', 'Phone', 'Year', 'Registration Date']
+            
+            elif report_type == 'books':
+                data = self._get_books_report_data(filter_value, date_from, date_to)
+                title = "Books Report"
+                columns = ['Book ID', 'Title', 'Author', 'Category', 'Status', 'Condition', 'Added Date']
+            
+            elif report_type == 'transactions':
+                data = self._get_transactions_report_data(filter_value, date_from, date_to)
+                title = "Transactions Report"
+                columns = ['Enrollment No', 'Student Name', 'Book ID', 'Book Title', 'Issue Date', 'Due Date', 'Return Date', 'Status', 'Fine']
+            
+            elif report_type == 'overdue':
+                data = self._get_overdue_report_data(date_from, date_to)
+                title = "Overdue Books Report"
+                columns = ['Enrollment No', 'Student Name', 'Phone', 'Book ID', 'Book Title', 'Issue Date', 'Due Date', 'Days Overdue', 'Fine Amount']
+            
+            elif report_type == 'promotions':
+                data = self._get_promotions_report_data(date_from, date_to)
+                title = "Promotion History Report"
+                columns = ['Date', 'Action', 'Students Affected', 'From Year', 'To Year', 'Details']
+            
+            elif report_type == 'admin_activity':
+                data = self._get_admin_activity_report_data(date_from, date_to)
+                title = "Admin Activity Log"
+                columns = ['Timestamp', 'Action', 'Details', 'Admin User']
+            
+            else:
+                messagebox.showerror("Error", "Invalid report type")
+                return
+            
+            if not data:
+                messagebox.showwarning("No Data", "No data available for the selected filters.")
+                return
+            
+            # Export based on format
+            if format_type == 'excel':
+                self._export_to_excel(data, columns, title, report_type, filter_value, date_from, date_to)
+            elif format_type == 'pdf':
+                self._export_to_pdf(data, columns, title, report_type, filter_value, date_from, date_to)
+            
+            # Log the export activity
+            filter_info = f"Filter: {filter_value}" if filter_value and filter_value != "All" else ""
+            date_info = f"From: {date_from} To: {date_to}" if date_from or date_to else ""
+            self._log_admin_activity(f"Report Export - {title}", f"Format: {format_type.upper()}, {filter_info} {date_info}")
+            
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export report:\n{str(e)}")
+            print(f"Export error: {e}")
+    
+    def _get_students_report_data(self, year_filter, date_from, date_to):
+        """Get students data for report with optimized query"""
+        try:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            
+            # Optimized query with proper column selection
+            query = """SELECT enrollment_no, name, email, phone, department || ' - ' || year as year_dept, 
+                       'N/A' as registration_date 
+                       FROM students WHERE 1=1"""
+            params = []
+            
+            if year_filter and year_filter != "All":
+                query += " AND year = ?"
+                params.append(year_filter)
+            
+            query += " ORDER BY year, name"
+            
+            c.execute(query, params)
+            rows = c.fetchall()
+            conn.close()
+            
+            # Ensure data exists
+            if not rows:
+                print("No students found in database")
+            return [list(row) for row in rows]
+        except Exception as e:
+            print(f"Error getting students report data: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+    
+    def _get_books_report_data(self, category_filter, date_from, date_to):
+        """Get books data for report with optimized query"""
+        try:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            
+            # Optimized query: check if book is borrowed using status column (no book_condition column)
+            query = """SELECT DISTINCT b.book_id, b.title, b.author, b.category, 
+                      CASE WHEN EXISTS(
+                          SELECT 1 FROM borrow_records br 
+                          WHERE br.book_id = b.book_id AND br.return_date IS NULL
+                      ) THEN 'Borrowed' ELSE 'Available' END as status,
+                      'Good' as condition, 'N/A' as added_date 
+                      FROM books b
+                      WHERE 1=1"""
+            params = []
+            
+            if category_filter and category_filter != "All":
+                query += " AND b.category = ?"
+                params.append(category_filter)
+            
+            query += " ORDER BY b.category, b.title"
+            
+            c.execute(query, params)
+            rows = c.fetchall()
+            conn.close()
+            
+            if not rows:
+                print("No books found in database")
+            return [list(row) for row in rows]
+        except Exception as e:
+            print(f"Error getting books report data: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+    
+    def _get_transactions_report_data(self, status_filter, date_from, date_to):
+        """Get transactions data for report"""
+        try:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            
+            # Use borrow_records table (not transactions)
+            query = """SELECT 
+                br.enrollment_no, s.name, br.book_id, b.title,
+                br.borrow_date, br.due_date, br.return_date,
+                CASE 
+                    WHEN br.return_date IS NOT NULL THEN 'Returned'
+                    WHEN CURRENT_DATE > br.due_date THEN 'Overdue'
+                    ELSE 'Active'
+                END as status,
+                COALESCE(br.fine, 0) as fine
+                FROM borrow_records br
+                LEFT JOIN students s ON br.enrollment_no = s.enrollment_no
+                LEFT JOIN books b ON br.book_id = b.book_id
+                WHERE 1=1"""
+            params = []
+            
+            if status_filter and status_filter != "All":
+                if status_filter == "Active":
+                    query += " AND br.return_date IS NULL AND CURRENT_DATE <= br.due_date"
+                elif status_filter == "Returned":
+                    query += " AND br.return_date IS NOT NULL"
+                elif status_filter == "Overdue":
+                    query += " AND br.return_date IS NULL AND CURRENT_DATE > br.due_date"
+            
+            if date_from:
+                query += " AND br.borrow_date >= ?"
+                params.append(date_from)
+            
+            if date_to:
+                query += " AND br.borrow_date <= ?"
+                params.append(date_to)
+            
+            query += " ORDER BY br.borrow_date DESC"
+            
+            c.execute(query, params)
+            rows = c.fetchall()
+            conn.close()
+            
+            return [list(row) for row in rows]
+        except Exception as e:
+            print(f"Error getting transactions report data: {e}")
+            return []
+    
+    def _get_overdue_report_data(self, date_from, date_to):
+        """Get overdue books data for report"""
+        try:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            
+            # PostgreSQL uses CURRENT_DATE instead of date('now')
+            # And uses DATE - DATE for day difference instead of julianday
+            query = """SELECT 
+                br.enrollment_no, s.name, s.phone, br.book_id, b.title,
+                br.borrow_date, br.due_date,
+                CAST(CURRENT_DATE - br.due_date AS INTEGER) as days_overdue,
+                CAST(CURRENT_DATE - br.due_date AS INTEGER) * ? as fine
+                FROM borrow_records br
+                LEFT JOIN students s ON br.enrollment_no = s.enrollment_no
+                LEFT JOIN books b ON br.book_id = b.book_id
+                WHERE br.return_date IS NULL AND CURRENT_DATE > br.due_date"""
+            
+            params = [self.get_fine_per_day()]
+            
+            if date_from:
+                query += " AND br.borrow_date >= ?"
+                params.append(date_from)
+            
+            if date_to:
+                query += " AND br.borrow_date <= ?"
+                params.append(date_to)
+            
+            query += " ORDER BY days_overdue DESC"
+            
+            c.execute(query, params)
+            rows = c.fetchall()
+            conn.close()
+            
+            return [list(row) for row in rows]
+        except Exception as e:
+            print(f"Error getting overdue report data: {e}")
+            return []
+    
+    def _get_promotions_report_data(self, date_from, date_to):
+        """Get promotion history data for report"""
+        try:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            
+            # Try to create table if it doesn't exist
+            try:
+                c.execute('''CREATE TABLE IF NOT EXISTS promotion_history (
+                    id SERIAL PRIMARY KEY,
+                    promotion_date TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    students_affected INTEGER,
+                    from_year TEXT,
+                    to_year TEXT,
+                    details TEXT
+                )''')
+                conn.commit()
+            except:
+                pass
+            
+            query = """SELECT promotion_date, action, students_affected, from_year, to_year, details
+                      FROM promotion_history WHERE 1=1"""
+            params = []
+            
+            if date_from:
+                query += " AND promotion_date >= ?"
+                params.append(date_from)
+            
+            if date_to:
+                query += " AND promotion_date <= ?"
+                params.append(date_to)
+            
+            query += " ORDER BY promotion_date DESC"
+            
+            try:
+                c.execute(query, params)
+                rows = c.fetchall()
+                conn.close()
+                return [list(row) for row in rows]
+            except:
+                conn.close()
+                return []
+        except Exception as e:
+            print(f"Error getting promotions report data: {e}")
+            return []
+    
+    def _get_admin_activity_report_data(self, date_from, date_to):
+        """Get admin activity log data for report"""
+        try:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            
+            # Try to create table if it doesn't exist (works for both SQLite and PostgreSQL)
+            try:
+                c.execute('''CREATE TABLE IF NOT EXISTS admin_activity (
+                    id SERIAL PRIMARY KEY,
+                    timestamp TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    details TEXT,
+                    admin_user TEXT
+                )''')
+                conn.commit()
+            except:
+                # Table might already exist or creation failed, continue anyway
+                pass
+            
+            query = """SELECT timestamp, action, details, admin_user
+                      FROM admin_activity WHERE 1=1"""
+            params = []
+            
+            if date_from:
+                query += " AND timestamp >= ?"
+                params.append(date_from)
+            
+            if date_to:
+                query += " AND timestamp <= ?"
+                params.append(date_to)
+            
+            query += " ORDER BY timestamp DESC"
+            
+            try:
+                c.execute(query, params)
+                rows = c.fetchall()
+                conn.close()
+                return [list(row) for row in rows]
+            except:
+                # Table doesn't exist or query failed, return empty
+                conn.close()
+                return []
+        except Exception as e:
+            print(f"Error getting admin activity report data: {e}")
+            return []
+    
+    def _export_to_excel(self, data, columns, title, report_type, filter_value, date_from, date_to):
+        """Export report data to Excel format with GPAK branding"""
+        try:
+            if not data:
+                messagebox.showwarning("No Data", "No data available to export.")
+                return
+                
+            # Ask user for save location
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            default_filename = f"GPAK_{title.replace(' ', '_')}_{timestamp}.xlsx"
+            
+            filepath = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel files", "*.xlsx")],
+                initialfile=default_filename,
+                title=f"Save {title}"
+            )
+            
+            if not filepath:
+                return
+            
+            # Create DataFrame
+            df = pd.DataFrame(data, columns=columns)
+            
+            # Create Excel writer with xlsxwriter engine
+            with pd.ExcelWriter(filepath, engine='xlsxwriter') as writer:
+                # Write data to sheet starting from row 8 (leave space for header)
+                df.to_excel(writer, sheet_name='Report', index=False, startrow=8)
+                
+                # Get workbook and worksheet objects
+                workbook = writer.book
+                worksheet = writer.sheets['Report']
+                
+                # Define formats
+                college_header_format = workbook.add_format({
+                    'bold': True,
+                    'font_size': 18,
+                    'align': 'center',
+                    'valign': 'vcenter',
+                    'fg_color': '#003366',
+                    'font_color': 'white',
+                    'border': 1
+                })
+                
+                subtitle_format = workbook.add_format({
+                    'bold': True,
+                    'font_size': 11,
+                    'align': 'center',
+                    'valign': 'vcenter',
+                    'fg_color': '#0066CC',
+                    'font_color': 'white'
+                })
+                
+                title_format = workbook.add_format({
+                    'bold': True,
+                    'font_size': 14,
+                    'align': 'center',
+                    'valign': 'vcenter',
+                    'fg_color': '#2E86AB',
+                    'font_color': 'white',
+                    'border': 1
+                })
+                
+                header_format = workbook.add_format({
+                    'bold': True,
+                    'text_wrap': True,
+                    'valign': 'top',
+                    'align': 'center',
+                    'fg_color': '#4DA6FF',
+                    'font_color': 'white',
+                    'border': 1,
+                    'font_size': 10
+                })
+                
+                data_format = workbook.add_format({
+                    'border': 1,
+                    'valign': 'vcenter'
+                })
+                
+                info_format = workbook.add_format({
+                    'italic': True,
+                    'font_size': 9,
+                    'align': 'center',
+                    'font_color': '#666666'
+                })
+                
+                # Add college logo if exists
+                logo_path = os.path.join(os.path.dirname(__file__), 'logo.png')
+                try:
+                    if os.path.exists(logo_path):
+                        worksheet.insert_image('A1', logo_path, {'x_scale': 0.15, 'y_scale': 0.15})
+                except Exception as e:
+                    print(f"Logo insertion failed: {e}")
+                
+                # Write college header
+                end_col = chr(65 + len(columns) - 1)
+                worksheet.merge_range(f'B1:{end_col}1', 'GOVERNMENT POLYTECHNIC AWASARI KHURD', college_header_format)
+                worksheet.merge_range(f'B2:{end_col}2', 'Tal. Ambegaon, Dist. Pune - 410503', subtitle_format)
+                worksheet.set_row(0, 25)
+                worksheet.set_row(1, 20)
+                
+                # Library title
+                worksheet.merge_range(f'A3:{end_col}3', 'LIBRARY MANAGEMENT SYSTEM', title_format)
+                worksheet.set_row(2, 20)
+                
+                # Report title
+                worksheet.merge_range(f'A5:{end_col}5', title, title_format)
+                worksheet.set_row(4, 18)
+                
+                # Write metadata
+                metadata = f"Generated: {datetime.now().strftime('%d-%b-%Y %I:%M %p')}"
+                if filter_value and filter_value != "All":
+                    metadata += f" | Filter: {filter_value}"
+                if date_from or date_to:
+                    metadata += f" | Date Range: {date_from or 'Start'} to {date_to or 'End'}"
+                
+                worksheet.merge_range(f'A6:{end_col}6', metadata, info_format)
+                worksheet.merge_range(f'A7:{end_col}7', f"Total Records: {len(data)}", info_format)
+                
+                # Apply header format to column headers
+                for col_num, value in enumerate(columns):
+                    worksheet.write(8, col_num, value, header_format)
+                
+                # Apply data format to all data cells
+                for row_num in range(len(data)):
+                    for col_num in range(len(columns)):
+                        worksheet.write(9 + row_num, col_num, data[row_num][col_num], data_format)
+                
+                # Set column widths dynamically
+                for i, col in enumerate(columns):
+                    max_len = len(str(col))
+                    for row in data:
+                        if i < len(row):
+                            max_len = max(max_len, len(str(row[i])))
+                    worksheet.set_column(i, i, min(max_len + 2, 30))
+                
+                # Set row heights
+                worksheet.set_row(8, 25)  # Header row height
+            
+            messagebox.showinfo("Success", f"Report exported successfully!\n\nFile: {os.path.basename(filepath)}\nLocation: {os.path.dirname(filepath)}")
+            
+            # Ask if user wants to open the file
+            if messagebox.askyesno("Open File", "Do you want to open the exported file now?"):
+                os.startfile(filepath)
+        
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export to Excel:\n{str(e)}")
+            print(f"Excel export error: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _export_to_pdf(self, data, columns, title, report_type, filter_value, date_from, date_to):
+        """Export report data to PDF format with GPAK branding"""
+        try:
+            if not data:
+                messagebox.showwarning("No Data", "No data available to export.")
+                return
+                
+            from reportlab.lib.pagesizes import A4, landscape
+            from reportlab.lib.units import inch
+            from reportlab.platypus import Image as RLImage
+            
+            # Ask user for save location
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            default_filename = f"GPAK_{title.replace(' ', '_')}_{timestamp}.pdf"
+            
+            filepath = filedialog.asksaveasfilename(
+                defaultextension=".pdf",
+                filetypes=[("PDF files", "*.pdf")],
+                initialfile=default_filename,
+                title=f"Save {title}"
+            )
+            
+            if not filepath:
+                return
+            
+            # Use landscape orientation for better table fit
+            page_size = landscape(A4)
+            
+            # Create PDF with custom margins
+            doc = SimpleDocTemplate(
+                filepath, 
+                pagesize=page_size,
+                topMargin=0.5*inch,
+                bottomMargin=0.4*inch,
+                leftMargin=0.4*inch,
+                rightMargin=0.4*inch
+            )
+            elements = []
+            
+            # Get styles
+            styles = getSampleStyleSheet()
+            
+            # Custom styles for IARE branding
+            college_name_style = ParagraphStyle(
+                'CollegeName',
+                parent=styles['Heading1'],
+                fontSize=16,
+                textColor=rl_colors.HexColor('#003366'),
+                spaceAfter=4,
+                alignment=TA_CENTER,
+                fontName='Helvetica-Bold'
+            )
+            
+            college_location_style = ParagraphStyle(
+                'CollegeLocation',
+                parent=styles['Normal'],
+                fontSize=10,
+                textColor=rl_colors.HexColor('#0066CC'),
+                spaceAfter=8,
+                alignment=TA_CENTER,
+                fontName='Helvetica'
+            )
+            
+            library_title_style = ParagraphStyle(
+                'LibraryTitle',
+                parent=styles['Heading2'],
+                fontSize=14,
+                textColor=rl_colors.HexColor('#2E86AB'),
+                spaceAfter=12,
+                alignment=TA_CENTER,
+                fontName='Helvetica-Bold'
+            )
+            
+            report_title_style = ParagraphStyle(
+                'ReportTitle',
+                parent=styles['Heading1'],
+                fontSize=16,
+                textColor=rl_colors.HexColor('#2E86AB'),
+                spaceAfter=12,
+                spaceBefore=8,
+                alignment=TA_CENTER,
+                fontName='Helvetica-Bold'
+            )
+            
+            info_style = ParagraphStyle(
+                'Info',
+                parent=styles['Normal'],
+                fontSize=9,
+                textColor=rl_colors.HexColor('#666666'),
+                spaceAfter=4,
+                alignment=TA_CENTER,
+                fontName='Helvetica-Oblique'
+            )
+            
+            # Add college logo
+            logo_path = os.path.join(os.path.dirname(__file__), 'logo.png')
+            try:
+                if os.path.exists(logo_path):
+                    logo = RLImage(logo_path, width=1*inch, height=1*inch)
+                    elements.append(logo)
+                    elements.append(Spacer(1, 0.1*inch))
+            except Exception as e:
+                print(f"Logo insertion failed: {e}")
+            
+            # Add college header
+            elements.append(Paragraph('GOVERNMENT POLYTECHNIC AWASARI KHURD', college_name_style))
+            elements.append(Paragraph('Tal. Ambegaon, Dist. Pune - 410503', college_location_style))
+            elements.append(Paragraph('LIBRARY MANAGEMENT SYSTEM', library_title_style))
+            
+            # Add horizontal line
+            from reportlab.platypus import HRFlowable
+            elements.append(HRFlowable(width="100%", thickness=2, color=rl_colors.HexColor('#2E86AB')))
+            elements.append(Spacer(1, 0.2*inch))
+            
+            # Add report title
+            elements.append(Paragraph(title, report_title_style))
+            elements.append(Spacer(1, 0.15*inch))
+            
+            # Add metadata
+            metadata = f"<b>Generated:</b> {datetime.now().strftime('%d-%b-%Y %I:%M %p')}"
+            if filter_value and filter_value != "All":
+                metadata += f" | <b>Filter:</b> {filter_value}"
+            if date_from or date_to:
+                metadata += f"<br/><b>Date Range:</b> {date_from or 'Start'} to {date_to or 'End'}"
+            
+            elements.append(Paragraph(metadata, info_style))
+            elements.append(Paragraph(f"<b>Total Records:</b> {len(data)}", info_style))
+            elements.append(Spacer(1, 0.2*inch))
+            
+            # Prepare table data with proper formatting and Paragraph wrapping
+            table_data = [columns]
+            for row in data:
+                # Convert all values to strings and handle None
+                formatted_row = [str(val) if val is not None else 'N/A' for val in row]
+                table_data.append(formatted_row)
+            
+            # Calculate column widths dynamically based on content - use landscape width
+            page_width = page_size[0] - 0.8*inch  # Available width for landscape A4
+            
+            # Fixed column widths for common report types to prevent merging
+            num_cols = len(columns)
+            if num_cols <= 4:
+                col_widths = [page_width / num_cols] * num_cols
+            elif num_cols <= 6:
+                col_widths = [page_width / num_cols] * num_cols
+            else:
+                # For many columns, calculate proportionally with minimums
+                col_widths = []
+                min_width = 0.7*inch
+                
+                # Calculate weights based on content
+                col_weights = []
+                for col_idx in range(len(columns)):
+                    max_len = len(str(columns[col_idx]))
+                    for row in data[:50]:  # Sample first 50 rows for speed
+                        if col_idx < len(row):
+                            max_len = max(max_len, len(str(row[col_idx])))
+                    col_weights.append(min(max_len, 40))
+                
+                total_weight = sum(col_weights)
+                
+                # Distribute width proportionally
+                for weight in col_weights:
+                    col_width = max((weight / total_weight) * page_width, min_width)
+                    col_widths.append(col_width)
+                
+                # Ensure total doesn't exceed page width
+                total_col_width = sum(col_widths)
+                if total_col_width > page_width:
+                    scale = page_width / total_col_width
+                    col_widths = [w * scale for w in col_widths]
+            
+            # Wrap text in cells using Paragraph for better formatting
+            from reportlab.platypus import Paragraph as RLParagraph
+            cell_style = ParagraphStyle(
+                'CellStyle',
+                parent=styles['Normal'],
+                fontSize=7,
+                leading=9,
+                fontName='Helvetica',
+                alignment=TA_LEFT,
+                wordWrap='CJK'
+            )
+            
+            wrapped_table_data = []
+            for row_idx, row in enumerate(table_data):
+                wrapped_row = []
+                for cell in row:
+                    # Wrap long text in Paragraph for automatic line breaks
+                    if row_idx == 0:  # Header row
+                        wrapped_row.append(str(cell))
+                    else:
+                        # For data cells, use Paragraph to enable wrapping
+                        cell_text = str(cell).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                        wrapped_row.append(RLParagraph(cell_text, cell_style))
+                wrapped_table_data.append(wrapped_row)
+            
+            # Create table with dynamic widths
+            table = Table(wrapped_table_data, colWidths=col_widths, repeatRows=1)
+            
+            # Professional table styling
+            table_style = TableStyle([
+                # Header row styling
+                ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#003366')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, 0), 'MIDDLE'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                ('TOPPADDING', (0, 0), (-1, 0), 8),
+                
+                # Data rows styling
+                ('ALIGN', (0, 1), (-1, -1), 'LEFT'),
+                ('VALIGN', (0, 1), (-1, -1), 'TOP'),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('TOPPADDING', (0, 1), (-1, -1), 5),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 5),
+                ('LEFTPADDING', (0, 0), (-1, -1), 5),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+                
+                # Grid and borders
+                ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.grey),
+                ('BOX', (0, 0), (-1, -1), 1.5, rl_colors.HexColor('#003366')),
+                ('LINEBELOW', (0, 0), (-1, 0), 2, rl_colors.HexColor('#0066CC')),
+                
+                # Alternating row colors
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [rl_colors.white, rl_colors.HexColor('#F0F0F0')]),
+                
+                # Enable word wrap
+                ('WORDWRAP', (0, 0), (-1, -1), True)
+            ])
+            
+            table.setStyle(table_style)
+            elements.append(table)
+            
+            # Add footer
+            elements.append(Spacer(1, 0.3*inch))
+            footer_style = ParagraphStyle(
+                'Footer',
+                parent=styles['Normal'],
+                fontSize=8,
+                textColor=rl_colors.HexColor('#999999'),
+                alignment=TA_CENTER,
+                fontName='Helvetica-Oblique'
+            )
+            elements.append(Paragraph(f'Report generated by GPAK Library Management System v{APP_VERSION}', footer_style))
+            
+            # Build PDF
+            doc.build(elements)
+            
+            messagebox.showinfo("Success", f"Report exported successfully!\n\nFile: {os.path.basename(filepath)}\nLocation: {os.path.dirname(filepath)}")
+            
+            # Ask if user wants to open the file
+            if messagebox.askyesno("Open File", "Do you want to open the exported file now?"):
+                os.startfile(filepath)
+        
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export to PDF:\n{str(e)}")
+            print(f"PDF export error: {e}")
+            import traceback
+            traceback.print_exc()
 
     def create_admin_tab(self):
         """Create Admin Settings tab with premium UI design for librarians"""
@@ -2320,6 +3834,248 @@ Current Settings:
             justify='left'
         ).pack(anchor='w')
         
+        # ============== ROW 4: PERFORMANCE & SYNC ==============
+        if PERFORMANCE_MODULES_AVAILABLE and self.sync_manager:
+            row4 = tk.Frame(content_frame, bg='#f0f2f5')
+            row4.pack(fill=tk.X, pady=10)
+            
+            # --- SYNC CARD ---
+            sync_outer, sync_card = create_card(row4, "Database Sync", "🔄", '#6c5ce7')
+            sync_outer.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+            
+            # Sync status label
+            sync_status_label = tk.Label(
+                sync_card,
+                text="Last sync: Never",
+                font=('Segoe UI', 10),
+                bg='white',
+                fg='#666'
+            )
+            sync_status_label.pack(anchor='w', pady=(0, 10))
+            
+            # Update sync status
+            def update_sync_status():
+                try:
+                    log_file = os.path.join(os.path.dirname(__file__), 'sync_log.json')
+                    if os.path.exists(log_file):
+                        with open(log_file, 'r') as f:
+                            log_data = json.load(f)
+                            last_sync = log_data.get('last_sync', 'Never')
+                            status = log_data.get('status', 'unknown')
+                            sync_status_label['text'] = f"Last sync: {last_sync} ({status})"
+                    else:
+                        sync_status_label['text'] = "Last sync: Never"
+                except:
+                    sync_status_label['text'] = "Last sync: Unknown"
+            
+            update_sync_status()
+            
+            # Manual sync button
+            def do_manual_sync():
+                if not self.sync_manager:
+                    messagebox.showerror("Error", "Sync manager not initialized")
+                    return
+                
+                # Show progress dialog
+                progress_win = tk.Toplevel(self.root)
+                progress_win.title("Database Sync")
+                progress_win.geometry("400x200")
+                progress_win.transient(self.root)
+                progress_win.grab_set()
+                
+                # Center window
+                progress_win.update_idletasks()
+                x = (progress_win.winfo_screenwidth() // 2) - 200
+                y = (progress_win.winfo_screenheight() // 2) - 100
+                progress_win.geometry(f"+{x}+{y}")
+                
+                tk.Label(
+                    progress_win,
+                    text="🔄 Syncing database...",
+                    font=('Segoe UI', 12, 'bold'),
+                    pady=20
+                ).pack()
+                
+                status_label = tk.Label(
+                    progress_win,
+                    text="Syncing local to remote...",
+                    font=('Segoe UI', 10)
+                )
+                status_label.pack(pady=10)
+                
+                progress_win.update()
+                
+                # Run sync in background
+                def run_sync():
+                    try:
+                        result = self.sync_manager.sync_now(direction='both')
+                        return result
+                    except Exception as e:
+                        return {'error': str(e)}
+                
+                def sync_callback(result):
+                    progress_win.destroy()
+                    if 'error' in result:
+                        messagebox.showerror("Sync Error", f"Failed to sync database:\n{result['error']}")
+                    else:
+                        update_sync_status()
+                        messagebox.showinfo(
+                            "Sync Complete",
+                            f"✅ Database synced successfully!\n\n"
+                            f"Records synced: {result.get('records_synced', 0)}\n"
+                            f"Direction: {result.get('direction', 'both')}"
+                        )
+                
+                self.run_in_background_thread(run_sync, sync_callback)
+            
+            manual_sync_btn = tk.Button(
+                sync_card,
+                text="🔄  Sync Now (Local ↔ Remote)",
+                font=('Segoe UI', 11, 'bold'),
+                bg='#6c5ce7',
+                fg='white',
+                relief='flat',
+                padx=20,
+                pady=12,
+                cursor='hand2',
+                command=do_manual_sync
+            )
+            manual_sync_btn.pack(fill=tk.X, pady=(5, 10))
+            
+            # Hover effect
+            def sync_enter(e): manual_sync_btn.config(bg='#5a4bc7')
+            def sync_leave(e): manual_sync_btn.config(bg='#6c5ce7')
+            manual_sync_btn.bind('<Enter>', sync_enter)
+            manual_sync_btn.bind('<Leave>', sync_leave)
+            
+            # Sync interval configuration
+            interval_frame = tk.Frame(sync_card, bg='white')
+            interval_frame.pack(fill=tk.X, pady=(10, 5))
+            
+            tk.Label(
+                interval_frame,
+                text="⏱️ Auto-Sync Interval:",
+                font=('Segoe UI', 10, 'bold'),
+                bg='white',
+                fg='#333'
+            ).pack(side=tk.LEFT, padx=(0, 10))
+            
+            interval_var = tk.StringVar(value=str(self.config_manager.get_sync_interval()))
+            interval_combo = ttk.Combobox(
+                interval_frame,
+                textvariable=interval_var,
+                values=['2', '5', '10', '15', '20', '30', '45', '60', '90', '120'],
+                state='readonly',
+                width=8,
+                font=('Segoe UI', 10)
+            )
+            interval_combo.pack(side=tk.LEFT, padx=5)
+            
+            tk.Label(
+                interval_frame,
+                text="minutes",
+                font=('Segoe UI', 10),
+                bg='white',
+                fg='#666'
+            ).pack(side=tk.LEFT, padx=(0, 10))
+            
+            def save_interval():
+                try:
+                    minutes = int(interval_var.get())
+                    if self.config_manager.set_sync_interval(minutes):
+                        messagebox.showinfo(
+                            "Settings Saved",
+                            f"✅ Auto-sync interval set to {minutes} minutes\n\n"
+                            f"⚠️ Restart the application for changes to take effect."
+                        )
+                    else:
+                        messagebox.showerror("Error", "Invalid interval value")
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to save interval: {e}")
+            
+            save_interval_btn = tk.Button(
+                interval_frame,
+                text="💾 Save",
+                font=('Segoe UI', 9, 'bold'),
+                bg='#27ae60',
+                fg='white',
+                relief='flat',
+                padx=12,
+                pady=4,
+                cursor='hand2',
+                command=save_interval
+            )
+            save_interval_btn.pack(side=tk.LEFT, padx=5)
+            
+            # Info text
+            auto_sync_status = "enabled" if self.config_manager.is_sync_enabled() else "disabled"
+            tk.Label(
+                sync_card,
+                text=f"Auto-sync: {auto_sync_status}\nLocal database ↔ Remote PostgreSQL\n💡 Application must be running for sync to work",
+                font=('Segoe UI', 10),
+                bg='white',
+                fg='#888',
+                justify='left'
+            ).pack(anchor='w', pady=(5, 0))
+            
+            # --- CONNECTION POOL STATS CARD ---
+            pool_outer, pool_card = create_card(row4, "Performance Stats", "⚡", '#00b894')
+            pool_outer.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            
+            # Connection pool stats
+            pool_stats_label = tk.Label(
+                pool_card,
+                text="Loading stats...",
+                font=('Segoe UI', 10),
+                bg='white',
+                fg='#666',
+                justify='left'
+            )
+            pool_stats_label.pack(anchor='w', pady=(0, 10))
+            
+            def update_pool_stats():
+                try:
+                    if self.connection_pool:
+                        stats = self.connection_pool.get_stats()
+                        stats_text = (
+                            f"Active connections: {stats['active_connections']}\n"
+                            f"Available: {stats['available_connections']}\n"
+                            f"Total created: {stats['total_connections_created']}\n"
+                            f"Total requests: {stats['total_requests']}"
+                        )
+                        pool_stats_label['text'] = stats_text
+                    else:
+                        pool_stats_label['text'] = "Connection pool not initialized"
+                except Exception as e:
+                    pool_stats_label['text'] = f"Error: {e}"
+            
+            update_pool_stats()
+            
+            # Refresh stats button
+            refresh_stats_btn = tk.Button(
+                pool_card,
+                text="🔄  Refresh Stats",
+                font=('Segoe UI', 10),
+                bg='#00b894',
+                fg='white',
+                relief='flat',
+                padx=15,
+                pady=8,
+                cursor='hand2',
+                command=update_pool_stats
+            )
+            refresh_stats_btn.pack(fill=tk.X, pady=(5, 10))
+            
+            # Info
+            tk.Label(
+                pool_card,
+                text="✅ Performance optimizations active\nConnection pooling • Batch emails",
+                font=('Segoe UI', 10),
+                bg='white',
+                fg='#888',
+                justify='left'
+            ).pack(anchor='w', pady=(5, 0))
+        
         # Bind mousewheel after all widgets created
         self.root.after(100, lambda: bind_mousewheel(scrollable_frame))
 
@@ -2339,6 +4095,11 @@ Current Settings:
             
         # Update Treeview
         if hasattr(self, 'dashboard_borrowed_tree'):
+            # Configure tags for color coding
+            self.dashboard_borrowed_tree.tag_configure('overdue', foreground='#dc3545', background='#ffe6e6')
+            self.dashboard_borrowed_tree.tag_configure('due_soon', foreground='#856404', background='#fff3cd')
+            self.dashboard_borrowed_tree.tag_configure('ok', foreground='#155724', background='#d4edda')
+            
             for item in self.dashboard_borrowed_tree.get_children():
                 try:
                     self.dashboard_borrowed_tree.delete(item)
@@ -2352,13 +4113,29 @@ Current Settings:
                 book_name = record[5]
                 borrow_date = record[7]
                 due_date = record[8]
-                # Calculate days left
+                # Calculate days left and format nicely
                 try:
                     from datetime import datetime
-                    days_left = (datetime.strptime(due_date, '%Y-%m-%d') - datetime.now()).days
+                    days_diff = (datetime.strptime(due_date, '%Y-%m-%d') - datetime.now()).days
+                    
+                    if days_diff < 0:
+                        # Overdue - show in red with "X days late"
+                        days_display = f"{abs(days_diff)} days late"
+                        tag = 'overdue'
+                    elif days_diff == 0:
+                        days_display = "Due Today!"
+                        tag = 'due_soon'
+                    elif days_diff <= 3:
+                        days_display = f"{days_diff} days left"
+                        tag = 'due_soon'
+                    else:
+                        days_display = f"{days_diff} days left"
+                        tag = 'ok'
                 except:
-                    days_left = ''
-                self.dashboard_borrowed_tree.insert('', 'end', values=(enrollment_no, student_name, book_id, book_name, borrow_date, due_date, days_left))
+                    days_display = 'N/A'
+                    tag = ''
+                
+                self.dashboard_borrowed_tree.insert('', 'end', values=(enrollment_no, student_name, book_id, book_name, borrow_date, due_date, days_display), tags=(tag,))
 
     def refresh_stats_async(self):
         """Fetch stats in background and update UI"""
@@ -2844,11 +4621,30 @@ Current Settings:
                 bg=self.colors['primary'], 
                 fg=self.colors['accent']).pack(anchor='w', pady=(0, 8))
         
-        self.borrow_enrollment_entry = tk.Entry(student_col, 
-                                              font=('Segoe UI', 12), 
-                                              width=25, 
-                                              relief='solid', 
-                                              bd=2)
+        # Autocomplete for student enrollment
+        def get_student_suggestions(query):
+            try:
+                students = self.db.get_students()
+                matches = []
+                query_lower = query.lower()
+                for s in students:
+                    enrollment = str(s['enrollment']).lower()
+                    name = str(s['name']).lower()
+                    if query_lower in enrollment or query_lower in name:
+                        matches.append(s)
+                return matches[:10]  # Limit to 10 suggestions
+            except:
+                return []
+        
+        def format_student_display(student):
+            return f"{student['enrollment']} - {student['name']} ({student['year']}, {student['section']})"
+        
+        self.borrow_enrollment_entry = AutocompleteEntry(
+            student_col,
+            data_callback=get_student_suggestions,
+            display_callback=format_student_display,
+            width=25
+        )
         self.borrow_enrollment_entry.pack(fill=tk.X, pady=(0, 8))
         self.borrow_enrollment_entry.bind('<KeyRelease>', lambda e: self.show_student_details('borrow'))
 
@@ -2870,11 +4666,31 @@ Current Settings:
                 bg=self.colors['primary'], 
                 fg=self.colors['accent']).pack(anchor='w', pady=(0, 8))
         
-        self.borrow_book_id_entry = tk.Entry(book_col, 
-                                           font=('Segoe UI', 12), 
-                                           width=25, 
-                                           relief='solid', 
-                                           bd=2)
+        # Autocomplete for book ID
+        def get_book_suggestions(query):
+            try:
+                books = self.db.get_books()
+                matches = []
+                query_lower = query.lower()
+                for b in books:
+                    book_id = str(b['book_id']).lower()
+                    title = str(b['title']).lower()
+                    author = str(b['author']).lower()
+                    if query_lower in book_id or query_lower in title or query_lower in author:
+                        matches.append(b)
+                return matches[:10]
+            except:
+                return []
+        
+        def format_book_display(book):
+            return f"{book['book_id']} - {book['title']} by {book['author']}"
+        
+        self.borrow_book_id_entry = AutocompleteEntry(
+            book_col,
+            data_callback=get_book_suggestions,
+            display_callback=format_book_display,
+            width=25
+        )
         self.borrow_book_id_entry.pack(fill=tk.X, pady=(0, 8))
         self.borrow_book_id_entry.bind('<KeyRelease>', lambda e: self.show_book_details('borrow'))
         
@@ -3024,11 +4840,30 @@ Current Settings:
                 bg=self.colors['primary'], 
                 fg=self.colors['accent']).pack(anchor='w', pady=(0, 8))
         
-        self.return_enrollment_entry = tk.Entry(return_student_col, 
-                                              font=('Segoe UI', 12), 
-                                              width=25, 
-                                              relief='solid', 
-                                              bd=2)
+        # Autocomplete for return student enrollment
+        def get_return_student_suggestions(query):
+            try:
+                students = self.db.get_students()
+                matches = []
+                query_lower = query.lower()
+                for s in students:
+                    enrollment = str(s['enrollment']).lower()
+                    name = str(s['name']).lower()
+                    if query_lower in enrollment or query_lower in name:
+                        matches.append(s)
+                return matches[:10]
+            except:
+                return []
+        
+        def format_return_student_display(student):
+            return f"{student['enrollment']} - {student['name']} ({student['year']}, {student['section']})"
+        
+        self.return_enrollment_entry = AutocompleteEntry(
+            return_student_col,
+            data_callback=get_return_student_suggestions,
+            display_callback=format_return_student_display,
+            width=25
+        )
         self.return_enrollment_entry.pack(fill=tk.X, pady=(0, 8))
         self.return_enrollment_entry.bind('<KeyRelease>', lambda e: self.show_student_details('return'))
         
@@ -3049,11 +4884,31 @@ Current Settings:
                 bg=self.colors['primary'], 
                 fg=self.colors['accent']).pack(anchor='w', pady=(0, 8))
         
-        self.return_book_id_entry = tk.Entry(return_book_col, 
-                                           font=('Segoe UI', 12), 
-                                           width=25, 
-                                           relief='solid', 
-                                           bd=2)
+        # Autocomplete for return book ID
+        def get_return_book_suggestions(query):
+            try:
+                books = self.db.get_books()
+                matches = []
+                query_lower = query.lower()
+                for b in books:
+                    book_id = str(b['book_id']).lower()
+                    title = str(b['title']).lower()
+                    author = str(b['author']).lower()
+                    if query_lower in book_id or query_lower in title or query_lower in author:
+                        matches.append(b)
+                return matches[:10]
+            except:
+                return []
+        
+        def format_return_book_display(book):
+            return f"{book['book_id']} - {book['title']} by {book['author']}"
+        
+        self.return_book_id_entry = AutocompleteEntry(
+            return_book_col,
+            data_callback=get_return_book_suggestions,
+            display_callback=format_return_book_display,
+            width=25
+        )
         self.return_book_id_entry.pack(fill=tk.X, pady=(0, 8))
         self.return_book_id_entry.bind('<KeyRelease>', lambda e: self.show_book_details('return'))
         
@@ -3415,8 +5270,15 @@ Current Settings:
                 f"Delete student: {entries['name'].get()}?\n\nThis action cannot be undone!",
                 icon='warning'
             ):
-                success, message = self.db.delete_student(entries['enrollment'].get())
+                student_name = entries['name'].get()
+                enrollment = entries['enrollment'].get()
+                success, message = self.db.delete_student(enrollment)
                 if success:
+                    # Log the activity
+                    self._log_admin_activity(
+                        "Student Deleted",
+                        f"Deleted student: {student_name} (Enrollment: {enrollment})"
+                    )
                     messagebox.showinfo("Success", "Student deleted successfully")
                     dialog.destroy()
                     self.refresh_students()
@@ -3640,8 +5502,15 @@ Current Settings:
                 f"Delete book: {entries['title'].get()}?\n\nThis action cannot be undone!",
                 icon='warning'
             ):
-                success, message = self.db.delete_book(entries['book_id'].get())
+                book_title = entries['title'].get()
+                book_id = entries['book_id'].get()
+                success, message = self.db.delete_book(book_id)
                 if success:
+                    # Log the activity
+                    self._log_admin_activity(
+                        "Book Deleted",
+                        f"Deleted book: {book_title} (ID: {book_id})"
+                    )
                     messagebox.showinfo("Success", "Book deleted successfully")
                     dialog.destroy()
                     self.refresh_books()
@@ -4139,6 +6008,11 @@ Current Settings:
             )
             
             if success:
+                # Log the activity
+                self._log_admin_activity(
+                    "Student Added",
+                    f"Added student: {entries['name'].get()} (Enrollment: {entries['enrollment'].get()}, Year: {entries['year'].get()})"
+                )
                 messagebox.showinfo("Success", message)
                 dialog.destroy()
                 self.refresh_students()
@@ -4335,6 +6209,11 @@ Current Settings:
                 copies
             )
             if success:
+                # Log the activity
+                self._log_admin_activity(
+                    "Book Added",
+                    f"Added book: {entries['title'].get().strip()} (ID: {book_id_val}, Category: {entries['category'].get()}, Copies: {copies})"
+                )
                 messagebox.showinfo("Success", message)
                 dialog.destroy()
                 # Refresh books view
@@ -4474,6 +6353,18 @@ Current Settings:
         success, message = result
         
         if success:
+            # Extract student and book info from entries for logging
+            enrollment_text = self.borrow_enrollment_entry.get().strip()
+            book_text = self.borrow_book_id_entry.get().strip()
+            enrollment_no = enrollment_text.split(' - ')[0] if ' - ' in enrollment_text else enrollment_text
+            book_id = book_text.split(' - ')[0] if ' - ' in book_text else book_text
+            
+            # Log the activity
+            self._log_admin_activity(
+                "Book Issued",
+                f"Issued book {book_id} to student {enrollment_no}"
+            )
+            
             messagebox.showinfo("Success", message)
             # Clear fields
             self.borrow_enrollment_entry.delete(0, tk.END)
@@ -4571,6 +6462,19 @@ Current Settings:
         success, message, fine_data = result
         
         if success:
+            # Extract student and book info from entries for logging
+            enrollment_text = self.return_enrollment_entry.get().strip()
+            book_text = self.return_book_id_entry.get().strip()
+            enrollment_no = enrollment_text.split(' - ')[0] if ' - ' in enrollment_text else enrollment_text
+            book_id = book_text.split(' - ')[0] if ' - ' in book_text else book_text
+            
+            # Log the activity
+            fine_info = f" (Fine: ₹{fine_data[1]})" if fine_data else ""
+            self._log_admin_activity(
+                "Book Returned",
+                f"Returned book {book_id} from student {enrollment_no}{fine_info}"
+            )
+            
             messagebox.showinfo("Success", message)
             
             # Late return fine popup
@@ -5009,12 +6913,20 @@ Current Settings:
         self.search_records()
     
     def refresh_all_data(self):
-        """Refresh all data in the application"""
-        self.refresh_dashboard()
-        self.refresh_students()
-        self.refresh_books()
-        self.refresh_borrowed()
-        self.refresh_records()
+        """Refresh all data in the application - runs in background to avoid UI freeze"""
+        def do_refresh():
+            try:
+                # Small delay to let UI settle
+                self.root.after(100, lambda: self.refresh_dashboard())
+                self.root.after(200, lambda: self.refresh_students())
+                self.root.after(300, lambda: self.refresh_books())
+                self.root.after(400, lambda: self.refresh_borrowed())
+                self.root.after(500, lambda: self.refresh_records())
+            except Exception as e:
+                print(f"Refresh error: {e}")
+        
+        # Schedule refresh after short delay to let UI draw first
+        self.root.after(50, do_refresh)
     
     def refresh_dashboard(self):
         """Refresh dashboard statistics"""
@@ -6322,7 +8234,15 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 for record in promotion_records:
                     self.db.add_promotion_history(*record)
                 
+                # Calculate total BEFORE using it
                 total = c_12 + c_23 + c_3p
+                
+                # Log the promotion activity
+                self._log_admin_activity(
+                    "Student Year Promotion",
+                    f"Promoted {total} students. 1st→2nd: {c_12}, 2nd→3rd: {c_23}, 3rd→Pass Out: {c_3p}. Letter: {letter_number}, Academic Year: {academic_year}"
+                )
+                
                 msg = (
                     f"Promotion Complete!\n\n"
                     f"Updated Year for {total} student(s).\n\n"
@@ -6348,7 +8268,24 @@ Note: This is an automated email. Please find the attached formal overdue letter
         
         def undo_last():
             """Undo the last promotion"""
-            if messagebox.askyesno("Confirm Undo", "Undo the last promotion? This will revert the most recent promotion action."):
+            # First check if there is anything to undo
+            history = self.db.get_promotion_history()
+            if not history:
+                messagebox.showwarning("No History", "No promotion history found. Nothing to undo.")
+                return
+            
+            # Show details of what will be undone
+            last_promo = history[0]
+            details_msg = (
+                f"Undo the last promotion?\n\n"
+                f"Last Promotion Details:\n"
+                f"Student: {last_promo['student_name']}\n"
+                f"Changed: {last_promo['old_year']} → {last_promo['new_year']}\n"
+                f"Date: {last_promo['promotion_date']}\n\n"
+                f"This will revert ALL students from the most recent promotion batch."
+            )
+            
+            if messagebox.askyesno("Confirm Undo", details_msg):
                 success, message = self.db.undo_last_promotion()
                 if success:
                     messagebox.showinfo("Success", message)
@@ -7028,30 +8965,262 @@ Note: This is an automated email. Please find the attached formal overdue letter
             email_results = []
             if send_emails:
                 import tempfile
-                progress_win = tk.Toplevel(self.root)
-                progress_win.title("Sending Emails...")
-                progress_win.geometry("500x200")
-                progress_win.transient(self.root)
-                progress_win.grab_set()
                 
-                # Center the window
-                progress_win.update_idletasks()
-                x = (progress_win.winfo_screenwidth() // 2) - (250)
-                y = (progress_win.winfo_screenheight() // 2) - (100)
-                progress_win.geometry(f"+{x}+{y}")
-                
-                label = tk.Label(progress_win, text="Sending overdue emails...", 
-                               font=('Segoe UI', 12), pady=20)
-                label.pack()
-                
-                status_label = tk.Label(progress_win, text="", font=('Segoe UI', 10), 
-                                      wraplength=450, justify=tk.LEFT)
-                status_label.pack(pady=10)
-                
-                progress_win.update()
-                
-                sent_count = 0
-                failed_count = 0
+                # Use batch email service if available, otherwise use old method
+                if self.email_batch_service and PERFORMANCE_MODULES_AVAILABLE:
+                    # Prepare batch of emails using performance-optimized service
+                    progress_win = tk.Toplevel(self.root)
+                    progress_win.title("Sending Emails...")
+                    progress_win.geometry("500x250")
+                    progress_win.transient(self.root)
+                    progress_win.grab_set()
+                    
+                    # Center the window
+                    progress_win.update_idletasks()
+                    x = (progress_win.winfo_screenwidth() // 2) - (250)
+                    y = (progress_win.winfo_screenheight() // 2) - (125)
+                    progress_win.geometry(f"+{x}+{y}")
+                    
+                    label = tk.Label(progress_win, text="⚡ Sending overdue emails in parallel batches...", 
+                                   font=('Segoe UI', 12, 'bold'), pady=20)
+                    label.pack()
+                    
+                    # Progress bar
+                    from tkinter import ttk
+                    progress_bar = ttk.Progressbar(progress_win, length=400, mode='determinate')
+                    progress_bar.pack(pady=10)
+                    
+                    status_label = tk.Label(progress_win, text="Preparing...", font=('Segoe UI', 10), 
+                                          wraplength=450, justify=tk.LEFT)
+                    status_label.pack(pady=10)
+                    
+                    stats_label = tk.Label(progress_win, text="", font=('Segoe UI', 9, 'italic'), 
+                                          fg='#666', wraplength=450, justify=tk.LEFT)
+                    stats_label.pack(pady=5)
+                    
+                    progress_win.update()
+                    
+                    # Prepare emails
+                    emails_to_send = []
+                    temp_files = []
+                    
+                    for rec in overdue:
+                        enrollment_no = str(rec['Enrollment No'])
+                        student_name = str(rec['Student Name'])
+                        book_id = str(rec['Book ID'])
+                        book_title = str(rec['Book Title'])
+                        issue_date = str(rec['Issue Date'])
+                        due_date = str(rec['Due Date'])
+                        days_overdue = str(rec['Days Overdue'])
+                        fine = str(rec['Accrued Fine'])
+                        
+                        student_email = self.get_student_email(enrollment_no)
+                        
+                        if student_email:
+                            # Generate individual letter
+                            temp_doc = Document()
+                            
+                            # Add header
+                            if os.path.exists(logo_path):
+                                try:
+                                    logo_para = temp_doc.add_paragraph()
+                                    logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                    logo_run = logo_para.add_run()
+                                    logo_run.add_picture(logo_path, width=Pt(80))
+                                except:
+                                    pass
+                            
+                            def add_center_temp(text, bold=True, size=16, color=None):
+                                p = temp_doc.add_paragraph()
+                                run = p.add_run(text)
+                                run.bold = bold
+                                run.font.size = Pt(size)
+                                if color:
+                                    from docx.shared import RGBColor
+                                    run.font.color.rgb = RGBColor(*color)
+                                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            
+                            add_center_temp("Government Polytechnic Awasari (Kh)", True, 20, (31, 71, 136))
+                            add_center_temp("Departmental Library", True, 16, (46, 92, 138))
+                            add_center_temp("Computer Department", True, 14, (54, 95, 145))
+                            temp_doc.add_paragraph("_" * 70).alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            temp_doc.add_paragraph()
+                            
+                            date_para = temp_doc.add_paragraph()
+                            date_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                            date_para.add_run(f"Date: {datetime.now().strftime('%B %d, %Y')}")
+                            temp_doc.add_paragraph()
+                            
+                            subject = temp_doc.add_paragraph()
+                            subject.add_run('Subject: Overdue Book Notice').bold = True
+                            subject.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            temp_doc.add_paragraph()
+                            
+                            to_para = temp_doc.add_paragraph()
+                            to_para.add_run(f'To,\\n{student_name}\\nEnrollment No: {enrollment_no}')
+                            temp_doc.add_paragraph()
+                            
+                            body = temp_doc.add_paragraph()
+                            body.add_run(
+                                f"Dear {student_name},\\n\\n"
+                                f"This is to inform you that the following book borrowed from the Library of Computer Department "
+                                f"is overdue and needs to be returned immediately.\\n\\n"
+                            )
+                            
+                            temp_doc.add_paragraph('Book Details:', style='Heading 2')
+                            details_table = temp_doc.add_table(rows=5, cols=2)
+                            details_table.style = 'Light Grid Accent 1'
+                            details_table.cell(0, 0).text = 'Book ID:'
+                            details_table.cell(0, 1).text = book_id
+                            details_table.cell(1, 0).text = 'Book Title:'
+                            details_table.cell(1, 1).text = book_title
+                            details_table.cell(2, 0).text = 'Issue Date:'
+                            details_table.cell(2, 1).text = issue_date
+                            details_table.cell(3, 0).text = 'Due Date:'
+                            details_table.cell(3, 1).text = due_date
+                            details_table.cell(4, 0).text = 'Days Overdue:'
+                            details_table.cell(4, 1).text = days_overdue
+                            
+                            temp_doc.add_paragraph()
+                            fine_para = temp_doc.add_paragraph()
+                            fine_run = fine_para.add_run(
+                                f"As per library rules, a fine of ₹{self.get_fine_per_day()} per day is applicable for overdue books.\\n"
+                                f"Your current fine amount is: ₹{fine}\\n\\n"
+                            )
+                            fine_run.bold = True
+                            
+                            request_para = temp_doc.add_paragraph()
+                            request_para.add_run(
+                                "You are hereby requested to return the book to the library at the earliest and clear the pending fine. "
+                                "Failure to do so may result in restrictions on future borrowing privileges.\\n\\n"
+                                "Please contact the library desk for any queries or clarifications.\\n\\n"
+                            )
+                            
+                            temp_doc.add_paragraph()
+                            temp_doc.add_paragraph("Thank you for your cooperation.\\n\\nYours sincerely,\\n\\n")
+                            temp_doc.add_paragraph("__________________________")
+                            temp_doc.add_paragraph("Librarian").runs[0].bold = True
+                            temp_doc.add_paragraph('Departmental Library')
+                            temp_doc.add_paragraph('Computer Department')
+                            temp_doc.add_paragraph('Government Polytechnic Awasari (Kh)')
+                            
+                            # Save to temp file
+                            temp_dir = tempfile.gettempdir()
+                            temp_file = os.path.join(temp_dir, f"Overdue_{enrollment_no}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx")
+                            temp_doc.save(temp_file)
+                            temp_files.append(temp_file)
+                            
+                            # Prepare email data
+                            email_subject = f"Overdue Book Notice - {book_title}"
+                            email_body = f"""Dear {student_name},
+
+This is an automated notification from the Library of Computer Department, Government Polytechnic Awasari (Kh).
+
+The following book borrowed from our library is overdue and needs to be returned immediately:
+
+Book ID: {book_id}
+Book Title: {book_title}
+Issue Date: {issue_date}
+Due Date: {due_date}
+Days Overdue: {days_overdue}
+Fine Amount: ₹{fine}
+
+As per library rules, a fine of ₹{self.get_fine_per_day()} per day is applicable for overdue books.
+
+Please return the book to the library at the earliest and clear the pending fine. Failure to do so may result in restrictions on future borrowing privileges.
+
+For any queries, please contact the library desk.
+
+Thank you for your cooperation.
+
+Librarian
+Departmental Library
+Computer Department
+Government Polytechnic Awasari (Kh)
+
+---
+Note: This is an automated email. Please find the attached formal overdue letter.
+"""
+                            
+                            emails_to_send.append({
+                                'to': student_email,
+                                'subject': email_subject,
+                                'body': email_body,
+                                'attachment': temp_file,
+                                'enrollment_no': enrollment_no,
+                                'student_name': student_name,
+                                'book_title': book_title
+                            })
+                    
+                    # Define progress callback
+                    def update_progress(sent, total, percentage):
+                        progress_bar['value'] = percentage
+                        status_label['text'] = f"Sending... {sent}/{total} emails ({percentage:.1f}%)"
+                        batch_num = (sent // self.email_batch_service.batch_size) + 1
+                        stats_label['text'] = f"🔄 Processing batch {batch_num} | ⚡ {self.email_batch_service.max_workers} parallel workers"
+                        progress_win.update()
+                    
+                    # Send emails using batch service
+                    result = self.email_batch_service.send_batch_emails(
+                        emails_to_send,
+                        self.email_settings,
+                        update_progress
+                    )
+                    
+                    # Log results
+                    sent_count = result['sent']
+                    failed_count = result['failed']
+                    
+                    for email_data, success, message in zip(emails_to_send, result['results'], result['errors']):
+                        self._log_email_sent(
+                            email_data['enrollment_no'],
+                            email_data['student_name'],
+                            email_data['to'],
+                            email_data['book_title'],
+                            success,
+                            message if not success else ''
+                        )
+                        
+                        if success:
+                            email_results.append(f"✅ {email_data['student_name']} ({email_data['enrollment_no']})")
+                        else:
+                            email_results.append(f"❌ {email_data['student_name']} ({email_data['enrollment_no']}) - {message}")
+                    
+                    # Clean up temp files
+                    for temp_file in temp_files:
+                        try:
+                            os.remove(temp_file)
+                        except:
+                            pass
+                    
+                    progress_win.destroy()
+                    
+                else:
+                    # Fallback to original sequential method
+                    progress_win = tk.Toplevel(self.root)
+                    progress_win.title("Sending Emails...")
+                    progress_win.geometry("500x200")
+                    progress_win.transient(self.root)
+                    progress_win.grab_set()
+                    
+                    # Center the window
+                    progress_win.update_idletasks()
+                    x = (progress_win.winfo_screenwidth() // 2) - (250)
+                    y = (progress_win.winfo_screenheight() // 2) - (100)
+                    progress_win.geometry(f"+{x}+{y}")
+                    
+                    label = tk.Label(progress_win, text="Sending overdue emails...", 
+                                   font=('Segoe UI', 12), pady=20)
+                    label.pack()
+                    
+                    status_label = tk.Label(progress_win, text="", font=('Segoe UI', 10), 
+                                          wraplength=450, justify=tk.LEFT)
+                    status_label.pack(pady=10)
+                    
+                    progress_win.update()
+                    
+                    sent_count = 0
+                    failed_count = 0
                 
                 for idx, rec in enumerate(overdue, 1):
                     enrollment_no = str(rec['Enrollment No'])
