@@ -77,6 +77,23 @@ try:
 except Exception:
     XLSXWRITER_AVAILABLE = False
 
+# Report generation support
+try:
+    from reportlab.lib.pagesizes import letter, A4, landscape
+    from reportlab.lib import colors as rl_colors
+    from reportlab.lib.units import inch
+    from reportlab.platypus import (
+        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, 
+        PageBreak, HRFlowable, Image as RLImage
+    )
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    REPORTLAB_AVAILABLE = True
+except Exception:
+    REPORTLAB_AVAILABLE = False
+    print("reportlab not available - PDF export will be disabled")
+
+
 # Add the current directory to path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from database import Database
@@ -1308,6 +1325,7 @@ Government Polytechnic Awasari (Kh)"""
         self.create_transactions_tab()
         self.create_records_tab()  # New records tab
         self.create_analysis_tab()  # New analysis tab with charts
+        self.create_reports_tab()   # New reports tab
         self.create_admin_tab()  # Admin Settings tab
         self.create_student_portal_tab()  # Student Portal tab
         
@@ -1685,6 +1703,891 @@ Government Polytechnic Awasari (Kh)"""
 
         # Populate dashboard issued books
         self.refresh_dashboard_borrowed()
+
+    # ============================================================================
+    # REPORT TAB CREATION METHOD
+    # ============================================================================
+
+    def create_reports_tab(self):
+        """Create enhanced reports tab with calendar date pickers and improved UI"""
+        reports_frame = tk.Frame(self.notebook, bg='#f0f2f5')
+        self.notebook.add(reports_frame, text="📄 Reports")
+        
+        # Main scrollable container
+        canvas = tk.Canvas(reports_frame, bg='#f0f2f5', highlightthickness=0)
+        scrollbar = ttk.Scrollbar(reports_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg='#f0f2f5')
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas_window = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        def resize_frame(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+        canvas.bind('<Configure>', resize_frame)
+        
+        # Mouse wheel scrolling
+        def _on_mousewheel(event):
+            try:
+                if canvas.winfo_exists():
+                    canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            except Exception:
+                pass
+        
+        def bind_mousewheel(widget):
+            widget.bind("<MouseWheel>", _on_mousewheel)
+            for child in widget.winfo_children():
+                bind_mousewheel(child)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Enhanced Header with gradient effect simulation
+        header_frame = tk.Frame(scrollable_frame, bg='white', relief='flat', bd=0)
+        header_frame.pack(fill=tk.X, padx=30, pady=(20, 15))
+        
+        # Add subtle shadow
+        shadow = tk.Frame(scrollable_frame, bg='#d0d0d0', height=2)
+        shadow.pack(fill=tk.X, padx=30)
+        
+        header_content = tk.Frame(header_frame, bg='white')
+        header_content.pack(fill=tk.X, padx=30, pady=20)
+        
+        title_container = tk.Frame(header_content, bg='white')
+        title_container.pack(anchor='w')
+        
+        tk.Label(
+            title_container,
+            text="📄",
+            font=('Segoe UI', 36),
+            bg='white',
+            fg=self.colors['secondary']
+        ).pack(side=tk.LEFT)
+        
+        title_text_frame = tk.Frame(title_container, bg='white')
+        title_text_frame.pack(side=tk.LEFT, padx=(15, 0))
+        
+        tk.Label(
+            title_text_frame,
+            text="Reports & Export Center",
+            font=('Segoe UI', 26, 'bold'),
+            bg='white',
+            fg='#1a1a2e'
+        ).pack(anchor='w')
+        
+        tk.Label(
+            title_text_frame,
+            text="📊 Export comprehensive reports • 📅 Use calendar to select dates • 🎯 No mandatory filters",
+            font=('Segoe UI', 11),
+            bg='white',
+            fg='#666'
+        ).pack(anchor='w', pady=(3, 0))
+        
+        # Content area
+        content_frame = tk.Frame(scrollable_frame, bg='#f0f2f5')
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=10)
+        
+        # Helper function to create enhanced report cards with calendar
+        def create_report_card(parent, title, icon, description, color, report_type):
+            # Card with shadow
+            card_container = tk.Frame(parent, bg='#f0f2f5')
+            
+            shadow_frame = tk.Frame(card_container, bg='#c8c8c8')
+            shadow_frame.pack(padx=3, pady=3, fill=tk.BOTH, expand=True)
+            
+            card = tk.Frame(shadow_frame, bg='white', padx=30, pady=25)
+            card.pack(fill=tk.BOTH, expand=True)
+            
+            # Card header with icon
+            header = tk.Frame(card, bg='white')
+            header.pack(fill=tk.X, pady=(0, 12))
+            
+            # Larger, rounded icon
+            icon_frame = tk.Frame(header, bg=color, width=50, height=50)
+            icon_frame.pack(side=tk.LEFT)
+            icon_frame.pack_propagate(False)
+            
+            icon_label = tk.Label(
+                icon_frame,
+                text=icon,
+                font=('Segoe UI', 22),
+                bg=color,
+                fg='white'
+            )
+            icon_label.pack(expand=True)
+            
+            title_frame = tk.Frame(header, bg='white')
+            title_frame.pack(side=tk.LEFT, padx=(15, 0), fill=tk.X, expand=True)
+            
+            tk.Label(
+                title_frame,
+                text=title,
+                font=('Segoe UI', 16, 'bold'),
+                bg='white',
+                fg='#1a1a2e'
+            ).pack(anchor='w')
+            
+            tk.Label(
+                title_frame,
+                text=description,
+                font=('Segoe UI', 10),
+                bg='white',
+                fg='#777',
+                justify='left',
+                wraplength=350
+            ).pack(anchor='w', pady=(2, 0))
+            
+            # Separator
+            sep = tk.Frame(card, bg='#e0e0e0', height=1)
+            sep.pack(fill=tk.X, pady=(0, 15))
+            
+            # Filters section - OPTIONAL
+            filters_section = tk.Frame(card, bg='#f8f9fa', relief='flat')
+            filters_section.pack(fill=tk.X, pady=(0, 15))
+            
+            filters_header = tk.Frame(filters_section, bg='#f8f9fa')
+            filters_header.pack(fill=tk.X, padx=15, pady=(12, 8))
+            
+            tk.Label(
+                filters_header,
+                text="🔍 Optional Filters",
+                font=('Segoe UI', 11, 'bold'),
+                bg='#f8f9fa',
+                fg='#333'
+            ).pack(side=tk.LEFT)
+            
+            tk.Label(
+                filters_header,
+                text="(Leave empty to export all data)",
+                font=('Segoe UI', 9, 'italic'),
+                bg='#f8f9fa',
+                fg='#888'
+            ).pack(side=tk.LEFT, padx=(10, 0))
+            
+            # Date range with calendar pickers
+            date_frame = tk.Frame(filters_section, bg='#f8f9fa')
+            date_frame.pack(fill=tk.X, padx=15, pady=(0, 10))
+            
+            # From Date
+            from_container = tk.Frame(date_frame, bg='#f8f9fa')
+            from_container.pack(side=tk.LEFT, padx=(0, 20))
+            
+            tk.Label(
+                from_container,
+                text="📅 From Date:",
+                font=('Segoe UI', 9, 'bold'),
+                bg='#f8f9fa',
+                fg='#555'
+            ).pack(anchor='w')
+            
+            try:
+                from_cal = DateEntry(
+                    from_container,
+                    width=15,
+                    background=color,
+                    foreground='white',
+                    borderwidth=2,
+                    font=('Segoe UI', 10),
+                    date_pattern='yyyy-mm-dd'
+                )
+                from_cal.pack(pady=(3, 0))
+                # Clear initial date
+                from_cal.delete(0, tk.END)
+            except Exception:
+                from_cal = tk.Entry(from_container, font=('Segoe UI', 10), width=15)
+                from_cal.pack(pady=(3, 0))
+            
+            # To Date
+            to_container = tk.Frame(date_frame, bg='#f8f9fa')
+            to_container.pack(side=tk.LEFT)
+            
+            tk.Label(
+                to_container,
+                text="📅 To Date:",
+                font=('Segoe UI', 9, 'bold'),
+                bg='#f8f9fa',
+                fg='#555'
+            ).pack(anchor='w')
+            
+            try:
+                to_cal = DateEntry(
+                    to_container,
+                    width=15,
+                    background=color,
+                    foreground='white',
+                    borderwidth=2,
+                    font=('Segoe UI', 10),
+                    date_pattern='yyyy-mm-dd'
+                )
+                to_cal.pack(pady=(3, 0))
+                # Clear initial date
+                to_cal.delete(0, tk.END)
+            except Exception:
+                to_cal = tk.Entry(to_container, font=('Segoe UI', 10), width=15)
+                to_cal.pack(pady=(3, 0))
+            
+            # Quick date presets
+            preset_frame = tk.Frame(date_frame, bg='#f8f9fa')
+            preset_frame.pack(side=tk.LEFT, padx=(20, 0))
+            
+            tk.Label(
+                preset_frame,
+                text="⚡ Quick:",
+                font=('Segoe UI', 9, 'bold'),
+                bg='#f8f9fa',
+                fg='#555'
+            ).pack(anchor='w')
+            
+            preset_btns = tk.Frame(preset_frame, bg='#f8f9fa')
+            preset_btns.pack(pady=(3, 0))
+            
+            def set_last_7_days():
+                from_cal.delete(0, tk.END)
+                to_cal.delete(0, tk.END)
+                from_cal.insert(0, (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d'))
+                to_cal.insert(0, datetime.now().strftime('%Y-%m-%d'))
+            
+            def set_last_30_days():
+                from_cal.delete(0, tk.END)
+                to_cal.delete(0, tk.END)
+                from_cal.insert(0, (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'))
+                to_cal.insert(0, datetime.now().strftime('%Y-%m-%d'))
+            
+            def set_this_year():
+                from_cal.delete(0, tk.END)
+                to_cal.delete(0, tk.END)
+                from_cal.insert(0, f"{datetime.now().year}-01-01")
+                to_cal.insert(0, datetime.now().strftime('%Y-%m-%d'))
+            
+            def clear_dates():
+                from_cal.delete(0, tk.END)
+                to_cal.delete(0, tk.END)
+            
+            for text, cmd, bg_col in [
+                ("7 Days", set_last_7_days, '#007bff'),
+                ("30 Days", set_last_30_days, '#007bff'),
+                ("This Year", set_this_year, '#007bff'),
+                ("Clear", clear_dates, '#6c757d')
+            ]:
+                btn = tk.Button(
+                    preset_btns,
+                    text=text,
+                    font=('Segoe UI', 8),
+                    bg=bg_col,
+                    fg='white',
+                    relief='flat',
+                    padx=8,
+                    pady=3,
+                    cursor='hand2',
+                    command=cmd
+                )
+                btn.pack(side=tk.LEFT, padx=2)
+                
+                # Hover effect
+                def on_enter(e, b=btn, col=bg_col):
+                    if col == '#6c757d':
+                        b.config(bg='#5a6268')
+                    else:
+                        b.config(bg='#0056b3')
+                
+                def on_leave(e, b=btn, col=bg_col):
+                    b.config(bg=col)
+                
+                btn.bind('<Enter>', on_enter)
+                btn.bind('<Leave>', on_leave)
+            
+            # Additional type-specific filters
+            filter_var = tk.StringVar(value="All")
+            
+            if report_type in ["students", "books", "transactions"]:
+                type_filter_frame = tk.Frame(filters_section, bg='#f8f9fa')
+                type_filter_frame.pack(fill=tk.X, padx=15, pady=(0, 12))
+                
+                if report_type == "students":
+                    label_text = "👥 Year Filter:"
+                    values = ["All", "1st Year", "2nd Year", "3rd Year", "Pass Out"]
+                elif report_type == "books":
+                    label_text = "📚 Category Filter:"
+                    values = ["All", "Technology", "Textbook", "Research"]
+                else:  # transactions
+                    label_text = "📖 Status Filter:"
+                    values = ["All", "Active", "Returned", "Overdue"]
+                
+                tk.Label(
+                    type_filter_frame,
+                    text=label_text,
+                    font=('Segoe UI', 9, 'bold'),
+                    bg='#f8f9fa',
+                    fg='#555'
+                ).pack(side=tk.LEFT, padx=(0, 10))
+                
+                filter_combo = ttk.Combobox(
+                    type_filter_frame,
+                    textvariable=filter_var,
+                    values=values,
+                    state="readonly",
+                    width=20,
+                    font=('Segoe UI', 10)
+                )
+                filter_combo.pack(side=tk.LEFT)
+            
+            # Export buttons section
+            export_section = tk.Frame(card, bg='white')
+            export_section.pack(fill=tk.X, pady=(5, 0))
+            
+            def get_filter_values():
+                date_from = from_cal.get().strip() if hasattr(from_cal, 'get') else ""
+                date_to = to_cal.get().strip() if hasattr(to_cal, 'get') else ""
+                return date_from, date_to, filter_var.get()
+            
+            # Preview button
+            preview_btn = tk.Button(
+                export_section,
+                text="👁️ Preview Data",
+                font=('Segoe UI', 11, 'bold'),
+                bg='#17a2b8',
+                fg='white',
+                relief='flat',
+                padx=25,
+                pady=12,
+                cursor='hand2',
+                command=lambda: self._preview_report(report_type, *get_filter_values())
+            )
+            preview_btn.pack(side=tk.LEFT, padx=(0, 10))
+            
+            # Excel button
+            excel_btn = tk.Button(
+                export_section,
+                text="📊 Export Excel",
+                font=('Segoe UI', 11, 'bold'),
+                bg='#28a745',
+                fg='white',
+                relief='flat',
+                padx=25,
+                pady=12,
+                cursor='hand2',
+                command=lambda: self._export_report(report_type, 'excel', *get_filter_values())
+            )
+            excel_btn.pack(side=tk.LEFT, padx=(0, 10))
+            
+            # PDF button
+            pdf_btn = tk.Button(
+                export_section,
+                text="📑 Export PDF",
+                font=('Segoe UI', 11, 'bold'),
+                bg='#dc3545',
+                fg='white',
+                relief='flat',
+                padx=25,
+                pady=12,
+                cursor='hand2',
+                command=lambda: self._export_report(report_type, 'pdf', *get_filter_values())
+            )
+            pdf_btn.pack(side=tk.LEFT)
+            
+            # Hover effects with smooth transitions
+            def create_hover(btn, normal_bg, hover_bg):
+                def on_enter(e):
+                    btn.config(bg=hover_bg)
+                def on_leave(e):
+                    btn.config(bg=normal_bg)
+                btn.bind('<Enter>', on_enter)
+                btn.bind('<Leave>', on_leave)
+            
+            create_hover(preview_btn, '#17a2b8', '#138496')
+            create_hover(excel_btn, '#28a745', '#218838')
+            create_hover(pdf_btn, '#dc3545', '#c82333')
+            
+            return card_container
+        
+        # Create report cards in 2-column grid
+        # Row 1: Students and Books
+        row1 = tk.Frame(content_frame, bg='#f0f2f5')
+        row1.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
+        row1.grid_columnconfigure(0, weight=1)
+        row1.grid_columnconfigure(1, weight=1)
+        
+        students_card = create_report_card(
+            row1,
+            "Students Report",
+            "👥",
+            "Complete roster of all registered students with enrollment details and academic information",
+            '#2E86AB',
+            'students'
+        )
+        students_card.grid(row=0, column=0, sticky='nsew', padx=(0, 10))
+        
+        books_card = create_report_card(
+            row1,
+            "Books Catalog",
+            "📚",
+            "Comprehensive library inventory with book status, categories, and availability",
+            '#28a745',
+            'books'
+        )
+        books_card.grid(row=0, column=1, sticky='nsew', padx=(10, 0))
+        
+        # Row 2: Transactions and Overdue
+        row2 = tk.Frame(content_frame, bg='#f0f2f5')
+        row2.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
+        row2.grid_columnconfigure(0, weight=1)
+        row2.grid_columnconfigure(1, weight=1)
+        
+        transactions_card = create_report_card(
+            row2,
+            "Transactions Log",
+            "📖",
+            "Detailed history of all book loans, returns, and current borrowing status",
+            '#6f42c1',
+            'transactions'
+        )
+        transactions_card.grid(row=0, column=0, sticky='nsew', padx=(0, 10))
+        
+        overdue_card = create_report_card(
+            row2,
+            "Overdue Analysis",
+            "⚠️",
+            "Active overdue books with student contacts, days late, and calculated fines",
+            '#dc3545',
+            'overdue'
+        )
+        overdue_card.grid(row=0, column=1, sticky='nsew', padx=(10, 0))
+        
+        # Row 3: Promotion and Activity
+        row3 = tk.Frame(content_frame, bg='#f0f2f5')
+        row3.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
+        row3.grid_columnconfigure(0, weight=1)
+        row3.grid_columnconfigure(1, weight=1)
+        
+        promotion_card = create_report_card(
+            row3,
+            "Promotion History",
+            "⬆️",
+            "Complete record of student year progressions with academic year tracking",
+            '#17a2b8',
+            'promotions'
+        )
+        promotion_card.grid(row=0, column=0, sticky='nsew', padx=(0, 10))
+        
+        activity_card = create_report_card(
+            row3,
+            "Admin Activity Audit",
+            "📋",
+            "Comprehensive audit trail of all system operations and administrative actions",
+            '#ffc107',
+            'admin_activity'
+        )
+        activity_card.grid(row=0, column=1, sticky='nsew', padx=(10, 0))
+        
+        # Bind mousewheel after all widgets created
+        self.root.after(100, lambda: bind_mousewheel(scrollable_frame))
+
+    # ============================================================================
+    # DATA RETRIEVAL METHODS FOR REPORTS
+    # ============================================================================
+
+    def _get_students_report_data(self, year_filter, date_from, date_to):
+        """Get students data for report"""
+        conn = self.db.get_connection()
+        try:
+            query = "SELECT enrollment_no, name, email, phone, department, year, date_registered FROM students WHERE 1=1"
+            params = []
+            
+            if year_filter and year_filter != "All":
+                query += " AND year = ?"
+                params.append(year_filter)
+            
+            if date_from:
+                query += " AND date_registered >= ?"
+                params.append(date_from)
+                
+            if date_to:
+                query += " AND date_registered <= ?"
+                params.append(date_to)
+                
+            query += " ORDER BY enrollment_no"
+            
+            df = pd.read_sql_query(query, conn, params=params)
+            return df, ["Enrollment No", "Name", "Email", "Phone", "Department", "Year", "Registration Date"]
+        except Exception as e:
+            print(f"Error fetching student report: {e}")
+            return pd.DataFrame(), []
+        finally:
+            conn.close()
+
+    def _get_books_report_data(self, category_filter, date_from, date_to):
+        """Get books data for report"""
+        conn = self.db.get_connection()
+        try:
+            query = "SELECT book_id, title, author, isbn, category, total_copies, available_copies, date_added FROM books WHERE 1=1"
+            params = []
+            
+            if category_filter and category_filter != "All":
+                query += " AND category = ?"
+                params.append(category_filter)
+            
+            if date_from:
+                query += " AND date_added >= ?"
+                params.append(date_from)
+                
+            if date_to:
+                query += " AND date_added <= ?"
+                params.append(date_to)
+                
+            query += " ORDER BY book_id"
+            
+            df = pd.read_sql_query(query, conn, params=params)
+            # Add calculated status column
+            if not df.empty:
+                df['Status'] = df.apply(lambda x: 'Available' if x['available_copies'] > 0 else 'Out of Stock', axis=1)
+            
+            return df, ["Book ID", "Title", "Author", "ISBN", "Category", "Total", "Available", "Date Added", "Status"]
+        except Exception as e:
+            print(f"Error fetching books report: {e}")
+            return pd.DataFrame(), []
+        finally:
+            conn.close()
+
+    def _get_transactions_report_data(self, status_filter, date_from, date_to):
+        """Get transactions data for report"""
+        conn = self.db.get_connection()
+        try:
+            # We use borrow_records table
+            query = """
+                SELECT b.enrollment_no, s.name, b.book_id, bk.title, 
+                       b.borrow_date, b.due_date, b.return_date, b.status, b.fine
+                FROM borrow_records b
+                LEFT JOIN students s ON b.enrollment_no = s.enrollment_no
+                LEFT JOIN books bk ON b.book_id = bk.book_id
+                WHERE 1=1
+            """
+            params = []
+            
+            if status_filter and status_filter != "All":
+                if status_filter == "Active":
+                    query += " AND b.status = 'borrowed'"
+                elif status_filter == "Returned":
+                    query += " AND b.status = 'returned'"
+                elif status_filter == "Overdue":
+                    query += " AND b.status = 'borrowed' AND b.due_date < date('now')"
+            
+            if date_from:
+                query += " AND b.borrow_date >= ?"
+                params.append(date_from)
+                
+            if date_to:
+                query += " AND b.borrow_date <= ?"
+                params.append(date_to)
+                
+            query += " ORDER BY b.borrow_date DESC"
+            
+            df = pd.read_sql_query(query, conn, params=params)
+            return df, ["Enrollment", "Student Name", "Book ID", "Book Title", "Borrow Date", "Due Date", "Return Date", "Status", "Fine"]
+        except Exception as e:
+            print(f"Error fetching transactions report: {e}")
+            return pd.DataFrame(), []
+        finally:
+            conn.close()
+
+    def _get_overdue_report_data(self, date_from, date_to):
+        """Get overdue books data for report"""
+        conn = self.db.get_connection()
+        try:
+            query = """
+                SELECT b.enrollment_no, s.name, s.phone, b.book_id, bk.title, 
+                       b.borrow_date, b.due_date, 
+                       (julianday('now') - julianday(b.due_date)) as days_overdue
+                FROM borrow_records b
+                LEFT JOIN students s ON b.enrollment_no = s.enrollment_no
+                LEFT JOIN books bk ON b.book_id = bk.book_id
+                WHERE b.status = 'borrowed' AND b.due_date < date('now')
+            """
+            params = []
+            
+            # Note: Date filters for overdue usually apply to due date or borrow date. 
+            # Here we apply to due date for relevance
+            if date_from:
+                query += " AND b.due_date >= ?"
+                params.append(date_from)
+                
+            if date_to:
+                query += " AND b.due_date <= ?"
+                params.append(date_to)
+                
+            query += " ORDER BY days_overdue DESC"
+            
+            df = pd.read_sql_query(query, conn, params=params)
+            
+            # Calculate estimated fine
+            if not df.empty:
+                df['days_overdue'] = df['days_overdue'].astype(int)
+                fine_per_day = self.get_fine_per_day()
+                df['Estimated Fine'] = df['days_overdue'] * fine_per_day
+            
+            return df, ["Enrollment", "Student Name", "Phone", "Book ID", "Title", "Borrow Date", "Due Date", "Days Late", "Est. Fine"]
+        except Exception as e:
+            print(f"Error fetching overdue report: {e}")
+            return pd.DataFrame(), []
+        finally:
+            conn.close()
+
+    def _get_promotions_report_data(self, date_from, date_to):
+        """Get promotion history data for report"""
+        conn = self.db.get_connection()
+        try:
+            query = """
+                SELECT enrollment_no, student_name, old_year, new_year, 
+                       academic_year, promotion_date
+                FROM promotion_history
+                WHERE 1=1
+            """
+            params = []
+            
+            if date_from:
+                query += " AND date(promotion_date) >= ?"
+                params.append(date_from)
+                
+            if date_to:
+                query += " AND date(promotion_date) <= ?"
+                params.append(date_to)
+                
+            query += " ORDER BY promotion_date DESC"
+            
+            df = pd.read_sql_query(query, conn, params=params)
+            return df, ["Enrollment", "Student Name", "From Year", "To Year", "Academic Year", "Date"]
+        except Exception as e:
+            print(f"Error fetching promotion report: {e}")
+            return pd.DataFrame(), []
+        finally:
+            conn.close()
+
+    def _get_admin_activity_report_data(self, date_from, date_to):
+        """Get admin activity log data for report - Placeholder as no admin log table exists yet"""
+        # Since we don't have an admin_logs table in the schema analysis, we'll return an empty set or maybe create a dummy one
+        # For now, let's return a message or empty DF
+        return pd.DataFrame(columns=["NB"]), ["Admin logs implementation requires database update"]
+
+    # ============================================================================
+    # EXPORT AND PREVIEW IMPLEMENTATION
+    # ============================================================================
+
+    def _preview_report(self, report_type, date_from, date_to, filter_value):
+        """Preview report data in a dialog"""
+        data = pd.DataFrame()
+        columns = []
+        title = ""
+        
+        if report_type == "students":
+            data, columns = self._get_students_report_data(filter_value, date_from, date_to)
+            title = "Students Report"
+        elif report_type == "books":
+            data, columns = self._get_books_report_data(filter_value, date_from, date_to)
+            title = "Books Catalog"
+        elif report_type == "transactions":
+            data, columns = self._get_transactions_report_data(filter_value, date_from, date_to)
+            title = "Transactions Log"
+        elif report_type == "overdue":
+            data, columns = self._get_overdue_report_data(date_from, date_to)
+            title = "Overdue Books Analysis"
+        elif report_type == "promotions":
+            data, columns = self._get_promotions_report_data(date_from, date_to)
+            title = "Student Promotion History"
+        elif report_type == "admin_activity":
+            data, columns = self._get_admin_activity_report_data(date_from, date_to)
+            title = "Admin Activity Log"
+            
+        if data.empty:
+            messagebox.showinfo("No Data", "No records found for the selected criteria.")
+            return
+
+        # Show preview window
+        preview = tk.Toplevel(self.root)
+        preview.title(f"Preview: {title}")
+        preview.geometry("1000x600")
+        
+        tk.Label(preview, text=title, font=('Segoe UI', 16, 'bold'), pady=10).pack()
+        
+        tree_frame = tk.Frame(preview)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        
+        tree = ttk.Treeview(tree_frame, columns=columns, show='headings')
+        
+        # Setup columns
+        for col in columns:
+            tree.heading(col, text=col)
+            tree.column(col, width=120)
+            
+        # Add scrollbars
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+        hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=tree.xview)
+        tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        vsb.pack(side=tk.RIGHT, fill=tk.Y)
+        hsb.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        # Insert data
+        for _, row in data.iterrows():
+            tree.insert("", "end", values=list(row))
+            
+        tk.Button(preview, text="Close", command=preview.destroy, padx=20, pady=5).pack(pady=10)
+
+    def _export_report(self, report_type, format_type, date_from, date_to, filter_value):
+        """Export report to file"""
+        data = pd.DataFrame()
+        columns = []
+        title = ""
+        filename_prefix = ""
+        
+        if report_type == "students":
+            data, columns = self._get_students_report_data(filter_value, date_from, date_to)
+            title = "Students Report"
+            filename_prefix = "Students_Report"
+        elif report_type == "books":
+            data, columns = self._get_books_report_data(filter_value, date_from, date_to)
+            title = "Books Catalog"
+            filename_prefix = "Books_Catalog"
+        elif report_type == "transactions":
+            data, columns = self._get_transactions_report_data(filter_value, date_from, date_to)
+            title = "Transactions Log"
+            filename_prefix = "Transactions_Log"
+        elif report_type == "overdue":
+            data, columns = self._get_overdue_report_data(date_from, date_to)
+            title = "Overdue Books Analysis"
+            filename_prefix = "Overdue_Analysis"
+        elif report_type == "promotions":
+            data, columns = self._get_promotions_report_data(date_from, date_to)
+            title = "Student Promotion History"
+            filename_prefix = "Promotion_History"
+        elif report_type == "admin_activity":
+            data, columns = self._get_admin_activity_report_data(date_from, date_to)
+            title = "Admin Activity Log"
+            filename_prefix = "Activity_Log"
+            
+        if data.empty:
+            messagebox.showinfo("No Data", "No records found to export.")
+            return
+            
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_filename = f"{filename_prefix}_{timestamp}"
+        
+        if format_type == 'excel':
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel files", "*.xlsx")],
+                initialfile=default_filename
+            )
+            if file_path:
+                try:
+                    self._export_to_excel(data, columns, title, report_type, filter_value, date_from, date_to, file_path)
+                    messagebox.showinfo("Success", f"Report exported successfully to:\n{file_path}")
+                except Exception as e:
+                    messagebox.showerror("Export Error", f"Failed to export Excel:\n{str(e)}")
+                    
+        elif format_type == 'pdf':
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".pdf",
+                filetypes=[("PDF files", "*.pdf")],
+                initialfile=default_filename
+            )
+            if file_path:
+                try:
+                    self._export_to_pdf(data, columns, title, report_type, filter_value, date_from, date_to, file_path)
+                    messagebox.showinfo("Success", f"Report exported successfully to:\n{file_path}")
+                except Exception as e:
+                    messagebox.showerror("Export Error", f"Failed to export PDF:\n{str(e)}")
+
+    def _export_to_excel(self, data, columns, title, report_type, filter_value, date_from, date_to, file_path):
+        """Export to Excel with formatting"""
+        if not XLSXWRITER_AVAILABLE:
+            # Fallback to standard pandas export
+            data.to_excel(file_path, index=False)
+            return
+
+        writer = pd.ExcelWriter(file_path, engine='xlsxwriter')
+        data.to_excel(writer, sheet_name='Report', index=False, startrow=6)
+        
+        workbook = writer.book
+        worksheet = writer.sheets['Report']
+        
+        # Formats
+        title_format = workbook.add_format({'bold': True, 'font_size': 20, 'align': 'center', 'fg_color': '#4472C4', 'font_color': 'white'})
+        subtitle_format = workbook.add_format({'italic': True, 'font_size': 11, 'align': 'left'})
+        header_format = workbook.add_format({'bold': True, 'text_wrap': True, 'valign': 'top', 'fg_color': '#D9E1F2', 'border': 1})
+        
+        # Write Title
+        worksheet.merge_range('A1:G2', f"GPA'S Library of Computer Department - {title}", title_format)
+        worksheet.write('A3', f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", subtitle_format)
+        worksheet.write('A4', f"Date Range: {date_from if date_from else 'Start'} to {date_to if date_to else 'End'}", subtitle_format)
+        if filter_value and filter_value != "All":
+             worksheet.write('A5', f"Filter: {filter_value}", subtitle_format)
+             
+        # Format headers
+        for col_num, value in enumerate(data.columns.values):
+            worksheet.write(6, col_num, value, header_format)
+            
+        # Auto-adjust columns
+        for i, col in enumerate(data.columns):
+            column_len = max(data[col].astype(str).map(len).max(), len(col)) + 2
+            worksheet.set_column(i, i, column_len)
+            
+        writer.close()
+
+    def _export_to_pdf(self, data, columns, title, report_type, filter_value, date_from, date_to, file_path):
+        """Export to PDF with formatting"""
+        if not REPORTLAB_AVAILABLE:
+            raise Exception("ReportLab library not installed. Cannot generate PDF.")
+            
+        # Create PDF
+        doc = SimpleDocTemplate(file_path, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+        elements = []
+        
+        # Styles
+        styles = getSampleStyleSheet()
+        title_style = styles['Title']
+        title_style.fontSize = 24
+        title_style.textColor = rl_colors.HexColor('#1a1a2e')
+        
+        subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=12, textColor=rl_colors.gray, spaceAfter=20)
+        
+        # Title
+        elements.append(Paragraph(f"GPA'S Library of Computer Department", title_style))
+        elements.append(Spacer(1, 10))
+        elements.append(Paragraph(f"{title}", ParagraphStyle('ReportTitle', parent=styles['Heading2'], fontSize=18, alignment=TA_CENTER)))
+        elements.append(Spacer(1, 20))
+        
+        # Info
+        info_text = f"<b>Generated:</b> {datetime.now().strftime('%Y-%m-%d %H:%M')} | "
+        info_text += f"<b>Range:</b> {date_from if date_from else 'Start'} to {date_to if date_to else 'End'}"
+        if filter_value and filter_value != "All":
+            info_text += f" | <b>Filter:</b> {filter_value}"
+        elements.append(Paragraph(info_text, subtitle_style))
+        elements.append(Spacer(1, 10))
+        
+        # Table Data
+        table_data = [data.columns.values.tolist()] + data.values.tolist()
+        
+        # Table
+        t = Table(table_data)
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), rl_colors.HexColor('#2E86AB')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), rl_colors.HexColor('#f0f2f5')),
+            ('GRID', (0, 0), (-1, -1), 1, rl_colors.black),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ]))
+        
+        elements.append(t)
+        doc.build(elements)
+
+
 
     def create_admin_tab(self):
         """Create Admin Settings tab with premium UI design for librarians"""
