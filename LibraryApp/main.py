@@ -86,7 +86,7 @@ except Exception:
 # Add the current directory to path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from database import Database
-from login_loader import LoginLoader
+# from login_loader import LoginLoader
 from autocomplete_widget import AutocompleteEntry
 
 # Performance Optimization Modules
