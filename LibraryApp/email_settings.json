@@ -1,9 +1,9 @@
 {
-    "smtp_server": "smtp.gmail.com",
-    "smtp_port": 587,
-    "sender_email": "dateyash48@gmail.com",
-    "sender_password": "vrdu euio fpgw wwcg",
-    "enabled": true,
-    "reminder_enabled": true,
-    "reminder_days_before": 2
+  "smtp_server": "smtp.gmail.com",
+  "smtp_port": 587,
+  "sender_email": "dateyash48@gmail.com",
+  "sender_password": "vrdu euio fpgw wwcg",
+  "enabled": true,
+  "reminder_enabled": true,
+  "reminder_days_before": 2
 }
