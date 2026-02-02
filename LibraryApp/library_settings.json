@@ -2,5 +2,6 @@
     "fine_per_day": 7,
     "loan_period_days": 7,
     "max_books_per_student": 5,
-    "admin_password": "gpa1"
+    "admin_password": "gpa1",
+    "portal_base_url": "https://library-management-system-for-desktop.onrender.com"
 }

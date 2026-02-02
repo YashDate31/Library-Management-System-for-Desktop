@@ -12329,12 +12329,22 @@ Note: This is an automated email. Please find the attached formal overdue letter
             import urllib.request
             import urllib.error
 
-            health_url = self._portal_api_url('/api/me')
+            # Prefer a public endpoint for both local and remote portals.
+            # Fallback to /api/me (which can legitimately return 401/403).
+            primary_health_url = self._portal_api_url('/api/version')
+            fallback_health_url = self._portal_api_url('/api/me')
             try:
-                urllib.request.urlopen(health_url, timeout=4)
+                urllib.request.urlopen(primary_health_url, timeout=4)
             except urllib.error.HTTPError as he:
-                # /api/me may return 401 if not logged in; treat as server healthy.
-                if he.code not in (400, 401, 403):
+                # If the endpoint exists but returns non-2xx, treat as unhealthy unless it's an auth-related /api/me.
+                if he.code in (404, 405):
+                    # Older portal build (no /api/version) – try fallback.
+                    try:
+                        urllib.request.urlopen(fallback_health_url, timeout=4)
+                    except urllib.error.HTTPError as he2:
+                        if he2.code not in (400, 401, 403):
+                            raise
+                else:
                     raise
             if "Portal Server" in self.health_indicators:
                 self.health_indicators["Portal Server"].config(text="● Healthy", fg='#28a745')
@@ -12399,19 +12409,24 @@ Note: This is an automated email. Please find the attached formal overdue letter
         """Refresh all server dashboard data"""
         self._run_health_checks()
         self._generate_portal_qr_code()
-        
-        # Re-detect IP
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            local_ip = s.getsockname()[0]
-            s.close()
-        except:
-            local_ip = "127.0.0.1"
-        
-        new_url = f"http://{local_ip}:{self.portal_port}"
-        
-        if new_url != self.portal_url:
+
+        configured = self._get_configured_portal_base_url()
+        if configured:
+            # External/deployed portal mode: do NOT overwrite with local IP URL.
+            local_ip = "—"
+            new_url = configured
+        else:
+            # Re-detect IP for local hosting mode
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))
+                local_ip = s.getsockname()[0]
+                s.close()
+            except:
+                local_ip = "127.0.0.1"
+            new_url = f"http://{local_ip}:{self.portal_port}"
+
+        if new_url != getattr(self, 'portal_url', ''):
             self.portal_url = new_url
             self.portal_url_history.append({
                 'url': new_url,
@@ -12420,7 +12435,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
             })
             if len(self.portal_url_history) > 3:
                 self.portal_url_history = self.portal_url_history[-3:]
-        
+
         self._update_dashboard_displays(local_ip)
         
         if hasattr(self, 'show_url_history') and self.show_url_history.get():
@@ -12542,6 +12557,16 @@ Note: This is an automated email. Please find the attached formal overdue letter
             bg='white',
             fg='#666'
         ).pack(anchor='w', padx=20, pady=(0, 10))
+
+        # Source indicator (prevents confusion between Local vs Render)
+        self.requests_source_label = tk.Label(
+            container,
+            text=f"Source: {self._get_portal_base_url()}",
+            font=('Consolas', 9),
+            bg='white',
+            fg='#555'
+        )
+        self.requests_source_label.pack(anchor='w', padx=20, pady=(0, 12))
         
         # History Filter Frame (Hidden by default)
         self.request_filters_frame = tk.Frame(container, bg='white')
@@ -12621,8 +12646,23 @@ Note: This is an automated email. Please find the attached formal overdue letter
         try:
             import urllib.request
             import urllib.error
-            
+
             url = self._portal_api_url('/api/admin/all-requests')
+
+            # Update visible source label (best-effort version probe)
+            if hasattr(self, 'requests_source_label'):
+                version_info = ''
+                try:
+                    vreq = urllib.request.Request(self._portal_api_url('/api/version'))
+                    with urllib.request.urlopen(vreq, timeout=3) as vresp:
+                        vdata = json.loads(vresp.read().decode())
+                        app_version = (vdata.get('app_version') or '').strip()
+                        if app_version:
+                            version_info = f" (v {app_version})"
+                except Exception:
+                    # Older portal or network issue – ignore
+                    pass
+                self.requests_source_label.config(text=f"Source: {self._get_portal_base_url()}{version_info}")
             req = urllib.request.Request(url)
             
             with urllib.request.urlopen(req, timeout=8) as response:
@@ -12648,7 +12688,11 @@ Note: This is an automated email. Please find the attached formal overdue letter
                         label.config(text=str(type_counts.get(key, 0)))
                 
                 if not requests_list:
-                    self._show_empty_message(self.requests_container, "No pending requests", "All student requests have been processed! 🎉")
+                    hint = (
+                        "All student requests have been processed! 🎉\n\n"
+                        f"Endpoint: {url}"
+                    )
+                    self._show_empty_message(self.requests_container, "No pending requests", hint)
                     return
                 
                 # Create two-column grid layout
@@ -12665,7 +12709,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
             self._show_empty_message(
                 self.requests_container,
                 "Could not load requests",
-                f"Portal API may be unreachable.\n\nConfigured URL: {self._get_portal_base_url()}\n\n{str(e)}"
+                f"Portal API may be unreachable.\n\nEndpoint: {self._portal_api_url('/api/admin/all-requests')}\nConfigured URL: {self._get_portal_base_url()}\n\n{str(e)}"
             )
     
     def _toggle_request_history(self):
