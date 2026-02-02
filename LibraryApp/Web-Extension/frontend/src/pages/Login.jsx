@@ -240,9 +240,12 @@ export default function Login({ setUser }) {
               <button
                 type="button"
                 onClick={() => navigate('/register')}
-                className="text-sm text-slate-600 font-medium hover:underline"
+                className="text-sm font-medium group"
               >
-                New student? Register here
+                <span className="text-slate-600">New student? </span>
+                <span className="text-blue-600 font-semibold underline decoration-blue-300 underline-offset-4 group-hover:text-blue-700">
+                  Register here
+                </span>
               </button>
             </div>
 
