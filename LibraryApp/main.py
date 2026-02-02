@@ -1,4 +1,5 @@
 ﻿#!/usr/bin/env python3
+#yashdate
 """
 Library of Computer Department Management System
 Version v3.7_DEVELOPER_LOGIN - Developer branding on login + visible version label
@@ -10,7 +11,6 @@ from datetime import datetime, timedelta
 import sqlite3
 import os
 import sys
-import pandas as pd
 from tkinter import font
 import webbrowser
 import subprocess
@@ -26,12 +26,27 @@ import time
 import socket
 import qrcode
 from PIL import ImageTk, Image
-from reportlab.lib.pagesizes import letter, A4
-from reportlab.lib import colors as rl_colors
-from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
+
+# Pandas for data operations
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except Exception:
+    PANDAS_AVAILABLE = False
+    pd = None
+
+# ReportLab for PDF generation
+try:
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.lib import colors as rl_colors
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    REPORTLAB_AVAILABLE = True
+except Exception as e:
+    REPORTLAB_AVAILABLE = False
+    print(f"[WARNING] ReportLab not available: {e}")
 
 # Add Web-Extension directory to path to allow import
 sys.path.append(os.path.join(os.path.dirname(__file__), 'Web-Extension'))
@@ -462,27 +477,25 @@ class LibraryApp:
         
         # Initialize performance optimization systems
         if PERFORMANCE_MODULES_AVAILABLE:
+            # Config should remain available even if optional modules fail.
+            self.config_manager = get_config()
             try:
-                self.config_manager = get_config()
                 self.connection_pool = get_pool(self.db)
                 self.email_batch_service = EmailBatchService(
                     max_workers=self.config_manager.get_email_config()['max_workers'],
                     batch_size=self.config_manager.get_email_config()['batch_size']
                 )
                 self.sync_manager = create_sync_manager(self.db)
-                # Start auto-sync if enabled
-                if self.config_manager.is_sync_enabled():
+
+                # Start auto-sync if enabled and sync is actually available
+                if self.sync_manager and self.config_manager.is_sync_enabled():
                     sync_interval = self.config_manager.get_sync_interval()
-                    threading.Thread(
-                        target=self.sync_manager.auto_sync_daemon,
-                        args=(sync_interval,),
-                        daemon=True
-                    ).start()
-                    print(f"✅ Auto-sync started (interval: {sync_interval} minutes)")
-                print("✅ Performance optimization modules loaded successfully")
+                    self.sync_manager.auto_sync_daemon(sync_interval)
+                    print(f"[OK] Auto-sync started (interval: {sync_interval} minutes)")
+
+                print(f"[OK] Performance optimization modules loaded successfully")
             except Exception as e:
-                print(f"⚠️ Performance modules initialization failed: {e}")
-                self.config_manager = None
+                print(f"[WARNING] Performance modules initialization failed: {e}")
                 self.connection_pool = None
                 self.email_batch_service = None
                 self.sync_manager = None
@@ -498,14 +511,14 @@ class LibraryApp:
             try:
                 integrity_result = self.db.verify_data_integrity()
                 if integrity_result['status'] == 'issues_found':
-                    print(f"⚠️  Found {integrity_result['total_issues']} integrity issues")
-                    print(f"✅ Auto-fixed {integrity_result['total_fixes']} issues")
+                    print(f"[WARNING]  Found {integrity_result['total_issues']} integrity issues")
+                    print(f"[OK] Auto-fixed {integrity_result['total_fixes']} issues")
                     if integrity_result['total_issues'] > integrity_result['total_fixes']:
-                        print("⚠️  Some issues require manual attention - check Admin panel")
+                        print(f"[WARNING]  Some issues require manual attention - check Admin panel")
                 elif integrity_result['status'] == 'ok':
-                    print("✅ Database integrity verified - all checks passed")
+                    print(f"[OK] Database integrity verified - all checks passed")
                 else:
-                    print(f"❌ Integrity check error: {integrity_result.get('error', 'Unknown')}")
+                    print(f"[ERROR] Integrity check error: {integrity_result.get('error', 'Unknown')}")
             except Exception as e:
                 print(f"Error during integrity check: {e}")
 
@@ -526,13 +539,13 @@ class LibraryApp:
                             sync_interval = self.config_manager.get_sync_interval()
                             
                             if minutes_since >= sync_interval:
-                                print(f"⚠️  Sync overdue ({int(minutes_since)} min since last sync)")
+                                print(f"[WARNING]  Sync overdue ({int(minutes_since)} min since last sync)")
                                 print("🔄 Triggering catch-up sync...")
                                 result = self.sync_manager.sync_now(direction='both')
                                 if 'error' not in result:
-                                    print(f"✅ Catch-up sync completed: {result.get('records_synced', 0)} records")
+                                    print(f"[OK] Catch-up sync completed: {result.get('records_synced', 0)} records")
                                 else:
-                                    print(f"❌ Catch-up sync failed: {result.get('error')}")
+                                    print(f"[ERROR] Catch-up sync failed: {result.get('error')}")
                 except Exception as e:
                     print(f"Error checking sync status: {e}")
             
@@ -1288,7 +1301,8 @@ class LibraryApp:
         days_before = self.email_settings.get('reminder_days_before', 2)
         
         try:
-            conn = sqlite3.connect(self.db_path)
+            # Use the same database connection as the rest of the app
+            conn = self.db.get_connection()
             cursor = conn.cursor()
             
             # Calculate target due date (N days from now)
@@ -1348,10 +1362,10 @@ Government Polytechnic Awasari (Kh)"""
                 
                 if success:
                     success_count += 1
-                    print(f"[Auto-Reminder] ✅ Sent to {name} ({email})")
+                    print(f"[Auto-Reminder] [OK] Sent to {name} ({email})")
                 else:
                     fail_count += 1
-                    print(f"[Auto-Reminder] ❌ Failed for {name}: {message}")
+                    print(f"[Auto-Reminder] [ERROR] Failed for {name}: {message}")
             
             print(f"[Auto-Reminder] Summary: {success_count} sent, {fail_count} failed")
             
@@ -2700,14 +2714,28 @@ Government Polytechnic Awasari (Kh)"""
             c = conn.cursor()
             
             # Optimized query with proper column selection
-            query = """SELECT enrollment_no, name, email, phone, department || ' - ' || year as year_dept, 
-                       'N/A' as registration_date 
-                       FROM students WHERE 1=1"""
+            query = """SELECT
+                        enrollment_no,
+                        name,
+                        email,
+                        phone,
+                        department || ' - ' || year as year_dept,
+                        COALESCE(date_registered, '') as registration_date
+                       FROM students
+                       WHERE 1=1"""
             params = []
             
             if year_filter and year_filter != "All":
                 query += " AND year = ?"
                 params.append(year_filter)
+
+            # Optional date range filter for registration date
+            if date_from:
+                query += " AND date_registered >= ?"
+                params.append(date_from)
+            if date_to:
+                query += " AND date_registered <= ?"
+                params.append(date_to)
             
             query += " ORDER BY year, name"
             
@@ -2737,7 +2765,7 @@ Government Polytechnic Awasari (Kh)"""
                           SELECT 1 FROM borrow_records br 
                           WHERE br.book_id = b.book_id AND br.return_date IS NULL
                       ) THEN 'Borrowed' ELSE 'Available' END as status,
-                      'Good' as condition, 'N/A' as added_date 
+                      'Good' as condition, COALESCE(b.date_added, '') as added_date
                       FROM books b
                       WHERE 1=1"""
             params = []
@@ -2745,6 +2773,14 @@ Government Polytechnic Awasari (Kh)"""
             if category_filter and category_filter != "All":
                 query += " AND b.category = ?"
                 params.append(category_filter)
+
+            # Optional date range filter for added date
+            if date_from:
+                query += " AND b.date_added >= ?"
+                params.append(date_from)
+            if date_to:
+                query += " AND b.date_added <= ?"
+                params.append(date_to)
             
             query += " ORDER BY b.category, b.title"
             
@@ -3835,7 +3871,7 @@ Current Settings:
         ).pack(anchor='w')
         
         # ============== ROW 4: PERFORMANCE & SYNC ==============
-        if PERFORMANCE_MODULES_AVAILABLE and self.sync_manager:
+        if PERFORMANCE_MODULES_AVAILABLE:
             row4 = tk.Frame(content_frame, bg='#f0f2f5')
             row4.pack(fill=tk.X, pady=10)
             
@@ -3873,7 +3909,14 @@ Current Settings:
             # Manual sync button
             def do_manual_sync():
                 if not self.sync_manager:
-                    messagebox.showerror("Error", "Sync manager not initialized")
+                    messagebox.showerror(
+                        "Sync Unavailable",
+                        "Remote sync is not configured or required dependency is missing.\n\n"
+                        "To enable sync to server:\n"
+                        "1) Set DATABASE_URL in .env (PostgreSQL connection string)\n"
+                        "2) Ensure psycopg2/psycopg2-binary is installed\n"
+                        "3) Restart the application"
+                    )
                     return
                 
                 # Show progress dialog
@@ -3941,6 +3984,9 @@ Current Settings:
                 command=do_manual_sync
             )
             manual_sync_btn.pack(fill=tk.X, pady=(5, 10))
+
+            if not self.sync_manager:
+                manual_sync_btn.config(state='disabled', cursor='arrow')
             
             # Hover effect
             def sync_enter(e): manual_sync_btn.config(bg='#5a4bc7')
@@ -3960,6 +4006,10 @@ Current Settings:
                 fg='#333'
             ).pack(side=tk.LEFT, padx=(0, 10))
             
+            # Ensure a config manager exists to persist interval even if sync isn't configured yet.
+            if not getattr(self, 'config_manager', None):
+                self.config_manager = get_config()
+
             interval_var = tk.StringVar(value=str(self.config_manager.get_sync_interval()))
             interval_combo = ttk.Combobox(
                 interval_frame,
@@ -4009,9 +4059,15 @@ Current Settings:
             
             # Info text
             auto_sync_status = "enabled" if self.config_manager.is_sync_enabled() else "disabled"
+            sync_availability = "configured" if self.sync_manager else "not configured"
             tk.Label(
                 sync_card,
-                text=f"Auto-sync: {auto_sync_status}\nLocal database ↔ Remote PostgreSQL\n💡 Application must be running for sync to work",
+                text=(
+                    f"Auto-sync: {auto_sync_status}\n"
+                    f"Remote sync: {sync_availability}\n"
+                    "Local database ↔ Remote PostgreSQL\n"
+                    "💡 Application must be running for sync to work"
+                ),
                 font=('Segoe UI', 10),
                 bg='white',
                 fg='#888',
@@ -4096,9 +4152,10 @@ Current Settings:
         # Update Treeview
         if hasattr(self, 'dashboard_borrowed_tree'):
             # Configure tags for color coding
-            self.dashboard_borrowed_tree.tag_configure('overdue', foreground='#dc3545', background='#ffe6e6')
-            self.dashboard_borrowed_tree.tag_configure('due_soon', foreground='#856404', background='#fff3cd')
-            self.dashboard_borrowed_tree.tag_configure('ok', foreground='#155724', background='#d4edda')
+            # Text color only (no background highlight)
+            self.dashboard_borrowed_tree.tag_configure('overdue', foreground='#dc3545')
+            self.dashboard_borrowed_tree.tag_configure('due_soon', foreground='#856404')
+            self.dashboard_borrowed_tree.tag_configure('ok', foreground='#155724')
             
             for item in self.dashboard_borrowed_tree.get_children():
                 try:
@@ -7034,6 +7091,14 @@ Current Settings:
         (enrollment_no, student_name, department, year, book_id, title, author, borrow_date, due_date)
         """
         if hasattr(self, 'borrowed_tree'):
+            # Configure tags once (text-only coloring)
+            try:
+                self.borrowed_tree.tag_configure('overdue', foreground='#b30000')
+                self.borrowed_tree.tag_configure('due_soon', foreground='#856404')
+                self.borrowed_tree.tag_configure('ok', foreground='#155724')
+            except Exception:
+                pass
+
             for item in self.borrowed_tree.get_children():
                 self.borrowed_tree.delete(item)
             
@@ -7056,19 +7121,18 @@ Current Settings:
                         tag = 'overdue'
                     elif delta == 0:
                         days_left_str = 'Due Today'
-                        tag = ''
+                        tag = 'due_soon'
+                    elif delta <= 3:
+                        days_left_str = f"{delta}d left"
+                        tag = 'due_soon'
                     else:
                         days_left_str = f"{delta}d left"
-                        tag = ''
+                        tag = 'ok'
                 except Exception:
                     days_left_str = 'N/A'
                     tag = ''
                 display_data = (student_name, book_id, book_title, borrow_date, due_date_val, days_left_str)
                 self.borrowed_tree.insert('', 'end', values=display_data, tags=(tag,))
-            try:
-                self.borrowed_tree.tag_configure('overdue', background='#ffe6e6', foreground='#b30000')
-            except Exception:
-                pass
     
     def populate_activities_tree(self, activities):
         """Populate recent activities treeview"""
@@ -7106,7 +7170,8 @@ Current Settings:
                 tag = 'late' if (fine_is_num and isinstance(fine_val_num, int) and fine_val_num > 0) else ''
                 self.records_tree.insert('', 'end', values=(*base, status, fine_display), tags=(tag,))
             try:
-                self.records_tree.tag_configure('late', background='#fff3cd')
+                # Text color only (no background highlight)
+                self.records_tree.tag_configure('late', foreground='#b30000')
             except Exception:
                 pass
     
@@ -10697,97 +10762,43 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 widget.destroy()
         
         try:
-            # Connect to portal DB
-            portal_db_path = os.path.join(os.path.dirname(__file__), 'Web-Extension', 'portal.db')
-            if not os.path.exists(portal_db_path):
-                tk.Label(self.obs_kpi_container, text="⚠️ Portal Database not found. Start the server to generate logs.",
+            import urllib.request
+            import urllib.error
+            
+            # Fetch observability data from API
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/observability"
+            try:
+                response = urllib.request.urlopen(url, timeout=5)
+                data = json.loads(response.read().decode())
+            except urllib.error.URLError as e:
+                tk.Label(self.obs_kpi_container, text="⚠️ Server not running. Start the portal server to view analytics.",
+                    font=('Segoe UI', 12), bg='white', fg='#dc3545').pack(pady=30)
+                return
+            except Exception as e:
+                tk.Label(self.obs_kpi_container, text=f"⚠️ Error connecting to server: {e}",
                     font=('Segoe UI', 12), bg='white', fg='#dc3545').pack(pady=30)
                 return
             
-            conn = sqlite3.connect(portal_db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            
-            # Check if table exists
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='access_logs'")
-            if not cursor.fetchone():
-                tk.Label(self.obs_kpi_container, text="⚠️ Access Logs table not found.",
+            if data.get('status') == 'error':
+                tk.Label(self.obs_kpi_container, text=f"⚠️ {data.get('message', 'Unknown error')}",
                     font=('Segoe UI', 12), bg='white', fg='#dc3545').pack(pady=30)
-                conn.close()
                 return
 
             # ═══════════════════════════════════════════════════════════════
-            # FETCH ALL METRICS
+            # EXTRACT DATA FROM API RESPONSE
             # ═══════════════════════════════════════════════════════════════
-            
-            # Total requests (24h)
-            cursor.execute("SELECT COUNT(*) FROM access_logs WHERE timestamp >= datetime('now', '-24 hours')")
-            total_24h = cursor.fetchone()[0] or 0
-            
-            # Total requests (7 days)
-            cursor.execute("SELECT COUNT(*) FROM access_logs WHERE timestamp >= datetime('now', '-7 days')")
-            total_7d = cursor.fetchone()[0] or 0
-            
-            # Success rate (2xx)
-            cursor.execute("SELECT COUNT(*) FROM access_logs WHERE status >= 200 AND status < 300 AND timestamp >= datetime('now', '-24 hours')")
-            success_24h = cursor.fetchone()[0] or 0
-            success_rate = (success_24h / total_24h * 100) if total_24h > 0 else 0
-            
-            # Error count (4xx, 5xx)
-            cursor.execute("SELECT COUNT(*) FROM access_logs WHERE status >= 400 AND timestamp >= datetime('now', '-24 hours')")
-            errors_24h = cursor.fetchone()[0] or 0
-            
-            # Peak hour
-            cursor.execute("""
-                SELECT strftime('%H', timestamp) as hour, COUNT(*) as cnt
-                FROM access_logs WHERE timestamp >= datetime('now', '-24 hours')
-                GROUP BY hour ORDER BY cnt DESC LIMIT 1
-            """)
-            peak_row = cursor.fetchone()
-            peak_hour = f"{peak_row['hour']}:00" if peak_row else "N/A"
-            peak_count = peak_row['cnt'] if peak_row else 0
-            
-            # Requests per hour (last 24h)
-            cursor.execute("""
-                SELECT strftime('%H', timestamp) as hour, COUNT(*) as count
-                FROM access_logs WHERE timestamp >= datetime('now', '-24 hours')
-                GROUP BY hour ORDER BY hour
-            """)
-            hourly_data = {row['hour']: row['count'] for row in cursor.fetchall()}
-            
-            # Top endpoints
-            cursor.execute("""
-                SELECT endpoint, COUNT(*) as count FROM access_logs
-                WHERE timestamp >= datetime('now', '-24 hours')
-                GROUP BY endpoint ORDER BY count DESC LIMIT 8
-            """)
-            endpoint_data = [(row['endpoint'], row['count']) for row in cursor.fetchall()]
-            
-            # Status code distribution
-            cursor.execute("""
-                SELECT 
-                    CASE 
-                        WHEN status >= 200 AND status < 300 THEN '2xx Success'
-                        WHEN status >= 300 AND status < 400 THEN '3xx Redirect'
-                        WHEN status >= 400 AND status < 500 THEN '4xx Client Error'
-                        WHEN status >= 500 THEN '5xx Server Error'
-                        ELSE 'Other'
-                    END as category, COUNT(*) as count
-                FROM access_logs WHERE timestamp >= datetime('now', '-24 hours')
-                GROUP BY category
-            """)
-            status_data = {row['category']: row['count'] for row in cursor.fetchall()}
-            
-            # 7-day trend
-            cursor.execute("""
-                SELECT date(timestamp) as day, COUNT(*) as count
-                FROM access_logs WHERE timestamp >= datetime('now', '-7 days')
-                GROUP BY day ORDER BY day
-            """)
-            trend_data = [(row['day'], row['count']) for row in cursor.fetchall()]
-            
-            conn.close()
-            
+            total_24h = data.get('total_24h', 0)
+            total_7d = data.get('total_7d', 0)
+            success_24h = data.get('success_24h', 0)
+            success_rate = data.get('success_rate', 0)
+            errors_24h = data.get('errors_24h', 0)
+            peak_hour = data.get('peak_hour', 'N/A')
+            peak_count = data.get('peak_count', 0)
+            hourly_data = data.get('hourly_data', {})
+            endpoint_data = data.get('endpoint_data', [])
+            status_data = data.get('status_data', {})
+            trend_data = data.get('trend_data', [])
+
             # ═══════════════════════════════════════════════════════════════
             # BUILD KPI CARDS
             # ═══════════════════════════════════════════════════════════════
@@ -11011,36 +11022,27 @@ Note: This is an automated email. Please find the attached formal overdue letter
             widget.destroy()
             
         try:
-            # Connect to portal DB
-            portal_db_path = os.path.join(os.path.dirname(__file__), 'Web-Extension', 'portal.db')
-            if not os.path.exists(portal_db_path):
-                tk.Label(self.traffic_graph_container, text="Portal Database not found.\nStart the server to generate logs.", font=('Segoe UI', 12), bg='white', fg='#dc3545').pack(pady=50)
+            import urllib.request
+            import urllib.error
+            
+            # Fetch observability data from API
+            url = f"http://127.0.0.1:{self.portal_port}/api/admin/observability"
+            try:
+                response = urllib.request.urlopen(url, timeout=5)
+                data = json.loads(response.read().decode())
+            except urllib.error.URLError:
+                tk.Label(self.traffic_graph_container, text="Server not running.\nStart the portal server to view traffic.", font=('Segoe UI', 12), bg='white', fg='#dc3545').pack(pady=50)
                 return
-                
-            conn = sqlite3.connect(portal_db_path)
-            cursor = conn.cursor()
+            except Exception as e:
+                tk.Label(self.traffic_graph_container, text=f"Error connecting to server: {e}", font=('Segoe UI', 12), bg='white', fg='#dc3545').pack(pady=50)
+                return
             
-            # Query requests per hour for the last 24 hours
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='access_logs'")
-            if not cursor.fetchone():
-               tk.Label(self.traffic_graph_container, text="Access Logs table not found.\nServer update required.", font=('Segoe UI', 12), bg='white', fg='#dc3545').pack(pady=50)
-               conn.close()
-               return
-
-            # Get recent traffic (last 24h) by hour
-            # Note: strftime('%H', timestamp) requires timestamp to be a valid string
-            cursor.execute("""
-                SELECT strftime('%H', timestamp) as hour, COUNT(*) as count
-                FROM access_logs
-                WHERE timestamp >= datetime('now', '-24 hours')
-                GROUP BY hour
-                ORDER BY hour
-            """)
-            data = cursor.fetchall()
-            conn.close()
+            if data.get('status') == 'error':
+                tk.Label(self.traffic_graph_container, text=f"{data.get('message', 'Unknown error')}", font=('Segoe UI', 12), bg='white', fg='#dc3545').pack(pady=50)
+                return
             
-            # Process data
-            hours_map = {row[0]: row[1] for row in data}
+            # Get hourly data from API response
+            hours_map = data.get('hourly_data', {})
             
             # Generate full 24h timeline (last 24 hours from now) or just 00-23?
             # Let's do a simple 00-23 plot for "Today" or just mapped to hours which is simpler

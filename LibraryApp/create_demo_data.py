@@ -105,7 +105,7 @@ def create_demo_data():
         else:
             print(f"  ⚠ Skipped: {name} - {msg}")
     
-    print(f"\n✅ Students added: {students_added}/{len(students_data)}")
+    print(f"\n[OK] Students added: {students_added}/{len(students_data)}")
     
     print("\n📚 Adding Books...")
     books_added = 0
@@ -117,7 +117,7 @@ def create_demo_data():
         else:
             print(f"  ⚠ Skipped: {title} - {msg}")
     
-    print(f"\n✅ Books added: {books_added}/{len(books_data)}")
+    print(f"\n[OK] Books added: {books_added}/{len(books_data)}")
     
     # Create various types of transactions
     print("\n📋 Creating Transactions...")
@@ -210,13 +210,13 @@ def create_demo_data():
         else:
             print(f"  ⚠ Failed: {enrollment} - {book_id} - {msg}")
     
-    print(f"\n✅ Transactions created: {transactions_created}/{len(scenarios)}")
+    print(f"\n[OK] Transactions created: {transactions_created}/{len(scenarios)}")
     
     # Summary
     print("\n" + "=" * 60)
-    print("✅ Demo Database Created Successfully!")
+    print(f"[OK] Demo Database Created Successfully!")
     print("=" * 60)
-    print(f"\n📊 Summary:")
+    print(f"\n[STATS] Summary:")
     print(f"  • Students: {students_added}")
     print(f"  • Books: {books_added}")
     print(f"  • Transactions: {transactions_created}")
@@ -230,6 +230,6 @@ if __name__ == "__main__":
     try:
         create_demo_data()
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"\n[ERROR] Error: {e}")
         import traceback
         traceback.print_exc()
