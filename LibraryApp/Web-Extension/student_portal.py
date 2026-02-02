@@ -23,7 +23,7 @@ except ImportError:
 # Setup path to import database.py from parent directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
-
+    import psycopg2
     from psycopg2.extras import RealDictCursor
     POSTGRES_AVAILABLE = True
 except ImportError:
@@ -31,6 +31,62 @@ except ImportError:
     psycopg2 = None
     RealDictCursor = None
     POSTGRES_AVAILABLE = False
+
+
+class PostgresCursorWrapper:
+    """Wrapper that makes psycopg2 cursors accept SQLite-style '?' placeholders."""
+
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def execute(self, sql, params=None):
+        try:
+            sql = sql.replace('?', '%s')
+        except Exception:
+            pass
+        return self._cursor.execute(sql, params)
+
+    def executemany(self, sql, seq_of_params):
+        try:
+            sql = sql.replace('?', '%s')
+        except Exception:
+            pass
+        return self._cursor.executemany(sql, seq_of_params)
+
+    def fetchone(self):
+        return self._cursor.fetchone()
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+
+    def __iter__(self):
+        return iter(self._cursor)
+
+    def __getattr__(self, name):
+        return getattr(self._cursor, name)
+
+
+class PostgresConnectionWrapper:
+    """Small adapter so the rest of the code can treat Postgres like sqlite3.Row."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def cursor(self):
+        # RealDictCursor makes rows behave like dicts (similar to sqlite3.Row -> dict(row))
+        return PostgresCursorWrapper(self._conn.cursor(cursor_factory=RealDictCursor))
+
+    def commit(self):
+        return self._conn.commit()
+
+    def rollback(self):
+        return self._conn.rollback()
+
+    def close(self):
+        return self._conn.close()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
 
 
 # --- Configuration ---
@@ -65,7 +121,15 @@ def _requests_pk_column(conn) -> str:
                 FROM information_schema.columns
                 WHERE table_name = 'requests'
             """)
-            cols = {str(r[0]) for r in cursor.fetchall()}
+            cols = set()
+            for r in cursor.fetchall():
+                try:
+                    cols.add(str(r.get('column_name')))
+                except Exception:
+                    try:
+                        cols.add(str(r[0]))
+                    except Exception:
+                        pass
         else:
             cursor.execute("PRAGMA table_info(requests)")
             cols = {str(r['name']) for r in cursor.fetchall()}
@@ -644,14 +708,38 @@ def get_portal_db():
 
 def create_table_safe(cursor, table_name, pg_sql, sqlite_sql):
     """Helper to create tables with backend-specific syntax"""
-    database_url = os.getenv('DATABASE_URL')
-    if database_url:
+    # Use backend detection rather than only checking DATABASE_URL, because
+    # desktop/local runs may have DATABASE_URL present but still be using SQLite.
+    try:
+        use_pg = False
         try:
-            cursor.execute(pg_sql)
-        except Exception as e:
-            print(f"Table creation warning ({table_name}): {e}")
-    else:
-        cursor.execute(sqlite_sql)
+            # If the cursor is from our postgres wrapper, it will have a _cursor attr.
+            # The connection wrapper check is more reliable when available.
+            use_pg = isinstance(getattr(cursor, 'connection', None), PostgresConnectionWrapper)  # type: ignore
+        except Exception:
+            pass
+
+        if not use_pg:
+            # Fallback: if we can import psycopg2 and the environment indicates cloud runtime
+            database_url = os.getenv('DATABASE_URL')
+            force_local = os.getenv('PORTAL_FORCE_LOCAL', '').strip().lower() in ('1', 'true', 'yes')
+            use_cloud = os.getenv('PORTAL_USE_CLOUD', '').strip().lower() in ('1', 'true', 'yes')
+            auto_cloud = bool(os.getenv('DYNO') or os.getenv('RENDER') or os.getenv('FLY_APP_NAME') or os.getenv('WEBSITE_INSTANCE_ID'))
+            use_pg = bool(database_url and POSTGRES_AVAILABLE and (use_cloud or auto_cloud) and not force_local)
+
+        if use_pg:
+            try:
+                cursor.execute(pg_sql)
+            except Exception as e:
+                print(f"Table creation warning ({table_name}): {e}")
+        else:
+            cursor.execute(sqlite_sql)
+    except Exception as e:
+        # Last resort: attempt SQLite statement
+        try:
+            cursor.execute(sqlite_sql)
+        except Exception:
+            print(f"Table creation failed ({table_name}): {e}")
 
 def init_portal_db():
     """Initialize the Sandbox DB for Requests and Notes"""
