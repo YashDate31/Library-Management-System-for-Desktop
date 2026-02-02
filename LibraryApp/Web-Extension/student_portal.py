@@ -12,6 +12,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from functools import wraps
 import time
+import subprocess
 from collections import defaultdict
 try:
     from dotenv import load_dotenv
@@ -138,6 +139,65 @@ def get_or_create_secret_key():
 # Serve React Build
 app = Flask(__name__, static_folder='frontend/dist')
 app.secret_key = get_or_create_secret_key()
+
+
+# --- Build / Version info (helps diagnose "server not updated") ---
+APP_START_TIME_UTC = datetime.utcnow().isoformat(timespec='seconds') + 'Z'
+
+
+def _best_effort_git_commit() -> str | None:
+    """Return git commit hash if available (works locally; may be unavailable in some deployments)."""
+    try:
+        # Avoid hanging in some environments
+        out = subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            cwd=BASE_DIR,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        )
+        v = out.decode('utf-8', errors='ignore').strip()
+        return v or None
+    except Exception:
+        return None
+
+
+APP_VERSION = (
+    os.environ.get('APP_VERSION')
+    or os.environ.get('GIT_COMMIT')
+    or _best_effort_git_commit()
+    or APP_START_TIME_UTC
+)
+
+
+@app.after_request
+def _add_version_header(resp):
+    # Always present so you can quickly check in browser DevTools (Network tab)
+    resp.headers['X-App-Version'] = APP_VERSION
+    return resp
+
+
+@app.get('/api/version')
+def api_version():
+    """Debug endpoint to confirm what code/static build the server is running."""
+    info = {
+        'status': 'success',
+        'app_version': APP_VERSION,
+        'app_start_time_utc': APP_START_TIME_UTC,
+        'pid': os.getpid(),
+    }
+
+    try:
+        index_path = os.path.join(app.static_folder, 'index.html')
+        st = os.stat(index_path)
+        info['static_index'] = {
+            'path': 'frontend/dist/index.html',
+            'size_bytes': int(st.st_size),
+            'mtime_utc': datetime.utcfromtimestamp(st.st_mtime).isoformat(timespec='seconds') + 'Z',
+        }
+    except Exception:
+        info['static_index'] = None
+
+    return jsonify(info)
 
 
 # --- Rate Limiter (Custom Implementation - No External Dependencies) ---
