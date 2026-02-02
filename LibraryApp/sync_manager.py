@@ -106,11 +106,12 @@ class SyncManager:
             local_conn = sqlite3.connect(self.local_db_path)
             remote_conn = psycopg2.connect(**self.remote_config)
             
+            # Library tables (bidirectional sync)
             tables_to_sync = ['students', 'books', 'borrow_records', 'admin_activity']
             
             for idx, table in enumerate(tables_to_sync):
                 if progress_callback:
-                    progress = ((idx + 1) / len(tables_to_sync)) * 100
+                    progress = ((idx + 1) / len(tables_to_sync)) * 50  # First half for library
                     progress_callback(table, progress)
                 
                 try:
@@ -130,6 +131,36 @@ class SyncManager:
                     
                 except Exception as e:
                     results['errors'].append(f"{table}: {str(e)}")
+            
+            # Portal tables (requests) - sync from remote to local so desktop sees web requests
+            try:
+                portal_db_path = os.path.join(os.path.dirname(self.local_db_path), 'Web-Extension', 'portal.db')
+                if os.path.exists(os.path.dirname(portal_db_path)):
+                    portal_conn = sqlite3.connect(portal_db_path)
+                    portal_conn.row_factory = sqlite3.Row
+                    
+                    portal_tables = ['requests', 'notices']
+                    for idx, table in enumerate(portal_tables):
+                        if progress_callback:
+                            progress = 50 + ((idx + 1) / len(portal_tables)) * 50
+                            progress_callback(f"portal.{table}", progress)
+                        
+                        try:
+                            # Only sync from remote to local for portal data
+                            # (students submit on web → desktop admin sees them)
+                            records = self._sync_portal_table_remote_to_local(
+                                portal_conn, remote_conn, table
+                            )
+                            results['records_synced'] += records
+                            results['tables_synced'].append(f'portal.{table}')
+                        except Exception as e:
+                            # Don't fail entire sync if portal tables have issues
+                            results['errors'].append(f"portal.{table}: {str(e)}")
+                    
+                    portal_conn.commit()
+                    portal_conn.close()
+            except Exception as e:
+                results['errors'].append(f"Portal sync: {str(e)}")
             
             local_conn.close()
             remote_conn.close()
@@ -240,9 +271,81 @@ class SyncManager:
             'students': 'enrollment_no',
             'books': 'book_id',
             'borrow_records': 'id',
-            'admin_activity': 'id'
+            'admin_activity': 'id',
+            'requests': 'req_id',
+            'notices': 'id'
         }
         return pk_map.get(table_name, 'id')
+    
+    def _sync_portal_table_remote_to_local(self, local_conn, remote_conn, table_name):
+        """Sync portal tables (requests, notices) from remote Postgres to local SQLite"""
+        try:
+            local_cursor = local_conn.cursor()
+            remote_cursor = remote_conn.cursor()
+            
+            # Check if table exists remotely
+            remote_cursor.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = %s
+                )
+            """, (table_name,))
+            if not remote_cursor.fetchone()[0]:
+                return 0
+            
+            # Get records from remote
+            remote_cursor.execute(f"SELECT * FROM {table_name}")
+            rows = remote_cursor.fetchall()
+            
+            if not rows:
+                return 0
+            
+            # Get column names
+            columns = [desc[0] for desc in remote_cursor.description]
+            
+            synced_count = 0
+            pk = self._get_primary_key(table_name)
+            
+            for row in rows:
+                try:
+                    # Create dict for easier access
+                    row_dict = dict(zip(columns, row))
+                    pk_value = row_dict.get(pk)
+                    
+                    if pk_value is None:
+                        continue
+                    
+                    # Check if exists locally
+                    local_cursor.execute(f"SELECT {pk} FROM {table_name} WHERE {pk} = ?", (pk_value,))
+                    exists = local_cursor.fetchone()
+                    
+                    if exists:
+                        # Update existing record
+                        update_cols = [f"{col} = ?" for col in columns if col != pk]
+                        update_vals = [row_dict[col] for col in columns if col != pk]
+                        update_vals.append(pk_value)
+                        
+                        query = f"UPDATE {table_name} SET {', '.join(update_cols)} WHERE {pk} = ?"
+                        local_cursor.execute(query, update_vals)
+                    else:
+                        # Insert new record
+                        placeholders = ', '.join(['?'] * len(columns))
+                        cols = ', '.join(columns)
+                        values = [row_dict[col] for col in columns]
+                        
+                        query = f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders})"
+                        local_cursor.execute(query, values)
+                    
+                    synced_count += 1
+                    
+                except Exception as e:
+                    print(f"Error syncing portal row in {table_name}: {e}")
+            
+            return synced_count
+            
+        except Exception as e:
+            print(f"Error syncing portal table {table_name} remote to local: {e}")
+            return 0
     
     def auto_sync_daemon(self, interval_minutes=30):
         """Run automatic sync in background thread"""
