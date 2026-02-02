@@ -23,8 +23,7 @@ except ImportError:
 # Setup path to import database.py from parent directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
-    from database import PostgresConnectionWrapper
-    import psycopg2
+
     from psycopg2.extras import RealDictCursor
     POSTGRES_AVAILABLE = True
 except ImportError:
@@ -2379,17 +2378,52 @@ def api_admin_all_requests():
 
         conn.close()
 
-        # Get student names from library DB
-        conn_lib = get_library_db()
-        cursor_lib = conn_lib.cursor()
+        # Enrich with student names from library DB.
+        # IMPORTANT: In deployed environments, the portal DB may exist even when the library DB
+        # (or students table) is missing/unmigrated. Don't fail the whole endpoint in that case.
+        try:
+            conn_lib = get_library_db()
+            cursor_lib = conn_lib.cursor()
 
-        # Enrich general requests with student names
-        for req in general_requests:
-            enrollment_no = str(req.get('enrollment_no', '')).strip()
-            cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (enrollment_no,))
-            student = cursor_lib.fetchone()
-            if not student:
-                # If this is a registration request, use the submitted name
+            # Enrich general requests with student names
+            for req in general_requests:
+                enrollment_no = str(req.get('enrollment_no', '')).strip()
+                cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (enrollment_no,))
+                student = cursor_lib.fetchone()
+                if not student:
+                    # If this is a registration request, use the submitted name
+                    if req.get('request_type') == 'student_registration':
+                        try:
+                            d = req.get('details') or {}
+                            req['student_name'] = d.get('name') or 'New Student'
+                        except Exception:
+                            req['student_name'] = 'New Student'
+                    else:
+                        req['student_name'] = 'Unknown'
+                else:
+                    try:
+                        req['student_name'] = student['name']
+                    except Exception:
+                        # Last-resort fallback
+                        req['student_name'] = dict(student).get('name', 'Unknown')
+
+            # Enrich deletion requests with student names
+            for req in deletion_requests:
+                enrollment_no = str(req.get('student_id', '')).strip()
+                cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (enrollment_no,))
+                student = cursor_lib.fetchone()
+                if not student:
+                    req['student_name'] = 'Unknown'
+                else:
+                    try:
+                        req['student_name'] = student['name']
+                    except Exception:
+                        req['student_name'] = dict(student).get('name', 'Unknown')
+
+            conn_lib.close()
+        except Exception:
+            # Fallback: ensure required fields exist
+            for req in general_requests:
                 if req.get('request_type') == 'student_registration':
                     try:
                         d = req.get('details') or {}
@@ -2397,28 +2431,10 @@ def api_admin_all_requests():
                     except Exception:
                         req['student_name'] = 'New Student'
                 else:
-                    req['student_name'] = 'Unknown'
-            else:
-                try:
-                    req['student_name'] = student['name']
-                except Exception:
-                    # Last-resort fallback
-                    req['student_name'] = dict(student).get('name', 'Unknown')
+                    req['student_name'] = req.get('student_name') or 'Unknown'
 
-        # Enrich deletion requests with student names
-        for req in deletion_requests:
-            enrollment_no = str(req.get('student_id', '')).strip()
-            cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (enrollment_no,))
-            student = cursor_lib.fetchone()
-            if not student:
-                req['student_name'] = 'Unknown'
-            else:
-                try:
-                    req['student_name'] = student['name']
-                except Exception:
-                    req['student_name'] = dict(student).get('name', 'Unknown')
-
-        conn_lib.close()
+            for req in deletion_requests:
+                req['student_name'] = req.get('student_name') or 'Unknown'
 
         # Get rejected count from portal DB
         conn2 = get_portal_db()
@@ -2485,18 +2501,33 @@ def api_admin_request_history():
     
     conn.close()
     
-    # Get student names and filter by search query
-    conn_lib = get_library_db()
-    cursor_lib = conn_lib.cursor()
-    
+    # Get student names and filter by search query.
+    # If the library DB isn't available in deployed mode, do not fail the endpoint.
     filtered_requests = []
-    
+
+    cursor_lib = None
+    conn_lib = None
+    try:
+        conn_lib = get_library_db()
+        cursor_lib = conn_lib.cursor()
+    except Exception:
+        cursor_lib = None
+
     for req in processed_requests:
-        cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (req['enrollment_no'],))
-        student = cursor_lib.fetchone()
-        if student:
-            student_name = student['name']
-        else:
+        student_name = None
+        if cursor_lib is not None:
+            try:
+                cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (req['enrollment_no'],))
+                student = cursor_lib.fetchone()
+                if student:
+                    try:
+                        student_name = student['name']
+                    except Exception:
+                        student_name = dict(student).get('name')
+            except Exception:
+                student_name = None
+
+        if not student_name:
             # For registration requests, show the submitted name
             if req.get('request_type') == 'student_registration':
                 try:
@@ -2506,17 +2537,24 @@ def api_admin_request_history():
                     student_name = 'New Student'
             else:
                 student_name = 'Unknown'
+
         req['student_name'] = student_name
-        
+
         # Apply search filter (if search query exists)
         if q:
             search_str = q.lower()
-            if (search_str in req['enrollment_no'].lower() or 
-                search_str in student_name.lower() or 
-                search_str in req['request_type'].lower()):
+            if (search_str in str(req.get('enrollment_no', '')).lower() or
+                search_str in str(student_name).lower() or
+                search_str in str(req.get('request_type', '')).lower()):
                 filtered_requests.append(req)
         else:
             filtered_requests.append(req)
+
+    try:
+        if conn_lib is not None:
+            conn_lib.close()
+    except Exception:
+        pass
     
     conn_lib.close()
     

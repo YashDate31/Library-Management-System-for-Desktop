@@ -52,18 +52,28 @@ except Exception as e:
 sys.path.append(os.path.join(os.path.dirname(__file__), 'Web-Extension'))
 
 # Optional: Web Portal support
+# NOTE: Admin/desktop features can call a remote portal API even if Waitress isn't installed.
+# Waitress is only required when hosting the portal server locally from the desktop app.
 try:
     from student_portal import app as flask_app  # type: ignore
-    from waitress import serve  # type: ignore
-    WEB_PORTAL_AVAILABLE = True
+    PORTAL_APP_AVAILABLE = True
 except Exception as e:
     import traceback
     traceback.print_exc()
-    print(f"Portal Import Error: {e}")
+    print(f"Portal Import Error (student_portal): {e}")
     flask_app = None
+    PORTAL_APP_AVAILABLE = False
+
+try:
+    from waitress import serve  # type: ignore
+    WAITRESS_AVAILABLE = True
+except Exception as e:
+    print(f"Portal Import Warning (waitress): {e}")
     serve = None
-    WEB_PORTAL_AVAILABLE = False
-    print("Web portal not available - student portal features will be disabled")
+    WAITRESS_AVAILABLE = False
+
+# Backwards-compatible flag used throughout the UI.
+WEB_PORTAL_AVAILABLE = PORTAL_APP_AVAILABLE
 
 # Optional: Word export support
 try:
@@ -580,6 +590,9 @@ class LibraryApp:
         # Student Portal Thread
         self.portal_thread = None
         self.portal_port = 5000
+        # If configured, use deployed portal base URL (e.g., Render) for admin API calls.
+        # Leave empty to use local localhost portal.
+        self.portal_base_url = (self.library_settings.get('portal_base_url') or '').strip()
 
         # Launch login interface
         self.create_login_interface()
@@ -671,7 +684,10 @@ class LibraryApp:
             'fine_per_day': 5,
             'loan_period_days': 7,
             'max_books_per_student': 5,
-            'admin_password': 'gpa123'
+            'admin_password': 'gpa123',
+            # Optional: if set, admin portal tabs will use this URL instead of localhost.
+            # Example: 'https://your-service.onrender.com'
+            'portal_base_url': ''
         }
         
         if os.path.exists(settings_file):
@@ -3985,12 +4001,36 @@ Current Settings:
             )
             manual_sync_btn.pack(fill=tk.X, pady=(5, 10))
 
+            # If remote sync isn't configured, keep the button clickable so the user
+            # can see setup instructions. Disabling the button on Windows often
+            # causes custom colors to be ignored, making it look camouflaged.
             if not self.sync_manager:
-                manual_sync_btn.config(state='disabled', cursor='arrow')
-            
+                manual_sync_btn.config(
+                    text="ℹ️  Configure Remote Sync",
+                    bg='white',
+                    fg='#2E86AB',
+                    activebackground='#e8f4fb',
+                    activeforeground='#1d6a8a',
+                    relief='solid',
+                    bd=1,
+                    highlightthickness=1,
+                    highlightbackground='#2E86AB',
+                    highlightcolor='#2E86AB'
+                )
+
             # Hover effect
-            def sync_enter(e): manual_sync_btn.config(bg='#5a4bc7')
-            def sync_leave(e): manual_sync_btn.config(bg='#6c5ce7')
+            def sync_enter(e):
+                if self.sync_manager:
+                    manual_sync_btn.config(bg='#5a4bc7')
+                else:
+                    manual_sync_btn.config(bg='#e8f4fb')
+
+            def sync_leave(e):
+                if self.sync_manager:
+                    manual_sync_btn.config(bg='#6c5ce7')
+                else:
+                    manual_sync_btn.config(bg='white')
+
             manual_sync_btn.bind('<Enter>', sync_enter)
             manual_sync_btn.bind('<Leave>', sync_leave)
             
@@ -10399,7 +10439,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
         self.portal_url_history = []
         self.portal_start_time = None
         self.portal_request_count = 0
-        self.portal_url = f"http://127.0.0.1:{self.portal_port}"
+        self.portal_url = self._get_portal_base_url()
         self.health_indicators = {}
         
         # Create internal notebook for sub-tabs
@@ -10444,6 +10484,68 @@ Note: This is an automated email. Please find the attached formal overdue letter
         materials_tab = tk.Frame(portal_notebook, bg='white')
         portal_notebook.add(materials_tab, text="📚 Study Materials")
         self._create_study_materials_section(materials_tab)
+
+    # -----------------------------------------------------------------------
+    # Portal URL helpers (local vs deployed)
+    # -----------------------------------------------------------------------
+    def _get_configured_portal_base_url(self) -> str:
+        """Return the configured portal base URL (may be empty)."""
+        try:
+            raw = (getattr(self, 'portal_base_url', None) or '').strip()
+            if not raw:
+                raw = (self.library_settings.get('portal_base_url') or '').strip()
+            return raw.rstrip('/')
+        except Exception:
+            return ''
+
+    def _get_portal_base_url(self) -> str:
+        """Return base URL to use for admin API calls.
+
+        If not configured, defaults to local localhost portal.
+        """
+        configured = self._get_configured_portal_base_url()
+        if configured:
+            return configured
+        return f"http://127.0.0.1:{self.portal_port}"
+
+    def _portal_api_url(self, path: str) -> str:
+        """Build a full URL for a portal API path."""
+        if not path:
+            return self._get_portal_base_url()
+        if not path.startswith('/'):
+            path = '/' + path
+        return self._get_portal_base_url() + path
+
+    def _portal_is_external(self) -> bool:
+        """True if portal_base_url is explicitly configured and not localhost/127.0.0.1."""
+        configured = self._get_configured_portal_base_url()
+        if not configured:
+            return False
+        lowered = configured.lower()
+        return ('127.0.0.1' not in lowered) and ('localhost' not in lowered)
+
+    def _save_portal_base_url(self, new_value: str) -> bool:
+        """Persist portal_base_url to library settings."""
+        new_value = (new_value or '').strip().rstrip('/')
+        if new_value and not (new_value.startswith('http://') or new_value.startswith('https://')):
+            messagebox.showwarning(
+                "Invalid URL",
+                "Portal Base URL must start with http:// or https://\n\nExample: https://your-service.onrender.com"
+            )
+            return False
+
+        # Update in-memory
+        self.portal_base_url = new_value
+        if not hasattr(self, 'library_settings') or not isinstance(self.library_settings, dict):
+            self.library_settings = {}
+        self.library_settings['portal_base_url'] = new_value
+
+        # Persist
+        try:
+            return bool(self.save_library_settings(self.library_settings))
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save portal URL.\n\n{e}")
+            return False
 
     def _create_broadcast_section(self, parent):
         """Create broadcast notice management section"""
@@ -10561,10 +10663,6 @@ Note: This is an automated email. Please find the attached formal overdue letter
 
     def _post_notice(self):
         """Send notice to backend"""
-        if not WEB_PORTAL_AVAILABLE:
-            messagebox.showwarning("Unavailable", "Web portal server is not running.")
-            return
-
         title = self.notice_title.get().strip()
         msg = self.notice_msg.get("1.0", tk.END).strip()
         
@@ -10576,11 +10674,11 @@ Note: This is an automated email. Please find the attached formal overdue letter
             import urllib.request
             import json
             
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/notices"
+            url = self._portal_api_url('/api/admin/notices')
             data = json.dumps({"title": title, "message": msg}).encode('utf-8')
             req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'}, method='POST')
             
-            with urllib.request.urlopen(req, timeout=1) as response:
+            with urllib.request.urlopen(req, timeout=6) as response:
                 res = json.loads(response.read().decode())
                 if res['status'] == 'success':
                     messagebox.showinfo("Success", "Notice posted successfully!")
@@ -10597,18 +10695,14 @@ Note: This is an automated email. Please find the attached formal overdue letter
         for w in self.notices_container.winfo_children():
             w.destroy()
             
-        if not WEB_PORTAL_AVAILABLE:
-            tk.Label(self.notices_container, text="Portal server unavailable", bg='white', fg='red').pack(pady=20)
-            return
-            
         try:
             import urllib.request
             import json
             
-            url = f"http://127.0.0.1:{self.portal_port}/api/notices" # Get active only
+            url = self._portal_api_url('/api/notices')  # Get active only
             req = urllib.request.Request(url)
             
-            with urllib.request.urlopen(req, timeout=1) as response:
+            with urllib.request.urlopen(req, timeout=6) as response:
                 data = json.loads(response.read().decode())
                 notices = data.get('notices', [])
                 
@@ -10647,9 +10741,6 @@ Note: This is an automated email. Please find the attached formal overdue letter
 
     def _delete_notice(self, notice_id):
         """Deactivate notice"""
-        if not WEB_PORTAL_AVAILABLE:
-            return
-
         if not messagebox.askyesno("Confirm", "Are you sure you want to delete this notice?"):
             return
             
@@ -10657,10 +10748,10 @@ Note: This is an automated email. Please find the attached formal overdue letter
             import urllib.request
             import json
             
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/notices/{notice_id}"
+            url = self._portal_api_url(f"/api/admin/notices/{notice_id}")
             req = urllib.request.Request(url, method='DELETE')
             
-            with urllib.request.urlopen(req, timeout=1) as response:
+            with urllib.request.urlopen(req, timeout=6) as response:
                 self._refresh_notices()
         except Exception as e:
             messagebox.showerror("Error", f"Failed to delete: {e}")
@@ -10766,12 +10857,12 @@ Note: This is an automated email. Please find the attached formal overdue letter
             import urllib.error
             
             # Fetch observability data from API
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/observability"
+            url = self._portal_api_url('/api/admin/observability')
             try:
-                response = urllib.request.urlopen(url, timeout=5)
+                response = urllib.request.urlopen(url, timeout=10)
                 data = json.loads(response.read().decode())
             except urllib.error.URLError as e:
-                tk.Label(self.obs_kpi_container, text="⚠️ Server not running. Start the portal server to view analytics.",
+                tk.Label(self.obs_kpi_container, text=f"⚠️ Portal API unreachable.\nConfigured URL: {self._get_portal_base_url()}",
                     font=('Segoe UI', 12), bg='white', fg='#dc3545').pack(pady=30)
                 return
             except Exception as e:
@@ -11026,12 +11117,18 @@ Note: This is an automated email. Please find the attached formal overdue letter
             import urllib.error
             
             # Fetch observability data from API
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/observability"
+            url = self._portal_api_url('/api/admin/observability')
             try:
-                response = urllib.request.urlopen(url, timeout=5)
+                response = urllib.request.urlopen(url, timeout=10)
                 data = json.loads(response.read().decode())
             except urllib.error.URLError:
-                tk.Label(self.traffic_graph_container, text="Server not running.\nStart the portal server to view traffic.", font=('Segoe UI', 12), bg='white', fg='#dc3545').pack(pady=50)
+                tk.Label(
+                    self.traffic_graph_container,
+                    text=f"Portal API unreachable.\nConfigured URL: {self._get_portal_base_url()}",
+                    font=('Segoe UI', 12),
+                    bg='white',
+                    fg='#dc3545'
+                ).pack(pady=50)
                 return
             except Exception as e:
                 tk.Label(self.traffic_graph_container, text=f"Error connecting to server: {e}", font=('Segoe UI', 12), bg='white', fg='#dc3545').pack(pady=50)
@@ -11280,10 +11377,6 @@ Note: This is an automated email. Please find the attached formal overdue letter
     
     def _upload_study_material(self):
         """Upload study material file to server"""
-        if not WEB_PORTAL_AVAILABLE:
-            messagebox.showwarning("Unavailable", "Web portal is not running.")
-            return
-        
         title = self.material_title.get().strip()
         desc = self.material_desc.get("1.0", tk.END).strip()
         year = self.material_year.get()
@@ -11302,7 +11395,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
             import requests
             import os
             
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/study-materials"
+            url = self._portal_api_url('/api/admin/study-materials')
             
             # Prepare multipart form data
             with open(self.selected_file_full_path, 'rb') as f:
@@ -11335,17 +11428,14 @@ Note: This is an automated email. Please find the attached formal overdue letter
     
     def _refresh_study_materials(self):
         """Refresh materials list from database"""
-        if not WEB_PORTAL_AVAILABLE:
-            return
-        
         try:
             import urllib.request
             import json
             
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/study-materials"
+            url = self._portal_api_url('/api/admin/study-materials')
             req = urllib.request.Request(url)
             
-            with urllib.request.urlopen(req, timeout=2) as response:
+            with urllib.request.urlopen(req, timeout=8) as response:
                 res = json.loads(response.read().decode())
                 materials = res.get('materials', [])
                 
@@ -11387,10 +11477,10 @@ Note: This is an automated email. Please find the attached formal overdue letter
             import json
             
             material_id = self.materials_tree.item(selected[0])['values'][0]
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/study-materials/{material_id}"
+            url = self._portal_api_url(f"/api/admin/study-materials/{material_id}")
             req = urllib.request.Request(url, method='DELETE')
             
-            with urllib.request.urlopen(req, timeout=2) as response:
+            with urllib.request.urlopen(req, timeout=8) as response:
                 res = json.loads(response.read().decode())
                 if res['status'] == 'success':
                     messagebox.showinfo("Success", "Material deleted successfully!")
@@ -11491,13 +11581,13 @@ Note: This is an automated email. Please find the attached formal overdue letter
             }
             
             try:
-                url = f"http://127.0.0.1:{self.portal_port}/api/admin/study-materials/{material_id}"
+                url = self._portal_api_url(f"/api/admin/study-materials/{material_id}")
                 req = urllib.request.Request(url, method='PUT')
                 req.add_header('Content-Type', 'application/json')
                 
                 jsondata = json.dumps(data).encode('utf-8')
                 
-                with urllib.request.urlopen(req, data=jsondata, timeout=5) as response:
+                with urllib.request.urlopen(req, data=jsondata, timeout=10) as response:
                     res = json.loads(response.read().decode())
                     if res.get('status') == 'success':
                         messagebox.showinfo("Success", "Material updated!", parent=dialog)
@@ -11513,9 +11603,9 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 try:
                     import urllib.request
                     import json
-                    url = f"http://127.0.0.1:{self.portal_port}/api/admin/study-materials/{material_id}"
+                    url = self._portal_api_url(f"/api/admin/study-materials/{material_id}")
                     req = urllib.request.Request(url, method='DELETE')
-                    with urllib.request.urlopen(req, timeout=5) as response:
+                    with urllib.request.urlopen(req, timeout=10) as response:
                         res = json.loads(response.read().decode())
                         if res.get('status') == 'success':
                             messagebox.showinfo("Deleted", "Material deleted successfully", parent=dialog)
@@ -11683,6 +11773,90 @@ Note: This is an automated email. Please find the attached formal overdue letter
             bg='white',
             fg='#888'
         ).pack(pady=(8, 5))
+
+        # Portal Base URL configuration (for deployed portal like Render)
+        config_card = tk.Frame(left_frame, bg='#f8f9fa', relief='solid', bd=1)
+        config_card.pack(fill=tk.X, pady=(12, 0))
+
+        tk.Label(
+            config_card,
+            text="🌍 Portal Base URL (Optional)",
+            font=('Segoe UI', 10, 'bold'),
+            bg='#f1f3f4',
+            fg='#333',
+            padx=12,
+            pady=8
+        ).pack(fill=tk.X)
+
+        config_inner = tk.Frame(config_card, bg='#f8f9fa')
+        config_inner.pack(fill=tk.X, padx=12, pady=10)
+
+        tk.Label(
+            config_inner,
+            text="Leave empty to use local portal. Set this to your Render URL to receive online registration requests.",
+            font=('Segoe UI', 8),
+            bg='#f8f9fa',
+            fg='#666',
+            wraplength=260,
+            justify='left'
+        ).pack(anchor='w', pady=(0, 8))
+
+        self.portal_base_url_var = tk.StringVar(value=self._get_configured_portal_base_url())
+        url_entry = tk.Entry(config_inner, textvariable=self.portal_base_url_var, font=('Consolas', 9))
+        url_entry.pack(fill=tk.X, pady=(0, 8))
+
+        btns = tk.Frame(config_inner, bg='#f8f9fa')
+        btns.pack(fill=tk.X)
+
+        def _save_and_refresh_portal_url():
+            if self._save_portal_base_url(self.portal_base_url_var.get()):
+                messagebox.showinfo("Saved", "Portal Base URL saved. Refreshing portal dashboards...")
+                try:
+                    self._refresh_server_dashboard()
+                except Exception:
+                    pass
+                # Best-effort refresh of other portal sections if already built
+                for fn in (
+                    getattr(self, '_refresh_portal_requests', None),
+                    getattr(self, '_refresh_deletion_requests', None),
+                    getattr(self, '_refresh_notices', None),
+                ):
+                    if callable(fn):
+                        try:
+                            fn()
+                        except Exception:
+                            pass
+
+        def _clear_portal_url():
+            self.portal_base_url_var.set('')
+            _save_and_refresh_portal_url()
+
+        tk.Button(
+            btns,
+            text="💾 Save",
+            font=('Segoe UI', 9, 'bold'),
+            bg=self.colors['secondary'],
+            fg='white',
+            padx=12,
+            pady=5,
+            cursor='hand2',
+            relief='flat',
+            command=_save_and_refresh_portal_url
+        ).pack(side=tk.LEFT)
+
+        tk.Button(
+            btns,
+            text="🧹 Clear (Local)",
+            font=('Segoe UI', 9),
+            bg='white',
+            fg='#333',
+            padx=10,
+            pady=5,
+            cursor='hand2',
+            relief='solid',
+            bd=1,
+            command=_clear_portal_url
+        ).pack(side=tk.LEFT, padx=(8, 0))
 
 
 
@@ -11964,6 +12138,14 @@ Note: This is an automated email. Please find the attached formal overdue letter
     
     def _restart_portal_server(self):
         """Restart the portal server"""
+        if self._portal_is_external():
+            messagebox.showinfo(
+                "Remote Portal",
+                "A Portal Base URL is configured (external/deployed).\n\n"
+                "This desktop app cannot restart the remote server. Use the hosting provider dashboard (e.g., Render)."
+            )
+            self._run_health_checks()
+            return
         self.start_student_portal()
         self._run_health_checks()
         messagebox.showinfo("Server", "Portal server has been restarted.")
@@ -11973,7 +12155,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
         try:
             import urllib.request
             import json
-            response = urllib.request.urlopen(f"http://127.0.0.1:{self.portal_port}/api/admin/stats", timeout=3)
+            response = urllib.request.urlopen(self._portal_api_url('/api/admin/stats'), timeout=6)
             stats = json.loads(response.read().decode())
             
             # Parse request stats
@@ -12010,19 +12192,27 @@ Note: This is an automated email. Please find the attached formal overdue letter
         
     def _initialize_portal_server(self):
         """Initialize portal server and update dashboard"""
-        self.start_student_portal()
         self.portal_start_time = datetime.now()
-        
-        # Get current IP
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            local_ip = s.getsockname()[0]
-            s.close()
-        except:
-            local_ip = "127.0.0.1"
-        
-        self.portal_url = f"http://{local_ip}:{self.portal_port}"
+
+        configured = self._get_configured_portal_base_url()
+        if configured:
+            # External/deployed portal mode
+            local_ip = "—"
+            self.portal_url = configured
+        else:
+            # Local hosting mode
+            self.start_student_portal()
+
+            # Get current IP
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))
+                local_ip = s.getsockname()[0]
+                s.close()
+            except:
+                local_ip = "127.0.0.1"
+
+            self.portal_url = f"http://{local_ip}:{self.portal_port}"
         
         # Add to history
         self.portal_url_history.append({
@@ -12064,15 +12254,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
         for w in self.portal_qr_container.winfo_children():
             w.destroy()
         
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            local_ip = s.getsockname()[0]
-            s.close()
-        except:
-            local_ip = "127.0.0.1"
-        
-        url = f"http://{local_ip}:{self.portal_port}"
+        url = getattr(self, 'portal_url', '') or self._get_portal_base_url()
         
         try:
             qr = qrcode.QRCode(box_size=8, border=2)
@@ -12145,7 +12327,15 @@ Note: This is an automated email. Please find the attached formal overdue letter
         # Check 1: Portal Server
         try:
             import urllib.request
-            urllib.request.urlopen(f"http://127.0.0.1:{self.portal_port}/api/me", timeout=2)
+            import urllib.error
+
+            health_url = self._portal_api_url('/api/me')
+            try:
+                urllib.request.urlopen(health_url, timeout=4)
+            except urllib.error.HTTPError as he:
+                # /api/me may return 401 if not logged in; treat as server healthy.
+                if he.code not in (400, 401, 403):
+                    raise
             if "Portal Server" in self.health_indicators:
                 self.health_indicators["Portal Server"].config(text="● Healthy", fg='#28a745')
         except:
@@ -12155,14 +12345,18 @@ Note: This is an automated email. Please find the attached formal overdue letter
         
         # Check 2: Database
         try:
-            portal_db_path = os.path.join(os.path.dirname(__file__), 'Web-Extension', 'portal.db')
-            if os.path.exists(portal_db_path):
+            if self._portal_is_external():
                 if "Database Connection" in self.health_indicators:
-                    self.health_indicators["Database Connection"].config(text="● Connected", fg='#28a745')
+                    self.health_indicators["Database Connection"].config(text="● Remote", fg='#17a2b8')
             else:
-                if "Database Connection" in self.health_indicators:
-                    self.health_indicators["Database Connection"].config(text="● Not Found", fg='#ffc107')
-                issues.append("Portal database not found")
+                portal_db_path = os.path.join(os.path.dirname(__file__), 'Web-Extension', 'portal.db')
+                if os.path.exists(portal_db_path):
+                    if "Database Connection" in self.health_indicators:
+                        self.health_indicators["Database Connection"].config(text="● Connected", fg='#28a745')
+                else:
+                    if "Database Connection" in self.health_indicators:
+                        self.health_indicators["Database Connection"].config(text="● Not Found", fg='#ffc107')
+                    issues.append("Portal database not found")
         except:
             if "Database Connection" in self.health_indicators:
                 self.health_indicators["Database Connection"].config(text="● Error", fg='#dc3545')
@@ -12311,6 +12505,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
         self.request_stats_labels = {}
         stat_types = [
             ("Profile Updates", "#17a2b8", "profile_update"),
+            ("Registrations", "#007bff", "student_registration"),
             ("Book Requests", "#6f42c1", "book_request"),
             ("Renewals", "#28a745", "renewal"),
             ("Extensions", "#fd7e14", "extension"),
@@ -12422,25 +12617,21 @@ Note: This is an automated email. Please find the attached formal overdue letter
         # Clear existing
         for w in self.requests_container.winfo_children():
             w.destroy()
-            
-        if not WEB_PORTAL_AVAILABLE:
-            self._show_empty_message(self.requests_container, "Portal Unavailable", "Web portal server is not running.")
-            return
         
         try:
             import urllib.request
             import urllib.error
             
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/all-requests"
+            url = self._portal_api_url('/api/admin/all-requests')
             req = urllib.request.Request(url)
             
-            with urllib.request.urlopen(req, timeout=5) as response:
+            with urllib.request.urlopen(req, timeout=8) as response:
                 data = json.loads(response.read().decode())
                 requests_list = data.get('requests', [])
                 
                 # Update count badge
                 if hasattr(self, 'requests_count_badge'):
-                    self.requests_count_badge.config(text=str(len(requests_list)))
+                    self.requests_count_badge.config(text=str(len(requests_list)), bg=self.colors['secondary'])
                 
                 # Update stats by type
                 if hasattr(self, 'request_stats_labels'):
@@ -12471,7 +12662,11 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     self._create_request_card(self.requests_container, req_data, row, col, idx + 1)
                     
         except Exception as e:
-            self._show_empty_message(self.requests_container, "Could not load requests", f"Portal server may not be running.\n{str(e)}")
+            self._show_empty_message(
+                self.requests_container,
+                "Could not load requests",
+                f"Portal API may be unreachable.\n\nConfigured URL: {self._get_portal_base_url()}\n\n{str(e)}"
+            )
     
     def _toggle_request_history(self):
         """Toggle between pending requests and history view"""
@@ -12496,10 +12691,6 @@ Note: This is an automated email. Please find the attached formal overdue letter
         # Clear existing
         for w in self.requests_container.winfo_children():
             w.destroy()
-            
-        if not WEB_PORTAL_AVAILABLE:
-            self._show_empty_message(self.requests_container, "Portal Unavailable", "Web portal server is not running.")
-            return
         
         try:
             import urllib.request
@@ -12516,10 +12707,10 @@ Note: This is an automated email. Please find the attached formal overdue letter
             days = days_map.get(self.request_days_var.get(), "") if hasattr(self, 'request_days_var') else ""
             q = urllib.parse.quote(self.request_search_var.get().strip()) if hasattr(self, 'request_search_var') else ""
             
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/request-history?q={q}&days={days}"
+            url = self._portal_api_url(f"/api/admin/request-history?q={q}&days={days}")
             req = urllib.request.Request(url)
             
-            with urllib.request.urlopen(req, timeout=5) as response:
+            with urllib.request.urlopen(req, timeout=8) as response:
                 data = json.loads(response.read().decode())
                 history_list = data.get('history', [])
                 counts = data.get('counts', {})
@@ -12613,7 +12804,8 @@ Note: This is an automated email. Please find the attached formal overdue letter
             'renewal': '#28a745',
             'book_reservation': '#6f42c1',
             'book_request': '#6f42c1',
-            'extension': '#fd7e14'
+            'extension': '#fd7e14',
+            'student_registration': '#007bff'
         }
         req_type = req_data.get('request_type', 'request')
         type_color = type_colors.get(req_type, '#6c757d')
@@ -12714,7 +12906,8 @@ Note: This is an automated email. Please find the attached formal overdue letter
             'renewal': '#28a745',
             'book_reservation': '#6f42c1',
             'book_request': '#6f42c1',
-            'extension': '#fd7e14'
+            'extension': '#fd7e14',
+            'student_registration': '#007bff'
         }
         req_type = req_data.get('request_type', 'request')
         type_color = type_colors.get(req_type, '#6c757d')
@@ -12819,10 +13012,10 @@ Note: This is an automated email. Please find the attached formal overdue letter
             import urllib.request
             import urllib.error
             
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/requests/{req_id}/{action}"
+            url = self._portal_api_url(f"/api/admin/requests/{req_id}/{action}")
             req = urllib.request.Request(url, method='POST', data=b'')
             
-            with urllib.request.urlopen(req, timeout=5) as response:
+            with urllib.request.urlopen(req, timeout=8) as response:
                 result = json.loads(response.read().decode())
                 if result.get('status') == 'success':
                     messagebox.showinfo("Success", f"Request {action}d successfully!")
@@ -13010,18 +13203,14 @@ Note: This is an automated email. Please find the attached formal overdue letter
         """Fetch and display deletion requests in two-column layout"""
         for w in self.deletion_container.winfo_children():
             w.destroy()
-            
-        if not WEB_PORTAL_AVAILABLE:
-            self._show_empty_message(self.deletion_container, "Portal Unavailable", "Web portal server is not running.")
-            return
         
         try:
             import urllib.request
             
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/all-requests"
+            url = self._portal_api_url('/api/admin/all-requests')
             req = urllib.request.Request(url)
             
-            with urllib.request.urlopen(req, timeout=5) as response:
+            with urllib.request.urlopen(req, timeout=8) as response:
                 data = json.loads(response.read().decode())
                 deletions = data.get('deletion_requests', [])
                 
@@ -13075,10 +13264,6 @@ Note: This is an automated email. Please find the attached formal overdue letter
         # Clear existing
         for w in self.deletion_container.winfo_children():
             w.destroy()
-            
-        if not WEB_PORTAL_AVAILABLE:
-            self._show_empty_message(self.deletion_container, "Portal Unavailable", "Web portal server is not running.")
-            return
         
         try:
             import urllib.request
@@ -13095,10 +13280,10 @@ Note: This is an automated email. Please find the attached formal overdue letter
             days = days_map.get(self.deletion_days_var.get(), "") if hasattr(self, 'deletion_days_var') else ""
             q = urllib.parse.quote(self.deletion_search_var.get().strip()) if hasattr(self, 'deletion_search_var') else ""
             
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/deletion-history?q={q}&days={days}"
+            url = self._portal_api_url(f"/api/admin/deletion-history?q={q}&days={days}")
             req = urllib.request.Request(url)
             
-            with urllib.request.urlopen(req, timeout=5) as response:
+            with urllib.request.urlopen(req, timeout=8) as response:
                 data = json.loads(response.read().decode())
                 history_list = data.get('history', [])
                 counts = data.get('counts', {})
@@ -13363,10 +13548,10 @@ Note: This is an automated email. Please find the attached formal overdue letter
         try:
             import urllib.request
             
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/deletion/{del_id}/{action}"
+            url = self._portal_api_url(f"/api/admin/deletion/{del_id}/{action}")
             req = urllib.request.Request(url, method='POST', data=b'')
             
-            with urllib.request.urlopen(req, timeout=5) as response:
+            with urllib.request.urlopen(req, timeout=10) as response:
                 result = json.loads(response.read().decode())
                 if result.get('status') == 'success':
                     messagebox.showinfo("Success", result.get('message', f"Deletion {action}d!"))
@@ -13716,10 +13901,10 @@ Note: This is an automated email. Please find the attached formal overdue letter
         try:
             import urllib.request
             
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/password-reset/{enrollment}"
+            url = self._portal_api_url(f"/api/admin/password-reset/{enrollment}")
             req = urllib.request.Request(url, method='POST', data=b'')
             
-            with urllib.request.urlopen(req, timeout=5) as response:
+            with urllib.request.urlopen(req, timeout=10) as response:
                 result = json.loads(response.read().decode())
                 if result.get('status') == 'success':
                     messagebox.showinfo("Success", result.get('message', 'Password reset successfully!'))
@@ -13827,10 +14012,10 @@ Note: This is an automated email. Please find the attached formal overdue letter
         try:
             import urllib.request
             
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/password-reset/{enrollment}"
+            url = self._portal_api_url(f"/api/admin/password-reset/{enrollment}")
             req = urllib.request.Request(url, method='POST', data=b'')
             
-            with urllib.request.urlopen(req, timeout=5) as response:
+            with urllib.request.urlopen(req, timeout=10) as response:
                 result = json.loads(response.read().decode())
                 if result.get('status') == 'success':
                     messagebox.showinfo("Success", f"Password reset for {enrollment}!")
@@ -13890,7 +14075,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
             import urllib.request
             import urllib.parse
             
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/bulk-password-reset"
+            url = self._portal_api_url('/api/admin/bulk-password-reset')
             data = json.dumps({'year': db_year}).encode('utf-8')
             req = urllib.request.Request(url, method='POST', data=data, 
                                          headers={'Content-Type': 'application/json'})
@@ -13911,17 +14096,13 @@ Note: This is an automated email. Please find the attached formal overdue letter
     
     def _refresh_auth_stats(self):
         """Fetch and display auth statistics and recent password resets"""
-        if not WEB_PORTAL_AVAILABLE:
-            return
-
-
         try:
             import urllib.request
             
-            url = f"http://127.0.0.1:{self.portal_port}/api/admin/auth-stats"
+            url = self._portal_api_url('/api/admin/auth-stats')
             req = urllib.request.Request(url)
             
-            with urllib.request.urlopen(req, timeout=5) as response:
+            with urllib.request.urlopen(req, timeout=10) as response:
                 data = json.loads(response.read().decode())
                 stats = data.get('stats', {})
                 resets = data.get('recent_resets', [])
@@ -15306,8 +15487,12 @@ Note: This is an automated email. Please find the attached formal overdue letter
 
     def start_student_portal(self):
         """Start the Flask server in a daemon thread"""
-        if not WEB_PORTAL_AVAILABLE:
-            print("Web portal is not available. Install flask and waitress.")
+        if not PORTAL_APP_AVAILABLE:
+            print("Web portal app is not available. Install portal dependencies.")
+            return
+
+        if not WAITRESS_AVAILABLE:
+            print("Waitress is not available. Local portal hosting is disabled; remote portal API features can still work.")
             return
         
         if self.portal_thread and self.portal_thread.is_alive():
@@ -15325,9 +15510,19 @@ Note: This is an automated email. Please find the attached formal overdue letter
 
     def show_qr_code(self):
         """Generate and show QR code for the student portal"""
-        if not WEB_PORTAL_AVAILABLE:
-            messagebox.showwarning("Web Portal Unavailable", 
-                                 "Web portal is not available.\n\nPlease install required packages: flask, waitress")
+        if not PORTAL_APP_AVAILABLE:
+            messagebox.showwarning(
+                "Web Portal Unavailable",
+                "Web portal app is not available.\n\nPlease install required packages (portal backend)."
+            )
+            return
+
+        if not WAITRESS_AVAILABLE:
+            messagebox.showwarning(
+                "Local Hosting Disabled",
+                "Waitress is not installed, so this computer cannot host the portal locally.\n\n"
+                "You can still use a deployed portal (Render) by configuring the Portal Base URL in the Portal tab."
+            )
             return
         
         # Ensure server is running
