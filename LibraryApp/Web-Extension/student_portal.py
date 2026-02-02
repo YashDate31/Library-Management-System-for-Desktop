@@ -3256,14 +3256,23 @@ def api_admin_manage_material(material_id):
 @app.route('/<path:path>')
 def serve(path):
     if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
-        return send_from_directory(app.static_folder, path)
+        resp = send_from_directory(app.static_folder, path)
+        # Prevent stale UI when using PWA/service worker.
+        # Hashed assets can be cached, but entrypoints should always revalidate.
+        if path in ('index.html', 'sw.js', 'manifest.webmanifest') or path.endswith('registerSW.js') or path.startswith('workbox-'):
+            resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            resp.headers['Pragma'] = 'no-cache'
+        return resp
     
     # If path is an API call that wasn't matched, return 404
     if path.startswith('api/'):
         return jsonify({'error': 'Not Found'}), 404
         
     # Otherwise, for SPA routing, return index.html
-    return send_from_directory(app.static_folder, 'index.html')
+    resp = send_from_directory(app.static_folder, 'index.html')
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    return resp
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000, threaded=True)
