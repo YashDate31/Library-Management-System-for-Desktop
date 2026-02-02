@@ -82,7 +82,7 @@ class SyncManager:
             Dictionary with sync statistics
         """
         if self.is_syncing:
-            return {'error': 'Sync already in progress'}
+            return {'success': False, 'error': 'Sync already in progress', 'records_synced': 0}
         
         self.is_syncing = True
         self._mark_sync_in_progress()  # Mark as in progress
@@ -288,7 +288,12 @@ class SyncManager:
         return pk_map.get(table_name, 'id')
     
     def _sync_portal_table_remote_to_local(self, local_conn, remote_conn, table_name):
-        """Sync portal tables (requests, notices) from remote Postgres to local SQLite"""
+        """Sync portal tables (requests, notices) from remote Postgres to local SQLite.
+        
+        Uses content-based deduplication since cloud and local IDs are independent.
+        For requests: uses (enrollment_no, request_type, created_at) as unique key.
+        For notices: uses (title, created_at) as unique key.
+        """
         try:
             local_cursor = local_conn.cursor()
             remote_cursor = remote_conn.cursor()
@@ -318,72 +323,84 @@ class SyncManager:
             local_col_info = local_cursor.fetchall()
             local_columns = [col[1] for col in local_col_info]
             
-            # Column mapping: remote → local (handle req_id → id for requests table)
+            # Column mapping: remote → local (skip ID columns - let local auto-generate)
             column_map = {}
+            skip_cols = {'req_id', 'id'}  # Don't sync IDs - they're independent
             for rc in remote_columns:
+                if rc in skip_cols:
+                    continue  # Skip ID columns
                 if rc in local_columns:
                     column_map[rc] = rc
-                elif rc == 'req_id' and 'id' in local_columns:
-                    column_map[rc] = 'id'
-                elif rc == 'id' and 'req_id' in local_columns:
-                    column_map[rc] = 'req_id'
             
-            # Determine primary key (local schema)
-            local_pk = 'id' if 'id' in local_columns else ('req_id' if 'req_id' in local_columns else local_columns[0])
-            remote_pk = 'req_id' if 'req_id' in remote_columns else ('id' if 'id' in remote_columns else remote_columns[0])
+            # Define unique key for deduplication based on table
+            if table_name == 'requests':
+                unique_key_cols = ['enrollment_no', 'request_type', 'created_at']
+            elif table_name == 'notices':
+                unique_key_cols = ['title', 'created_at']
+            else:
+                unique_key_cols = ['created_at']  # Fallback
+            
+            # Verify unique key columns exist locally
+            unique_key_cols = [c for c in unique_key_cols if c in local_columns]
+            if not unique_key_cols:
+                print(f"Warning: No unique key columns found for {table_name}")
+                return 0
             
             synced_count = 0
+            new_count = 0
             
             for row in rows:
                 try:
                     # Create dict for easier access
                     row_dict = dict(zip(remote_columns, row))
-                    pk_value = row_dict.get(remote_pk)
                     
-                    if pk_value is None:
-                        continue
+                    # Build unique key values for deduplication check
+                    unique_vals = [row_dict.get(c) for c in unique_key_cols]
+                    if any(v is None for v in unique_vals):
+                        continue  # Skip rows with null unique keys
                     
-                    # Build mapped row with only columns that exist locally
-                    mapped_cols = []
-                    mapped_vals = []
-                    for rc in remote_columns:
-                        if rc in column_map:
-                            mapped_cols.append(column_map[rc])
-                            mapped_vals.append(row_dict[rc])
-                    
-                    if not mapped_cols:
-                        continue
-                    
-                    # Check if exists locally
-                    local_cursor.execute(f"SELECT {local_pk} FROM {table_name} WHERE {local_pk} = ?", (pk_value,))
+                    # Check if record already exists locally using unique key
+                    where_clause = ' AND '.join([f"{c} = ?" for c in unique_key_cols])
+                    check_query = f"SELECT 1 FROM {table_name} WHERE {where_clause} LIMIT 1"
+                    local_cursor.execute(check_query, unique_vals)
                     exists = local_cursor.fetchone()
                     
                     if exists:
-                        # Update existing record
-                        update_parts = [f"{col} = ?" for col in mapped_cols if col != local_pk]
-                        update_vals = [v for c, v in zip(mapped_cols, mapped_vals) if c != local_pk]
-                        update_vals.append(pk_value)
-                        
-                        if update_parts:
-                            query = f"UPDATE {table_name} SET {', '.join(update_parts)} WHERE {local_pk} = ?"
-                            local_cursor.execute(query, update_vals)
-                    else:
-                        # Insert new record
-                        placeholders = ', '.join(['?'] * len(mapped_cols))
-                        cols = ', '.join(mapped_cols)
-                        
-                        query = f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders})"
-                        local_cursor.execute(query, mapped_vals)
+                        # Record already exists - could update but for now skip to save time
+                        synced_count += 1
+                        continue
                     
+                    # Build insert row with only mapped columns (no ID)
+                    insert_cols = []
+                    insert_vals = []
+                    for rc in remote_columns:
+                        if rc in column_map:
+                            insert_cols.append(column_map[rc])
+                            insert_vals.append(row_dict[rc])
+                    
+                    if not insert_cols:
+                        continue
+                    
+                    # Insert new record (let SQLite auto-generate ID)
+                    placeholders = ', '.join(['?'] * len(insert_cols))
+                    cols = ', '.join(insert_cols)
+                    
+                    query = f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders})"
+                    local_cursor.execute(query, insert_vals)
                     synced_count += 1
+                    new_count += 1
                     
                 except Exception as e:
                     print(f"Error syncing portal row in {table_name}: {e}")
+            
+            if new_count > 0:
+                print(f"[Portal Sync] {table_name}: {new_count} new records synced")
             
             return synced_count
             
         except Exception as e:
             print(f"Error syncing portal table {table_name} remote to local: {e}")
+            return 0
             return 0
     
     def auto_sync_daemon(self, interval_minutes=30):
@@ -392,11 +409,15 @@ class SyncManager:
             while True:
                 time.sleep(interval_minutes * 60)
                 print(f"[Auto-Sync] Starting sync at {datetime.now()}")
-                result = self.sync_now(direction='both')
-                if result['success']:
-                    print(f"[Auto-Sync] Completed: {result['records_synced']} records")
-                else:
-                    print(f"[Auto-Sync] Failed: {result['errors']}")
+                try:
+                    result = self.sync_now(direction='both')
+                    if result.get('success'):
+                        print(f"[Auto-Sync] Completed: {result.get('records_synced', 0)} records")
+                    else:
+                        errors = result.get('errors', result.get('error', 'Unknown'))
+                        print(f"[Auto-Sync] Failed: {errors}")
+                except Exception as e:
+                    print(f"[Auto-Sync] Exception: {e}")
         
         thread = threading.Thread(target=sync_loop, daemon=True)
         thread.start()
