@@ -17,6 +17,20 @@ const CustomInput = ({ label, type, value, onChange, placeholder, required = tru
   </div>
 );
 
+const CustomSelect = ({ label, value, onChange, children, required = true }) => (
+  <div className="space-y-1.5">
+    <label className="block text-sm font-medium text-slate-700">{label}</label>
+    <select
+      value={value}
+      onChange={onChange}
+      required={required}
+      className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 outline-none transition-all bg-white text-slate-800"
+    >
+      {children}
+    </select>
+  </div>
+);
+
 export default function Register() {
   const navigate = useNavigate();
 
@@ -24,7 +38,7 @@ export default function Register() {
     enrollment_no: '',
     name: '',
     year: '',
-    department: '',
+    department: 'Computer',
     phone: '',
     email: ''
   });
@@ -140,20 +154,24 @@ export default function Register() {
               placeholder="Your name"
             />
 
-            <CustomInput
-              label="Year"
-              type="text"
-              value={form.year}
-              onChange={onField('year')}
-              placeholder="e.g. 1st / 2nd / 3rd"
-            />
-            <CustomInput
-              label="Branch / Department"
-              type="text"
-              value={form.department}
-              onChange={onField('department')}
-              placeholder="e.g. Computer"
-            />
+            <CustomSelect label="Year" value={form.year} onChange={onField('year')}>
+              <option value="" disabled>
+                Select year
+              </option>
+              <option value="1st">1st Year</option>
+              <option value="2nd">2nd Year</option>
+              <option value="3rd">3rd Year</option>
+            </CustomSelect>
+
+            <CustomSelect label="Branch / Department" value={form.department} onChange={onField('department')}>
+              <option value="Computer">Computer</option>
+              <option value="Mechanical">Mechanical</option>
+              <option value="Civil">Civil</option>
+              <option value="Electrical">Electrical</option>
+              <option value="Electronics">Electronics</option>
+              <option value="IT">IT</option>
+              <option value="Other">Other</option>
+            </CustomSelect>
 
             <CustomInput
               label="Mobile"
