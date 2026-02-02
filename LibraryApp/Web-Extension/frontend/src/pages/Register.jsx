@@ -17,15 +17,22 @@ const CustomInput = ({ label, type, value, onChange, placeholder, required = tru
   </div>
 );
 
-const CustomSelect = ({ label, value, onChange, children, required = true }) => (
+const CustomSelect = ({ label, value, onChange, children, required = true, placeholder = '' }) => (
   <div className="space-y-1.5">
     <label className="block text-sm font-medium text-slate-700">{label}</label>
     <select
       value={value}
       onChange={onChange}
       required={required}
-      className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 outline-none transition-all bg-white text-slate-800"
+      className={`w-full px-4 py-3 rounded-xl border border-slate-300 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 outline-none transition-all bg-white ${
+        value ? 'text-slate-800' : 'text-slate-400'
+      }`}
     >
+      {placeholder ? (
+        <option value="" disabled>
+          {placeholder}
+        </option>
+      ) : null}
       {children}
     </select>
   </div>
@@ -154,16 +161,22 @@ export default function Register() {
               placeholder="Your name"
             />
 
-            <CustomSelect label="Year" value={form.year} onChange={onField('year')}>
-              <option value="" disabled>
-                Select year
-              </option>
+            <CustomSelect
+              label="Year"
+              value={form.year}
+              onChange={onField('year')}
+              placeholder="Select year"
+            >
               <option value="1st">1st Year</option>
               <option value="2nd">2nd Year</option>
               <option value="3rd">3rd Year</option>
             </CustomSelect>
 
-            <CustomSelect label="Branch / Department" value={form.department} onChange={onField('department')}>
+            <CustomSelect
+              label="Branch / Department"
+              value={form.department}
+              onChange={onField('department')}
+            >
               <option value="Computer">Computer</option>
               <option value="Mechanical">Mechanical</option>
               <option value="Civil">Civil</option>
