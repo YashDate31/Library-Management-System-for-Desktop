@@ -733,38 +733,19 @@ def get_portal_db():
 
 def create_table_safe(cursor, table_name, pg_sql, sqlite_sql):
     """Helper to create tables with backend-specific syntax"""
-    # Use backend detection rather than only checking DATABASE_URL, because
-    # desktop/local runs may have DATABASE_URL present but still be using SQLite.
+    # Robust strategy:
+    # 1) Try Postgres DDL.
+    # 2) If it fails (e.g., running on SQLite), fall back to SQLite DDL.
+    # This prevents cases where DATABASE_URL exists but the code is still using SQLite.
     try:
-        use_pg = False
-        try:
-            # If the cursor is from our postgres wrapper, it will have a _cursor attr.
-            # The connection wrapper check is more reliable when available.
-            use_pg = isinstance(getattr(cursor, 'connection', None), PostgresConnectionWrapper)  # type: ignore
-        except Exception:
-            pass
-
-        if not use_pg:
-            # Fallback: if we can import psycopg2 and the environment indicates cloud runtime
-            database_url = os.getenv('DATABASE_URL')
-            force_local = os.getenv('PORTAL_FORCE_LOCAL', '').strip().lower() in ('1', 'true', 'yes')
-            use_cloud = os.getenv('PORTAL_USE_CLOUD', '').strip().lower() in ('1', 'true', 'yes')
-            auto_cloud = bool(os.getenv('DYNO') or os.getenv('RENDER') or os.getenv('FLY_APP_NAME') or os.getenv('WEBSITE_INSTANCE_ID'))
-            use_pg = bool(database_url and POSTGRES_AVAILABLE and (use_cloud or auto_cloud) and not force_local)
-
-        if use_pg:
-            try:
-                cursor.execute(pg_sql)
-            except Exception as e:
-                print(f"Table creation warning ({table_name}): {e}")
-        else:
-            cursor.execute(sqlite_sql)
-    except Exception as e:
-        # Last resort: attempt SQLite statement
+        cursor.execute(pg_sql)
+        return
+    except Exception as e_pg:
         try:
             cursor.execute(sqlite_sql)
-        except Exception:
-            print(f"Table creation failed ({table_name}): {e}")
+            return
+        except Exception as e_sql:
+            print(f"Table creation failed ({table_name}): {e_pg} | {e_sql}")
 
 def init_portal_db():
     """Initialize the Sandbox DB for Requests and Notes"""
