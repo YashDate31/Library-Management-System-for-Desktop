@@ -12449,9 +12449,13 @@ Note: This is an automated email. Please find the attached formal overdue letter
             url = f"http://127.0.0.1:{self.portal_port}/api/admin/all-requests"
             req = urllib.request.Request(url)
             
-            with urllib.request.urlopen(req, timeout=5) as response:
+            with urllib.request.urlopen(req, timeout=10) as response:
                 data = json.loads(response.read().decode())
                 requests_list = data.get('requests', [])
+                deletion_requests = data.get('deletion_requests', [])
+                
+                # Debug: Log what we received
+                print(f"[Requests Tab] Loaded {len(requests_list)} pending requests, {len(deletion_requests)} deletion requests")
                 
                 # Update count badge
                 if hasattr(self, 'requests_count_badge'):
