@@ -23,6 +23,7 @@ except ImportError:
 # Setup path to import database.py from parent directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
+    from database import PostgresConnectionWrapper
     import psycopg2
     from psycopg2.extras import RealDictCursor
     POSTGRES_AVAILABLE = True
@@ -31,62 +32,6 @@ except ImportError:
     psycopg2 = None
     RealDictCursor = None
     POSTGRES_AVAILABLE = False
-
-
-class PostgresCursorWrapper:
-    """Wrapper that makes psycopg2 cursors accept SQLite-style '?' placeholders."""
-
-    def __init__(self, cursor):
-        self._cursor = cursor
-
-    def execute(self, sql, params=None):
-        try:
-            sql = sql.replace('?', '%s')
-        except Exception:
-            pass
-        return self._cursor.execute(sql, params)
-
-    def executemany(self, sql, seq_of_params):
-        try:
-            sql = sql.replace('?', '%s')
-        except Exception:
-            pass
-        return self._cursor.executemany(sql, seq_of_params)
-
-    def fetchone(self):
-        return self._cursor.fetchone()
-
-    def fetchall(self):
-        return self._cursor.fetchall()
-
-    def __iter__(self):
-        return iter(self._cursor)
-
-    def __getattr__(self, name):
-        return getattr(self._cursor, name)
-
-
-class PostgresConnectionWrapper:
-    """Small adapter so the rest of the code can treat Postgres like sqlite3.Row."""
-
-    def __init__(self, conn):
-        self._conn = conn
-
-    def cursor(self):
-        # RealDictCursor makes rows behave like dicts (similar to sqlite3.Row -> dict(row))
-        return PostgresCursorWrapper(self._conn.cursor(cursor_factory=RealDictCursor))
-
-    def commit(self):
-        return self._conn.commit()
-
-    def rollback(self):
-        return self._conn.rollback()
-
-    def close(self):
-        return self._conn.close()
-
-    def __getattr__(self, name):
-        return getattr(self._conn, name)
 
 
 # --- Configuration ---
@@ -111,31 +56,6 @@ def _is_postgres_connection(conn) -> bool:
         return False
 
 
-def _db_backend_name(conn) -> str:
-    return 'postgres' if _is_postgres_connection(conn) else 'sqlite'
-
-
-def _table_exists(conn, table_name: str) -> bool:
-    """Return True if a table exists in the connected database."""
-    try:
-        cursor = conn.cursor()
-        if _is_postgres_connection(conn):
-            cursor.execute(
-                """
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_name = %s
-                LIMIT 1
-                """,
-                (table_name,),
-            )
-            return cursor.fetchone() is not None
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
-        return cursor.fetchone() is not None
-    except Exception:
-        return False
-
-
 def _requests_pk_column(conn) -> str:
     """Return the primary key column for the requests table ('req_id' or legacy 'id')."""
     try:
@@ -146,15 +66,7 @@ def _requests_pk_column(conn) -> str:
                 FROM information_schema.columns
                 WHERE table_name = 'requests'
             """)
-            cols = set()
-            for r in cursor.fetchall():
-                try:
-                    cols.add(str(r.get('column_name')))
-                except Exception:
-                    try:
-                        cols.add(str(r[0]))
-                    except Exception:
-                        pass
+            cols = {str(r[0]) for r in cursor.fetchall()}
         else:
             cursor.execute("PRAGMA table_info(requests)")
             cols = {str(r['name']) for r in cursor.fetchall()}
@@ -733,19 +645,14 @@ def get_portal_db():
 
 def create_table_safe(cursor, table_name, pg_sql, sqlite_sql):
     """Helper to create tables with backend-specific syntax"""
-    # Robust strategy:
-    # 1) Try Postgres DDL.
-    # 2) If it fails (e.g., running on SQLite), fall back to SQLite DDL.
-    # This prevents cases where DATABASE_URL exists but the code is still using SQLite.
-    try:
-        cursor.execute(pg_sql)
-        return
-    except Exception as e_pg:
+    database_url = os.getenv('DATABASE_URL')
+    if database_url:
         try:
-            cursor.execute(sqlite_sql)
-            return
-        except Exception as e_sql:
-            print(f"Table creation failed ({table_name}): {e_pg} | {e_sql}")
+            cursor.execute(pg_sql)
+        except Exception as e:
+            print(f"Table creation warning ({table_name}): {e}")
+    else:
+        cursor.execute(sqlite_sql)
 
 def init_portal_db():
     """Initialize the Sandbox DB for Requests and Notes"""
@@ -1206,45 +1113,31 @@ def api_login():
 @app.route('/api/public/forgot-password', methods=['POST'])
 @rate_limit
 def api_forgot_password():
-    data = request.get_json(silent=True) or {}
-    enrollment = (data.get('enrollment_no') or '').strip()
+    data = request.json
+    enrollment = data.get('enrollment_no')
     
     if not enrollment:
         return jsonify({'status': 'error', 'message': 'Enrollment number required'}), 400
         
     try:
-        # Best-effort: If library DB isn't available in deployed mode, do not 500.
-        student_name = "Student"
-        try:
-            conn_lib = get_library_db()
-            cursor_lib = conn_lib.cursor()
-            cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (enrollment,))
-            student = cursor_lib.fetchone()
-            try:
-                conn_lib.close()
-            except Exception:
-                pass
-
-            if student:
-                try:
-                    full_name = student['name']
-                except Exception:
-                    full_name = student.get('name') if hasattr(student, 'get') else None
-                if full_name:
-                    student_name = str(full_name).split()[0] or student_name
-        except Exception:
-            pass
+        # Verify Student Exists in Library DB
+        conn_lib = get_library_db()
+        cursor_lib = conn_lib.cursor()
+        cursor_lib.execute("SELECT name, email FROM students WHERE enrollment_no = ?", (enrollment,))
+        student = cursor_lib.fetchone()
+        conn_lib.close()
+        
+        if not student:
+            return jsonify({'status': 'error', 'message': 'Student not found'}), 404
+            
+        student_name = student['name'].split()[0] if student and student['name'] else "Student"
         
         # Create Request in Portal DB
         conn_portal = get_portal_db()
         cursor_portal = conn_portal.cursor()
         
         # Check for existing pending request to avoid spam
-        pk = _requests_pk_column(conn_portal)
-        cursor_portal.execute(
-            f"SELECT {pk} as req_id FROM requests WHERE enrollment_no = ? AND request_type = 'password_reset' AND status = 'pending' LIMIT 1",
-            (enrollment,)
-        )
+        cursor_portal.execute("SELECT id FROM requests WHERE enrollment_no = ? AND request_type = 'password_reset' AND status = 'pending'", (enrollment,))
         existing = cursor_portal.fetchone()
         if existing:
              conn_portal.close()
@@ -1255,25 +1148,22 @@ def api_forgot_password():
         conn_portal.commit()
         conn_portal.close()
         
-        # Send Receipt Email (best-effort)
-        try:
-            email_body = generate_email_template(
-                header_title="Password Reset Requested",
-                user_name=student_name,
-                main_text="We have received your request to reset your password.",
-                details_dict={'Action': 'Account Password Reset', 'Status': 'Pending Librarian Approval'},
-                theme='blue',
-                footer_note="If you did not request this, please contact the library immediately."
-            )
-            trigger_notification_email(enrollment, "Password Reset Request", email_body)
-        except Exception:
-            pass
+        # Send Receipt Email
+        email_body = generate_email_template(
+            header_title="Password Reset Requested",
+            user_name=student_name,
+            main_text="We have received your request to reset your password.",
+            details_dict={'Action': 'Account Password Reset', 'Status': 'Pending Librarian Approval'},
+            theme='blue',
+            footer_note="If you did not request this, please contact the library immediately."
+        )
+        trigger_notification_email(enrollment, "Password Reset Request", email_body)
         
         return jsonify({'status': 'success', 'message': 'Request sent to librarian'})
         
     except Exception as e:
-        error_id = _log_portal_exception('api_forgot_password', e)
-        return jsonify({'status': 'error', 'message': 'Internal Server Error', 'error_id': error_id}), 500
+        print(f"Forgot password error: {e}")
+        return jsonify({'status': 'error', 'message': 'Internal Server Error'}), 500
 
 @app.route('/api/change_password', methods=['POST'])
 @rate_limit
@@ -2297,43 +2187,20 @@ def api_submit_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
     # Restrict Pass Out students from submitting requests
-    def _row_get(row, key, default=None):
-        if row is None:
-            return default
-        try:
-            return row[key]
-        except Exception:
-            try:
-                return row.get(key, default)
-            except Exception:
-                return default
-
-    student_year = ''
-    try:
-        conn_lib = get_library_db()
-        cursor_lib = conn_lib.cursor()
-        cursor_lib.execute("SELECT year FROM students WHERE enrollment_no = ?", (session['student_id'],))
-        student = cursor_lib.fetchone()
-        try:
-            conn_lib.close()
-        except Exception:
-            pass
-
-        student_year = _row_get(student, 'year', '') or ''
-    except Exception:
-        # In deployed environments, library DB tables may be missing; do not block requests.
-        student_year = ''
-
-    if str(student_year).strip().lower() in ['pass out', 'passout', 'passed out', 'alumni', 'graduate']:
+    conn_lib = get_library_db()
+    cursor_lib = conn_lib.cursor()
+    cursor_lib.execute("SELECT year FROM students WHERE enrollment_no = ?", (session['student_id'],))
+    student = cursor_lib.fetchone()
+    conn_lib.close()
+    student_year = student['year'] if student and student['year'] else ''
+    if student_year.strip().lower() in ['pass out', 'passout', 'passed out', 'alumni', 'graduate']:
         return jsonify({'error': 'Requests are not allowed for Pass Out students.'}), 403
 
-    data = request.get_json(silent=True) or {}
-    req_type = data.get('type')  # 'profile_update', 'renewal', etc.
-    details = data.get('details')  # can be str/dict; may be empty for some request types
+    data = request.json
+    req_type = data.get('type') # 'profile_update', 'renewal'
+    details = data.get('details') # e.g., "Change email to x@y.com"
 
-    if not req_type:
-        return jsonify({'error': 'Missing data'}), 400
-    if details is None:
+    if not req_type or not details:
         return jsonify({'error': 'Missing data'}), 400
 
     try:
@@ -2343,178 +2210,99 @@ def api_submit_request():
                        (session['student_id'], req_type, json.dumps(details)))
         conn.commit()
         conn.close()
+        
+        # Send Email Notification
+        # Send Email Notification
+        conn_lib = get_library_db()
+        cursor_lib = conn_lib.cursor()
+        
+        # Fetch Name
+        cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (session['student_id'],))
+        student = cursor_lib.fetchone()
+        student_name = student['name'].split()[0] if student and student['name'] else "Student"
+        
+        # Helper to parse book title from string details
+        def get_title_from_details(details_obj):
+            t = req_type
+            if isinstance(details_obj, dict):
+                 if 'title' in details_obj: return details_obj['title']
+                 if 'book_id' in details_obj:
+                     try:
+                        cursor_lib.execute("SELECT title FROM books WHERE book_id = ?", (details_obj['book_id'],))
+                        bd = cursor_lib.fetchone()
+                        if bd: return bd['title']
+                     except: pass
+            elif isinstance(details_obj, str):
+                if "Request for book: " in details_obj:
+                    import re
+                    match = re.search(r"Request for book: (.*?) \(ID:", details_obj)
+                    if match: return match.group(1)
+                    return details_obj.replace("Request for book: ", "")
+            return t
 
-        # Send Email Notification (best-effort; never fail the request because email failed)
-        conn_lib = None
-        try:
-            conn_lib = get_library_db()
-            cursor_lib = conn_lib.cursor()
+        # Prepare Email Content based on Type
+        email_subject = ""
+        header_title = "Request Received"
+        main_text = ""
+        details_dict = {}
+        theme = 'blue'
+        
+        current_date_str = datetime.now().strftime('%d %b %Y, %I:%M %p')
 
-            # Fetch Name
-            cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (session['student_id'],))
-            student = cursor_lib.fetchone()
-            full_name = _row_get(student, 'name')
-            student_name = str(full_name).split()[0] if full_name else "Student"
+        if req_type == 'book_request':
+            b_title = get_title_from_details(details)
+            email_subject = f"Request Received: {b_title}"
+            header_title = "Reservation Received"
+            main_text = f"We have received your request to reserve <strong>{b_title}</strong>."
+            details_dict = {
+                'Book Title': b_title,
+                'Request Date': current_date_str,
+                'Status': 'Pending Approval'
+            }
+            
+        elif req_type == 'renewal':
+            b_title = get_title_from_details(details)
+            email_subject = f"Renewal Request: {b_title}"
+            header_title = "Renewal Request"
+            main_text = f"We have received your request to renew <strong>{b_title}</strong>."
+            details_dict = {
+                'Book Title': b_title,
+                'Request Date': current_date_str,
+                'Status': 'Pending Approval'
+            }
+            
+        elif req_type == 'profile_update':
+            email_subject = "Profile Update Request"
+            header_title = "Profile Update"
+            main_text = "We have received your request to update your library profile."
+            details_summary = json.dumps(details) if isinstance(details, dict) else str(details)
+            details_dict = {
+                'Requested Changes': details_summary,
+                'Request Date': current_date_str
+            }
+            
+        else:
+            # Generic fallback
+            email_subject = f"Request Received: {req_type}"
+            main_text = f"We have received your {req_type} request."
+            details_dict = {'Details': str(details)}
 
-            # Helper to parse book title from request details
-            def get_title_from_details(details_obj):
-                t = req_type
-                if isinstance(details_obj, dict):
-                    if 'title' in details_obj:
-                        return details_obj['title']
-                    if 'book_id' in details_obj:
-                        try:
-                            cursor_lib.execute("SELECT title FROM books WHERE book_id = ?", (details_obj['book_id'],))
-                            bd = cursor_lib.fetchone()
-                            if bd:
-                                return _row_get(bd, 'title') or t
-                        except Exception:
-                            pass
-                elif isinstance(details_obj, str):
-                    if "Request for book: " in details_obj:
-                        import re
-                        match = re.search(r"Request for book: (.*?) \(ID:", details_obj)
-                        if match:
-                            return match.group(1)
-                        return details_obj.replace("Request for book: ", "")
-                return t
+        conn_lib.close()
 
-            # Prepare Email Content based on Type
-            email_subject = ""
-            header_title = "Request Received"
-            main_text = ""
-            details_dict = {}
-
-            current_date_str = datetime.now().strftime('%d %b %Y, %I:%M %p')
-
-            if req_type == 'book_request':
-                b_title = get_title_from_details(details)
-                email_subject = f"Request Received: {b_title}"
-                header_title = "Reservation Received"
-                main_text = f"We have received your request to reserve <strong>{b_title}</strong>."
-                details_dict = {
-                    'Book Title': b_title,
-                    'Request Date': current_date_str,
-                    'Status': 'Pending Approval'
-                }
-            elif req_type == 'renewal':
-                b_title = get_title_from_details(details)
-                email_subject = f"Renewal Request: {b_title}"
-                header_title = "Renewal Request"
-                main_text = f"We have received your request to renew <strong>{b_title}</strong>."
-                details_dict = {
-                    'Book Title': b_title,
-                    'Request Date': current_date_str,
-                    'Status': 'Pending Approval'
-                }
-            elif req_type == 'profile_update':
-                email_subject = "Profile Update Request"
-                header_title = "Profile Update"
-                main_text = "We have received your request to update your library profile."
-                details_summary = json.dumps(details) if isinstance(details, dict) else str(details)
-                details_dict = {
-                    'Requested Changes': details_summary,
-                    'Request Date': current_date_str
-                }
-            else:
-                email_subject = f"Request Received: {req_type}"
-                main_text = f"We have received your {req_type} request."
-                details_dict = {'Details': str(details)}
-
-            email_body = generate_email_template(
-                header_title=header_title,
-                user_name=student_name,
-                main_text=main_text,
-                details_dict=details_dict,
-                theme='blue',
-                footer_note="You will be notified once the librarian reviews your request."
-            )
-            trigger_notification_email(session['student_id'], email_subject, email_body)
-        except Exception:
-            pass
-        finally:
-            try:
-                if conn_lib is not None:
-                    conn_lib.close()
-            except Exception:
-                pass
-
+        email_body = generate_email_template(
+            header_title=header_title,
+            user_name=student_name,
+            main_text=main_text,
+            details_dict=details_dict,
+            theme='blue',
+            footer_note="You will be notified once the librarian reviews your request."
+        )
+        
+        trigger_notification_email(session['student_id'], email_subject, email_body)
+        
         return jsonify({'status': 'success', 'message': 'Request submitted to librarian'})
     except Exception as e:
-        error_id = _log_portal_exception('api_submit_request', e)
-        return jsonify({'error': 'Failed to submit request', 'error_id': error_id}), 500
-
-
-@app.get('/api/admin/diagnostics')
-def api_admin_diagnostics():
-    """Lightweight diagnostics endpoint to debug Render/local mismatches.
-
-    This is intentionally read-only and contains no secrets.
-    """
-    info = {
-        'status': 'ok',
-        'app_version': APP_VERSION,
-        'runtime': {
-            'RENDER': bool(os.getenv('RENDER')),
-            'DYNO': bool(os.getenv('DYNO')),
-            'FLY_APP_NAME': bool(os.getenv('FLY_APP_NAME')),
-            'WEBSITE_INSTANCE_ID': bool(os.getenv('WEBSITE_INSTANCE_ID')),
-        },
-        'postgres_available': bool(POSTGRES_AVAILABLE),
-        'database_url_present': bool(os.getenv('DATABASE_URL')),
-        'portal_use_cloud': os.getenv('PORTAL_USE_CLOUD'),
-        'portal_force_local': os.getenv('PORTAL_FORCE_LOCAL'),
-    }
-
-    try:
-        connp = get_portal_db()
-        info['portal_db'] = {
-            'backend': _db_backend_name(connp),
-            'tables': {
-                'requests': _table_exists(connp, 'requests'),
-                'deletion_requests': _table_exists(connp, 'deletion_requests'),
-                'access_logs': _table_exists(connp, 'access_logs'),
-            },
-        }
-
-        try:
-            cur = connp.cursor()
-            cur.execute("SELECT COUNT(*) AS c FROM requests")
-            row = cur.fetchone()
-            info['portal_db']['requests_total'] = int((row.get('c') if hasattr(row, 'get') else row[0]) or 0)
-            cur.execute("SELECT COUNT(*) AS c FROM requests WHERE status = 'pending'")
-            row = cur.fetchone()
-            info['portal_db']['requests_pending'] = int((row.get('c') if hasattr(row, 'get') else row[0]) or 0)
-            cur.execute("SELECT enrollment_no, request_type, status, created_at FROM requests ORDER BY created_at DESC LIMIT 1")
-            last = cur.fetchone()
-            info['portal_db']['last_request'] = dict(last) if last else None
-        except Exception as e:
-            info['portal_db']['counts_error'] = str(e)
-        finally:
-            try:
-                connp.close()
-            except Exception:
-                pass
-    except Exception as e:
-        info['portal_db_error'] = str(e)
-
-    try:
-        connl = get_library_db()
-        info['library_db'] = {
-            'backend': _db_backend_name(connl),
-            'tables': {
-                'students': _table_exists(connl, 'students'),
-                'books': _table_exists(connl, 'books'),
-            },
-        }
-        try:
-            connl.close()
-        except Exception:
-            pass
-    except Exception as e:
-        info['library_db_error'] = str(e)
-
-    return jsonify(info)
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/books')
 def api_books():
@@ -2591,52 +2379,17 @@ def api_admin_all_requests():
 
         conn.close()
 
-        # Enrich with student names from library DB.
-        # IMPORTANT: In deployed environments, the portal DB may exist even when the library DB
-        # (or students table) is missing/unmigrated. Don't fail the whole endpoint in that case.
-        try:
-            conn_lib = get_library_db()
-            cursor_lib = conn_lib.cursor()
+        # Get student names from library DB
+        conn_lib = get_library_db()
+        cursor_lib = conn_lib.cursor()
 
-            # Enrich general requests with student names
-            for req in general_requests:
-                enrollment_no = str(req.get('enrollment_no', '')).strip()
-                cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (enrollment_no,))
-                student = cursor_lib.fetchone()
-                if not student:
-                    # If this is a registration request, use the submitted name
-                    if req.get('request_type') == 'student_registration':
-                        try:
-                            d = req.get('details') or {}
-                            req['student_name'] = d.get('name') or 'New Student'
-                        except Exception:
-                            req['student_name'] = 'New Student'
-                    else:
-                        req['student_name'] = 'Unknown'
-                else:
-                    try:
-                        req['student_name'] = student['name']
-                    except Exception:
-                        # Last-resort fallback
-                        req['student_name'] = dict(student).get('name', 'Unknown')
-
-            # Enrich deletion requests with student names
-            for req in deletion_requests:
-                enrollment_no = str(req.get('student_id', '')).strip()
-                cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (enrollment_no,))
-                student = cursor_lib.fetchone()
-                if not student:
-                    req['student_name'] = 'Unknown'
-                else:
-                    try:
-                        req['student_name'] = student['name']
-                    except Exception:
-                        req['student_name'] = dict(student).get('name', 'Unknown')
-
-            conn_lib.close()
-        except Exception:
-            # Fallback: ensure required fields exist
-            for req in general_requests:
+        # Enrich general requests with student names
+        for req in general_requests:
+            enrollment_no = str(req.get('enrollment_no', '')).strip()
+            cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (enrollment_no,))
+            student = cursor_lib.fetchone()
+            if not student:
+                # If this is a registration request, use the submitted name
                 if req.get('request_type') == 'student_registration':
                     try:
                         d = req.get('details') or {}
@@ -2644,10 +2397,28 @@ def api_admin_all_requests():
                     except Exception:
                         req['student_name'] = 'New Student'
                 else:
-                    req['student_name'] = req.get('student_name') or 'Unknown'
+                    req['student_name'] = 'Unknown'
+            else:
+                try:
+                    req['student_name'] = student['name']
+                except Exception:
+                    # Last-resort fallback
+                    req['student_name'] = dict(student).get('name', 'Unknown')
 
-            for req in deletion_requests:
-                req['student_name'] = req.get('student_name') or 'Unknown'
+        # Enrich deletion requests with student names
+        for req in deletion_requests:
+            enrollment_no = str(req.get('student_id', '')).strip()
+            cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (enrollment_no,))
+            student = cursor_lib.fetchone()
+            if not student:
+                req['student_name'] = 'Unknown'
+            else:
+                try:
+                    req['student_name'] = student['name']
+                except Exception:
+                    req['student_name'] = dict(student).get('name', 'Unknown')
+
+        conn_lib.close()
 
         # Get rejected count from portal DB
         conn2 = get_portal_db()
@@ -2714,33 +2485,18 @@ def api_admin_request_history():
     
     conn.close()
     
-    # Get student names and filter by search query.
-    # If the library DB isn't available in deployed mode, do not fail the endpoint.
+    # Get student names and filter by search query
+    conn_lib = get_library_db()
+    cursor_lib = conn_lib.cursor()
+    
     filtered_requests = []
-
-    cursor_lib = None
-    conn_lib = None
-    try:
-        conn_lib = get_library_db()
-        cursor_lib = conn_lib.cursor()
-    except Exception:
-        cursor_lib = None
-
+    
     for req in processed_requests:
-        student_name = None
-        if cursor_lib is not None:
-            try:
-                cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (req['enrollment_no'],))
-                student = cursor_lib.fetchone()
-                if student:
-                    try:
-                        student_name = student['name']
-                    except Exception:
-                        student_name = dict(student).get('name')
-            except Exception:
-                student_name = None
-
-        if not student_name:
+        cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (req['enrollment_no'],))
+        student = cursor_lib.fetchone()
+        if student:
+            student_name = student['name']
+        else:
             # For registration requests, show the submitted name
             if req.get('request_type') == 'student_registration':
                 try:
@@ -2750,24 +2506,17 @@ def api_admin_request_history():
                     student_name = 'New Student'
             else:
                 student_name = 'Unknown'
-
         req['student_name'] = student_name
-
+        
         # Apply search filter (if search query exists)
         if q:
             search_str = q.lower()
-            if (search_str in str(req.get('enrollment_no', '')).lower() or
-                search_str in str(student_name).lower() or
-                search_str in str(req.get('request_type', '')).lower()):
+            if (search_str in req['enrollment_no'].lower() or 
+                search_str in student_name.lower() or 
+                search_str in req['request_type'].lower()):
                 filtered_requests.append(req)
         else:
             filtered_requests.append(req)
-
-    try:
-        if conn_lib is not None:
-            conn_lib.close()
-    except Exception:
-        pass
     
     conn_lib.close()
     
