@@ -1225,31 +1225,45 @@ def api_login():
 @app.route('/api/public/forgot-password', methods=['POST'])
 @rate_limit
 def api_forgot_password():
-    data = request.json
-    enrollment = data.get('enrollment_no')
+    data = request.get_json(silent=True) or {}
+    enrollment = (data.get('enrollment_no') or '').strip()
     
     if not enrollment:
         return jsonify({'status': 'error', 'message': 'Enrollment number required'}), 400
         
     try:
-        # Verify Student Exists in Library DB
-        conn_lib = get_library_db()
-        cursor_lib = conn_lib.cursor()
-        cursor_lib.execute("SELECT name, email FROM students WHERE enrollment_no = ?", (enrollment,))
-        student = cursor_lib.fetchone()
-        conn_lib.close()
-        
-        if not student:
-            return jsonify({'status': 'error', 'message': 'Student not found'}), 404
-            
-        student_name = student['name'].split()[0] if student and student['name'] else "Student"
+        # Best-effort: If library DB isn't available in deployed mode, do not 500.
+        student_name = "Student"
+        try:
+            conn_lib = get_library_db()
+            cursor_lib = conn_lib.cursor()
+            cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (enrollment,))
+            student = cursor_lib.fetchone()
+            try:
+                conn_lib.close()
+            except Exception:
+                pass
+
+            if student:
+                try:
+                    full_name = student['name']
+                except Exception:
+                    full_name = student.get('name') if hasattr(student, 'get') else None
+                if full_name:
+                    student_name = str(full_name).split()[0] or student_name
+        except Exception:
+            pass
         
         # Create Request in Portal DB
         conn_portal = get_portal_db()
         cursor_portal = conn_portal.cursor()
         
         # Check for existing pending request to avoid spam
-        cursor_portal.execute("SELECT id FROM requests WHERE enrollment_no = ? AND request_type = 'password_reset' AND status = 'pending'", (enrollment,))
+        pk = _requests_pk_column(conn_portal)
+        cursor_portal.execute(
+            f"SELECT {pk} as req_id FROM requests WHERE enrollment_no = ? AND request_type = 'password_reset' AND status = 'pending' LIMIT 1",
+            (enrollment,)
+        )
         existing = cursor_portal.fetchone()
         if existing:
              conn_portal.close()
@@ -1260,22 +1274,25 @@ def api_forgot_password():
         conn_portal.commit()
         conn_portal.close()
         
-        # Send Receipt Email
-        email_body = generate_email_template(
-            header_title="Password Reset Requested",
-            user_name=student_name,
-            main_text="We have received your request to reset your password.",
-            details_dict={'Action': 'Account Password Reset', 'Status': 'Pending Librarian Approval'},
-            theme='blue',
-            footer_note="If you did not request this, please contact the library immediately."
-        )
-        trigger_notification_email(enrollment, "Password Reset Request", email_body)
+        # Send Receipt Email (best-effort)
+        try:
+            email_body = generate_email_template(
+                header_title="Password Reset Requested",
+                user_name=student_name,
+                main_text="We have received your request to reset your password.",
+                details_dict={'Action': 'Account Password Reset', 'Status': 'Pending Librarian Approval'},
+                theme='blue',
+                footer_note="If you did not request this, please contact the library immediately."
+            )
+            trigger_notification_email(enrollment, "Password Reset Request", email_body)
+        except Exception:
+            pass
         
         return jsonify({'status': 'success', 'message': 'Request sent to librarian'})
         
     except Exception as e:
-        print(f"Forgot password error: {e}")
-        return jsonify({'status': 'error', 'message': 'Internal Server Error'}), 500
+        error_id = _log_portal_exception('api_forgot_password', e)
+        return jsonify({'status': 'error', 'message': 'Internal Server Error', 'error_id': error_id}), 500
 
 @app.route('/api/change_password', methods=['POST'])
 @rate_limit
