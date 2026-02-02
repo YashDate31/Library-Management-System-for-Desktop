@@ -7,6 +7,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({ 
+      // We'll register the SW ourselves in src/main.jsx so we can force reload
+      // when a new version is available.
+      injectRegister: null,
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {
@@ -32,6 +35,11 @@ export default defineConfig({
         ]
       },
       workbox: {
+        // Prevent clients getting stuck on an old UI after deployments.
+        // This makes the new service worker activate ASAP and take control.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.pathname.startsWith('/api/books'),
