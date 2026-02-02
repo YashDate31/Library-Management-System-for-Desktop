@@ -7,6 +7,18 @@ Syncs data between local SQLite and remote PostgreSQL databases
 import os
 import json
 import sqlite3
+
+# Load .env if available (for DATABASE_URL)
+try:
+    from dotenv import load_dotenv
+    _env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+    if os.path.exists(_env_path):
+        load_dotenv(_env_path)
+    else:
+        load_dotenv()
+except ImportError:
+    pass
+
 try:
     import psycopg2  # type: ignore
 except Exception:  # pragma: no cover
