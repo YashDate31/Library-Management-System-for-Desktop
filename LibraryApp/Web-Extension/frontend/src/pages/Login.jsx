@@ -236,6 +236,16 @@ export default function Login({ setUser }) {
               </button>
             </div>
 
+            <div className="text-center mt-3">
+              <button
+                type="button"
+                onClick={() => navigate('/register')}
+                className="text-sm text-slate-600 font-medium hover:underline"
+              >
+                New student? Register here
+              </button>
+            </div>
+
             <p className="text-xs text-center text-slate-400 mt-2">
               First time? Use your enrollment number as password.
             </p>
