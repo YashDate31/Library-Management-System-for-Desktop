@@ -196,16 +196,21 @@ class SyncManager:
             
             # Get column names
             columns = [desc[0] for desc in local_cursor.description]
+            primary_key = self._get_primary_key(table_name)
+            pk_idx = columns.index(primary_key) if primary_key in columns else 0
             
             synced_count = 0
             for row in rows:
                 try:
+                    # Skip rows with null primary key
+                    if row[pk_idx] is None:
+                        continue
+                    
                     # Try to insert or update
                     placeholders = ', '.join(['%s'] * len(row))
                     cols = ', '.join(columns)
                     
                     # Use UPSERT (INSERT ... ON CONFLICT)
-                    primary_key = self._get_primary_key(table_name)
                     update_cols = ', '.join([f"{col} = EXCLUDED.{col}" for col in columns if col != primary_key])
                     
                     query = f"""
@@ -219,6 +224,11 @@ class SyncManager:
                     synced_count += 1
                     
                 except Exception as e:
+                    # Rollback the failed transaction to continue with next rows
+                    try:
+                        remote_conn.rollback()
+                    except:
+                        pass
                     print(f"Error syncing row in {table_name}: {e}")
             
             remote_conn.commit()
@@ -300,41 +310,70 @@ class SyncManager:
             if not rows:
                 return 0
             
-            # Get column names
-            columns = [desc[0] for desc in remote_cursor.description]
+            # Get column names from remote
+            remote_columns = [desc[0] for desc in remote_cursor.description]
+            
+            # Get local column names to handle schema differences
+            local_cursor.execute(f"PRAGMA table_info({table_name})")
+            local_col_info = local_cursor.fetchall()
+            local_columns = [col[1] for col in local_col_info]
+            
+            # Column mapping: remote → local (handle req_id → id for requests table)
+            column_map = {}
+            for rc in remote_columns:
+                if rc in local_columns:
+                    column_map[rc] = rc
+                elif rc == 'req_id' and 'id' in local_columns:
+                    column_map[rc] = 'id'
+                elif rc == 'id' and 'req_id' in local_columns:
+                    column_map[rc] = 'req_id'
+            
+            # Determine primary key (local schema)
+            local_pk = 'id' if 'id' in local_columns else ('req_id' if 'req_id' in local_columns else local_columns[0])
+            remote_pk = 'req_id' if 'req_id' in remote_columns else ('id' if 'id' in remote_columns else remote_columns[0])
             
             synced_count = 0
-            pk = self._get_primary_key(table_name)
             
             for row in rows:
                 try:
                     # Create dict for easier access
-                    row_dict = dict(zip(columns, row))
-                    pk_value = row_dict.get(pk)
+                    row_dict = dict(zip(remote_columns, row))
+                    pk_value = row_dict.get(remote_pk)
                     
                     if pk_value is None:
                         continue
                     
+                    # Build mapped row with only columns that exist locally
+                    mapped_cols = []
+                    mapped_vals = []
+                    for rc in remote_columns:
+                        if rc in column_map:
+                            mapped_cols.append(column_map[rc])
+                            mapped_vals.append(row_dict[rc])
+                    
+                    if not mapped_cols:
+                        continue
+                    
                     # Check if exists locally
-                    local_cursor.execute(f"SELECT {pk} FROM {table_name} WHERE {pk} = ?", (pk_value,))
+                    local_cursor.execute(f"SELECT {local_pk} FROM {table_name} WHERE {local_pk} = ?", (pk_value,))
                     exists = local_cursor.fetchone()
                     
                     if exists:
                         # Update existing record
-                        update_cols = [f"{col} = ?" for col in columns if col != pk]
-                        update_vals = [row_dict[col] for col in columns if col != pk]
+                        update_parts = [f"{col} = ?" for col in mapped_cols if col != local_pk]
+                        update_vals = [v for c, v in zip(mapped_cols, mapped_vals) if c != local_pk]
                         update_vals.append(pk_value)
                         
-                        query = f"UPDATE {table_name} SET {', '.join(update_cols)} WHERE {pk} = ?"
-                        local_cursor.execute(query, update_vals)
+                        if update_parts:
+                            query = f"UPDATE {table_name} SET {', '.join(update_parts)} WHERE {local_pk} = ?"
+                            local_cursor.execute(query, update_vals)
                     else:
                         # Insert new record
-                        placeholders = ', '.join(['?'] * len(columns))
-                        cols = ', '.join(columns)
-                        values = [row_dict[col] for col in columns]
+                        placeholders = ', '.join(['?'] * len(mapped_cols))
+                        cols = ', '.join(mapped_cols)
                         
                         query = f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders})"
-                        local_cursor.execute(query, values)
+                        local_cursor.execute(query, mapped_vals)
                     
                     synced_count += 1
                     
