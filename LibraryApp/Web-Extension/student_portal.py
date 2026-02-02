@@ -259,10 +259,233 @@ def cleanup_logs():
     except Exception as e:
         print(f"Log cleanup failed: {e}")
 
+
+def _log_portal_exception(context: str, exc: Exception) -> str:
+    """Log exceptions to a local file for debugging portal 500 errors.
+
+    Returns a short error id that can be shared to find the log entry.
+    """
+    try:
+        import traceback
+        error_id = f"E{int(time.time())}"
+        log_path = os.path.join(BASE_DIR, 'portal_errors.log')
+        with open(log_path, 'a', encoding='utf-8') as f:
+            f.write("\n" + "=" * 80 + "\n")
+            f.write(f"{datetime.now().isoformat()} [{error_id}] {context}\n")
+            f.write(traceback.format_exc())
+            f.write("\n")
+        return error_id
+    except Exception:
+        return "EUNKNOWN"
+
+
+def _parse_date_any(value):
+    """Parse a value into a `date`.
+
+    Supports SQLite text dates and Postgres date/datetime objects.
+    Returns `datetime.date` or None.
+    """
+    if value is None:
+        return None
+
+    # psycopg2 may return date/datetime objects
+    try:
+        from datetime import date as _date
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, _date):
+            return value
+    except Exception:
+        pass
+
+    s = str(value).strip()
+    if not s:
+        return None
+
+    # Common formats we have seen across environments
+    fmts = (
+        '%Y-%m-%d',
+        '%Y-%m-%d %H:%M:%S',
+        '%Y-%m-%d %H:%M:%S.%f',
+        '%Y-%m-%dT%H:%M:%S',
+        '%Y-%m-%dT%H:%M:%S.%f',
+        '%Y-%m-%dT%H:%M:%S%z',
+        '%Y-%m-%dT%H:%M:%S.%f%z',
+    )
+
+    # Try fast ISO parsing first
+    try:
+        # Handles YYYY-MM-DD and many ISO datetime strings
+        dt = datetime.fromisoformat(s.replace('Z', '+00:00'))
+        return dt.date()
+    except Exception:
+        pass
+
+    for fmt in fmts:
+        try:
+            return datetime.strptime(s, fmt).date()
+        except Exception:
+            continue
+
+    return None
+
+
+def _to_iso_date(value):
+    d = _parse_date_any(value)
+    return d.isoformat() if d else (str(value) if value is not None else None)
+
+
+@app.route('/api/admin/observability', methods=['GET'])
+def api_admin_observability():
+    """Observability stats used by the Desktop Admin -> Observability tab.
+
+    The desktop UI expects specific keys (total_24h, hourly_data, endpoint_data, etc.).
+    """
+    try:
+        def _parse_ts(value):
+            if value is None:
+                return None
+            if isinstance(value, datetime):
+                return value
+            s = str(value)
+            try:
+                return datetime.fromisoformat(s)
+            except Exception:
+                pass
+            for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M:%S.%f'):
+                try:
+                    return datetime.strptime(s, fmt)
+                except Exception:
+                    continue
+            return None
+
+        now = datetime.now()
+        cutoff_24h = now - timedelta(hours=24)
+        cutoff_7d = now - timedelta(days=7)
+
+        conn = get_portal_db()
+        cursor = conn.cursor()
+
+        # Pull last 7 days and compute everything in Python to keep it backend-agnostic (SQLite/Postgres).
+        cursor.execute(
+            "SELECT endpoint, status, timestamp FROM access_logs WHERE timestamp >= ?",
+            (cutoff_7d.strftime('%Y-%m-%d %H:%M:%S'),)
+        )
+        rows_7d = [dict(r) for r in cursor.fetchall()]
+        conn.close()
+
+        # Normalize
+        normalized = []
+        for r in rows_7d:
+            ts = _parse_ts(r.get('timestamp'))
+            try:
+                status = int(r.get('status') or 0)
+            except Exception:
+                status = 0
+            normalized.append({
+                'endpoint': r.get('endpoint') or '',
+                'status': status,
+                'ts': ts,
+            })
+
+        rows_24h = [r for r in normalized if r['ts'] and r['ts'] >= cutoff_24h]
+
+        total_24h = len(rows_24h)
+        total_7d = len([r for r in normalized if r['ts']])
+
+        success_24h = sum(1 for r in rows_24h if 200 <= r['status'] < 300)
+        errors_24h = sum(1 for r in rows_24h if r['status'] >= 400)
+        success_rate = (success_24h / total_24h * 100.0) if total_24h else 0.0
+
+        # Hourly breakdown (00-23)
+        hourly_data = {f"{h:02d}": 0 for h in range(24)}
+        for r in rows_24h:
+            h = r['ts'].hour
+            hourly_data[f"{h:02d}"] = hourly_data.get(f"{h:02d}", 0) + 1
+
+        peak_count = max(hourly_data.values()) if hourly_data else 0
+        peak_hour_key = None
+        if peak_count > 0:
+            # choose earliest peak hour for stability
+            for h in sorted(hourly_data.keys()):
+                if hourly_data[h] == peak_count:
+                    peak_hour_key = h
+                    break
+        peak_hour = f"{peak_hour_key}:00" if peak_hour_key is not None else 'N/A'
+
+        # Endpoint counts (last 24h)
+        ep_counts = {}
+        for r in rows_24h:
+            ep = r['endpoint']
+            ep_counts[ep] = ep_counts.get(ep, 0) + 1
+        endpoint_data = sorted(ep_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+
+        # Status buckets (last 24h)
+        status_data = {
+            '2xx Success': 0,
+            '3xx Redirect': 0,
+            '4xx Client Error': 0,
+            '5xx Server Error': 0,
+        }
+        for r in rows_24h:
+            s = r['status']
+            if 200 <= s < 300:
+                status_data['2xx Success'] += 1
+            elif 300 <= s < 400:
+                status_data['3xx Redirect'] += 1
+            elif 400 <= s < 500:
+                status_data['4xx Client Error'] += 1
+            elif s >= 500:
+                status_data['5xx Server Error'] += 1
+
+        # 7-day trend: YYYY-MM-DD -> count
+        trend_counts = {}
+        for r in normalized:
+            if not r['ts']:
+                continue
+            day = r['ts'].strftime('%Y-%m-%d')
+            trend_counts[day] = trend_counts.get(day, 0) + 1
+        trend_data = sorted(trend_counts.items(), key=lambda x: x[0])
+
+        return jsonify({
+            'status': 'ok',
+            'total_24h': total_24h,
+            'total_7d': total_7d,
+            'success_24h': success_24h,
+            'success_rate': success_rate,
+            'errors_24h': errors_24h,
+            'peak_hour': peak_hour,
+            'peak_count': peak_count,
+            'hourly_data': hourly_data,
+            'endpoint_data': endpoint_data,
+            'status_data': status_data,
+            'trend_data': trend_data,
+        })
+    except Exception as e:
+        error_id = _log_portal_exception('api_admin_observability', e)
+        return jsonify({'status': 'error', 'message': 'Observability failed', 'error_id': error_id}), 500
+
 def get_db_connection(local_db_name):
     """Generic connection factory: Postgres (if env) or Local SQLite"""
+    def _should_use_cloud_db() -> bool:
+        # Desktop app should default to LOCAL DB even if a cloud DATABASE_URL exists in .env.
+        # Enable cloud explicitly when deploying the portal.
+        force_local = os.getenv('PORTAL_FORCE_LOCAL', '').strip().lower() in ('1', 'true', 'yes')
+        if force_local:
+            return False
+
+        use_cloud = os.getenv('PORTAL_USE_CLOUD', '').strip().lower() in ('1', 'true', 'yes')
+        if use_cloud:
+            return True
+
+        # Auto-detect common cloud runtimes
+        if os.getenv('DYNO') or os.getenv('RENDER') or os.getenv('FLY_APP_NAME') or os.getenv('WEBSITE_INSTANCE_ID'):
+            return True
+
+        return False
+
     database_url = os.getenv('DATABASE_URL')
-    if database_url and POSTGRES_AVAILABLE:
+    if database_url and POSTGRES_AVAILABLE and _should_use_cloud_db():
         try:
             conn = psycopg2.connect(database_url)
             return PostgresConnectionWrapper(conn)
@@ -1415,14 +1638,21 @@ def api_dashboard():
             'msg': "You are using the default password. Please change it immediately."
         })
 
-    today = datetime.now()
+    today = datetime.now().date()
     
     for row in raw_borrows:
         item = dict(row)
         if item['due_date']:
             try:
-                due_dt = datetime.strptime(item['due_date'], '%Y-%m-%d')
-                delta = (due_dt - today).days
+                due_d = _parse_date_any(item['due_date'])
+                if not due_d:
+                    raise ValueError('Unparseable due_date')
+
+                # Normalize outgoing date format for frontend
+                item['due_date'] = due_d.isoformat()
+                item['borrow_date'] = _to_iso_date(item.get('borrow_date'))
+
+                delta = (due_d - today).days
                 
                 # Logic: Green (3+), Yellow (1-2), Red (<0)
                 if delta < 0:
@@ -1493,9 +1723,18 @@ def api_dashboard():
     notices = [dict(row) for row in cursor_p.fetchall()]
     conn_portal.close()
 
+    # Normalize dates for frontend JS Date parsing
+    for n in notices:
+        n['date'] = _to_iso_date(n.get('date'))
+
+    history = [dict(row) for row in raw_history]
+    for h in history:
+        h['borrow_date'] = _to_iso_date(h.get('borrow_date'))
+        h['return_date'] = _to_iso_date(h.get('return_date'))
+
     return jsonify({
         'borrows': borrows,
-        'history': [dict(row) for row in raw_history],
+        'history': history,
         'notices': notices,
         'notifications': notifications,
         'recent_requests': requests,
@@ -1565,66 +1804,6 @@ def get_book_details(book_id):
         portal_conn.close()
         conn.close()
         return jsonify(book_data)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/books/<book_id>/rate', methods=['POST'])
-def api_rate_book(book_id):
-    """Submit or update a book rating"""
-    if 'student_id' not in session:
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    try:
-        enrollment_no = session['student_id']
-        data = request.get_json()
-        rating = data.get('rating')
-        
-        if not rating or not isinstance(rating, int) or rating < 1 or rating > 5:
-            return jsonify({'error': 'Rating must be an integer between 1 and 5'}), 400
-        
-        portal_conn = get_portal_db()
-        portal_cursor = portal_conn.cursor()
-        
-        # Check if user already rated this book
-        portal_cursor.execute(
-            "SELECT id FROM book_ratings WHERE enrollment_no = ? AND book_id = ?",
-            (enrollment_no, str(book_id))
-        )
-        existing = portal_cursor.fetchone()
-        
-        if existing:
-            # Update existing rating
-            portal_cursor.execute(
-                "UPDATE book_ratings SET rating = ?, created_at = CURRENT_TIMESTAMP WHERE enrollment_no = ? AND book_id = ?",
-                (rating, enrollment_no, str(book_id))
-            )
-        else:
-            # Insert new rating
-            portal_cursor.execute(
-                "INSERT INTO book_ratings (enrollment_no, book_id, rating) VALUES (?, ?, ?)",
-                (enrollment_no, str(book_id), rating)
-            )
-        
-        portal_conn.commit()
-        
-        # Get updated rating stats
-        portal_cursor.execute(
-            "SELECT AVG(rating), COUNT(rating) FROM book_ratings WHERE book_id = ?",
-            (str(book_id),)
-        )
-        stats = portal_cursor.fetchone()
-        
-        new_avg = round(stats[0], 1) if stats[0] else 0
-        new_count = stats[1] if stats[1] else 0
-        
-        portal_conn.close()
-        
-        return jsonify({
-            'status': 'success',
-            'new_avg': new_avg,
-            'new_count': new_count
-        })
-        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -1942,77 +2121,96 @@ def api_books():
 @app.route('/api/admin/all-requests')
 def api_admin_all_requests():
     """Fetch all pending requests for librarian management"""
-    conn = get_portal_db()
-    cursor = conn.cursor()
-    
-    # Fetch general requests (profile_update, renewal, book_reservation, etc.)
-    cursor.execute("""
-        SELECT req_id, enrollment_no, request_type, details, status, created_at
-        FROM requests
-        WHERE status = 'pending'
-        ORDER BY created_at DESC
-    """)
-    general_requests = []
-    for row in cursor.fetchall():
-        req = dict(row)
-        # Try to parse JSON details
-        try:
-            req['details'] = json.loads(req['details']) if req['details'] else {}
-        except:
-            req['details'] = {'raw': req['details']}
-        general_requests.append(req)
-    
-    # Fetch deletion requests
-    cursor.execute("""
-        SELECT id, student_id, reason, status, timestamp
-        FROM deletion_requests
-        WHERE status = 'pending'
-        ORDER BY timestamp DESC
-    """)
-    deletion_requests = [dict(row) for row in cursor.fetchall()]
-    
-    conn.close()
-    
-    # Get student names from library DB
-    conn_lib = get_library_db()
-    cursor_lib = conn_lib.cursor()
-    
-    # Enrich general requests with student names
-    for req in general_requests:
-        cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (req['enrollment_no'],))
-        student = cursor_lib.fetchone()
-        req['student_name'] = student['name'] if student else 'Unknown'
-    
-    # Enrich deletion requests with student names
-    for req in deletion_requests:
-        cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (req['student_id'],))
-        student = cursor_lib.fetchone()
-        req['student_name'] = student['name'] if student else 'Unknown'
-    
-    conn_lib.close()
-    
-    # Get rejected count from portal DB
-    conn2 = get_portal_db()
-    cursor2 = conn2.cursor()
-    cursor2.execute("SELECT COUNT(*) as count FROM requests WHERE status = 'rejected'")
-    rejected_count = cursor2.fetchone()['count']
-    
-    # Get deletion counts by status
-    cursor2.execute("SELECT status, COUNT(*) as count FROM deletion_requests GROUP BY status")
-    deletion_counts = {row['status']: row['count'] for row in cursor2.fetchall()}
-    conn2.close()
-    
-    return jsonify({
-        'requests': general_requests,
-        'deletion_requests': deletion_requests,
-        'rejected_count': rejected_count,
-        'deletion_counts': deletion_counts,
-        'counts': {
-            'total': len(general_requests) + len(deletion_requests),
-            'requests': len(general_requests),
-            'deletions': len(deletion_requests)
-        }
-    })
+    try:
+        conn = get_portal_db()
+        cursor = conn.cursor()
+
+        # Fetch general requests (profile_update, renewal, book_reservation, etc.)
+        cursor.execute("""
+            SELECT id as req_id, enrollment_no, request_type, details, status, created_at
+            FROM requests
+            WHERE status = 'pending'
+            ORDER BY created_at DESC
+        """)
+        general_requests = []
+        for row in cursor.fetchall():
+            req = dict(row)
+            # Try to parse JSON details
+            try:
+                req['details'] = json.loads(req['details']) if req['details'] else {}
+            except Exception:
+                req['details'] = {'raw': req.get('details')}
+            general_requests.append(req)
+
+        # Fetch deletion requests
+        cursor.execute("""
+            SELECT id, student_id, reason, status, timestamp
+            FROM deletion_requests
+            WHERE status = 'pending'
+            ORDER BY timestamp DESC
+        """)
+        deletion_requests = [dict(row) for row in cursor.fetchall()]
+
+        conn.close()
+
+        # Get student names from library DB
+        conn_lib = get_library_db()
+        cursor_lib = conn_lib.cursor()
+
+        # Enrich general requests with student names
+        for req in general_requests:
+            enrollment_no = str(req.get('enrollment_no', '')).strip()
+            cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (enrollment_no,))
+            student = cursor_lib.fetchone()
+            if not student:
+                req['student_name'] = 'Unknown'
+            else:
+                try:
+                    req['student_name'] = student['name']
+                except Exception:
+                    # Last-resort fallback
+                    req['student_name'] = dict(student).get('name', 'Unknown')
+
+        # Enrich deletion requests with student names
+        for req in deletion_requests:
+            enrollment_no = str(req.get('student_id', '')).strip()
+            cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (enrollment_no,))
+            student = cursor_lib.fetchone()
+            if not student:
+                req['student_name'] = 'Unknown'
+            else:
+                try:
+                    req['student_name'] = student['name']
+                except Exception:
+                    req['student_name'] = dict(student).get('name', 'Unknown')
+
+        conn_lib.close()
+
+        # Get rejected count from portal DB
+        conn2 = get_portal_db()
+        cursor2 = conn2.cursor()
+        cursor2.execute("SELECT COUNT(*) as count FROM requests WHERE status = 'rejected'")
+        rejected_count = cursor2.fetchone()['count']
+
+        # Get deletion counts by status
+        cursor2.execute("SELECT status, COUNT(*) as count FROM deletion_requests GROUP BY status")
+        deletion_counts = {row['status']: row['count'] for row in cursor2.fetchall()}
+        conn2.close()
+
+        return jsonify({
+            'requests': general_requests,
+            'deletion_requests': deletion_requests,
+            'rejected_count': rejected_count,
+            'deletion_counts': deletion_counts,
+            'counts': {
+                'total': len(general_requests) + len(deletion_requests),
+                'requests': len(general_requests),
+                'deletions': len(deletion_requests)
+            }
+        })
+    except Exception as e:
+        error_id = _log_portal_exception('api_admin_all_requests', e)
+        return jsonify({'status': 'error', 'message': 'Failed to load requests', 'error_id': error_id}), 500
 
 @app.route('/api/admin/request-history')
 def api_admin_request_history():
@@ -2160,7 +2358,7 @@ def api_admin_approve_request(req_id):
     cursor = conn.cursor()
     
     # Get the request details
-    cursor.execute("SELECT * FROM requests WHERE req_id = ?", (req_id,))
+    cursor.execute("SELECT * FROM requests WHERE id = ?", (req_id,))
     req = cursor.fetchone()
     
     if not req:
@@ -2168,7 +2366,7 @@ def api_admin_approve_request(req_id):
         return jsonify({'status': 'error', 'message': 'Request not found'}), 404
     
     # Update status to approved
-    cursor.execute("UPDATE requests SET status = 'approved' WHERE req_id = ?", (req_id,))
+    cursor.execute("UPDATE requests SET status = 'approved' WHERE id = ?", (req_id,))
     
     # NOTIFICATION TRIGGER: Notify student
     # Parse details to get book name
@@ -2310,10 +2508,10 @@ def api_admin_reject_request(req_id):
     conn = get_portal_db()
     cursor = conn.cursor()
     
-    cursor.execute("UPDATE requests SET status = 'rejected' WHERE req_id = ?", (req_id,))
+    cursor.execute("UPDATE requests SET status = 'rejected' WHERE id = ?", (req_id,))
     
     # Get enrollment to notify
-    cursor.execute("SELECT enrollment_no, request_type, details FROM requests WHERE req_id = ?", (req_id,))
+    cursor.execute("SELECT enrollment_no, request_type, details FROM requests WHERE id = ?", (req_id,))
     req = cursor.fetchone()
     
     if req:

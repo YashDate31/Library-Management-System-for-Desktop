@@ -38,6 +38,16 @@ LibraryApp/library.db
 LibraryApp/Web-Extension/portal.db
 portal.db
 
+# Runtime app state / user-specific config (do not commit)
+LibraryApp/app_config.json
+LibraryApp/sync_log.json
+
+# Runtime email history can contain personal data
+LibraryApp/email_history.json
+
+# User uploads (can be large and/or sensitive)
+LibraryApp/Web-Extension/uploads/
+
 # Secret keys (security)
 .secret_key
 LibraryApp/Web-Extension/.secret_key

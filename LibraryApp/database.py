@@ -103,18 +103,26 @@ class PostgresConnectionWrapper:
 
 
 class Database:
-    def __init__(self):
-        # Check if we should use Cloud DB (PostgreSQL)
-        # Only if psycopg2 is available AND DATABASE_URL is set
+    def __init__(self, force_local=True):
+        # PERFORMANCE FIX: Desktop app ALWAYS uses local SQLite for instant speed
+        # Remote PostgreSQL is ONLY used by sync_manager for web extension
+        # This eliminates all network latency for desktop operations
+        
         self.database_url = os.getenv('DATABASE_URL')
-        self.use_cloud = POSTGRES_AVAILABLE and bool(self.database_url)
+        
+        # Force local mode for desktop app (remote only for sync manager)
+        if force_local:
+            self.use_cloud = False
+        else:
+            # Only sync manager uses remote connection
+            self.use_cloud = POSTGRES_AVAILABLE and bool(self.database_url)
         
         self.db_path = ""
         
         if self.use_cloud:
-            print(f"Database: Using Cloud PostgreSQL")
+            print(f"Database: Using Cloud PostgreSQL (Sync Manager Only)")
         else:
-            # Fallback to local SQLite
+            # Local SQLite for instant desktop performance
             # Create database in a persistent location
             # For executable, use the directory where the executable is located
             if hasattr(sys, '_MEIPASS'):
@@ -124,7 +132,8 @@ class Database:
                 # Running as script
                 self.db_path = os.path.join(os.path.dirname(__file__), 'library.db')
             
-            print(f"Database: Using Local SQLite at {self.db_path}")
+            print(f"[OK] Database: Using LOCAL SQLite (Fast!) at {self.db_path}")
+            print(f"   Sync Manager will handle remote updates for web portal")
             
         self.init_database()
     
@@ -348,6 +357,69 @@ class Database:
 
         except Exception as e:
             print(f"Migration check warning: {e}")
+
+        # Migration: ensure date_registered exists on students
+        try:
+            has_date_registered = False
+            if self.use_cloud:
+                cursor.execute(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name='students' AND column_name='date_registered'"
+                )
+                if cursor.fetchone():
+                    has_date_registered = True
+            else:
+                cursor.execute("PRAGMA table_info(students)")
+                columns = [col[1] for col in cursor.fetchall()]
+                has_date_registered = 'date_registered' in columns
+
+            if not has_date_registered:
+                # SQLite: ADD COLUMN with a constant default is safest across versions
+                cursor.execute("ALTER TABLE students ADD COLUMN date_registered DATE")
+                try:
+                    cursor.execute("UPDATE students SET date_registered = DATE('now') WHERE date_registered IS NULL")
+                except Exception:
+                    pass
+                conn.commit()
+                print("Migration: Added 'date_registered' column to students table")
+        except Exception as e:
+            print(f"Migration check warning (date_registered): {e}")
+
+        # Migration: ensure date_added exists on books
+        try:
+            has_date_added = False
+            if self.use_cloud:
+                cursor.execute(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name='books' AND column_name='date_added'"
+                )
+                if cursor.fetchone():
+                    has_date_added = True
+            else:
+                cursor.execute("PRAGMA table_info(books)")
+                columns = [col[1] for col in cursor.fetchall()]
+                has_date_added = 'date_added' in columns
+
+            if not has_date_added:
+                cursor.execute("ALTER TABLE books ADD COLUMN date_added DATE")
+                try:
+                    cursor.execute("UPDATE books SET date_added = DATE('now') WHERE date_added IS NULL")
+                except Exception:
+                    pass
+                conn.commit()
+                print("Migration: Added 'date_added' column to books table")
+        except Exception as e:
+            print(f"Migration check warning (date_added): {e}")
+
+        # Indexes: improve performance of common dashboard/report queries
+        try:
+            # These are safe to run repeatedly
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_borrow_records_status_due ON borrow_records(status, due_date)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_borrow_records_enroll_status ON borrow_records(enrollment_no, status)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_borrow_records_book_status ON borrow_records(book_id, status)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_borrow_records_borrow_date ON borrow_records(borrow_date)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_books_category ON books(category)")
+            conn.commit()
+        except Exception as e:
+            print(f"Index creation warning: {e}")
 
         
         conn.close()
@@ -734,26 +806,74 @@ class Database:
         return result
     
     def delete_student(self, enrollment_no):
-        """Delete a student"""
+        """Delete a student with proper cascade handling"""
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
-            # Check if student has borrowed books
+            # Check if student has CURRENTLY borrowed books (not returned)
             cursor.execute('''
                 SELECT COUNT(*) FROM borrow_records 
                 WHERE enrollment_no = ? AND status = 'borrowed'
             ''', (enrollment_no,))
-            if cursor.fetchone()[0] > 0:
-                return False, "Cannot delete student with borrowed books"
+            active_borrows = cursor.fetchone()[0]
             
-            cursor.execute('DELETE FROM students WHERE enrollment_no = ?', (enrollment_no,))
-            if cursor.rowcount == 0:
+            if active_borrows > 0:
+                return False, "Cannot delete student with currently borrowed books. Please return all books first."
+            
+            # Check if student exists
+            cursor.execute('SELECT name FROM students WHERE enrollment_no = ?', (enrollment_no,))
+            student = cursor.fetchone()
+            if not student:
                 return False, "Student not found"
             
+            student_name = student[0]
+            
+            # CASCADE DELETE: Delete all related records first
+            # 1. Delete promotion history
+            cursor.execute('DELETE FROM promotion_history WHERE enrollment_no = ?', (enrollment_no,))
+            promo_deleted = cursor.rowcount
+            
+            # 2. Delete borrow history (only returned books)
+            cursor.execute('DELETE FROM borrow_records WHERE enrollment_no = ? AND status = "returned"', (enrollment_no,))
+            borrow_deleted = cursor.rowcount
+            
+            # 3. Delete waitlist entries
+            try:
+                cursor.execute('DELETE FROM waitlist WHERE enrollment_no = ?', (enrollment_no,))
+            except:
+                pass  # Waitlist table might not exist
+            
+            # 4. Finally delete the student
+            cursor.execute('DELETE FROM students WHERE enrollment_no = ?', (enrollment_no,))
+            
             conn.commit()
-            return True, "Student deleted successfully"
+            
+            # Build detailed success message
+            details = []
+            if promo_deleted > 0:
+                details.append(f"{promo_deleted} promotion record(s)")
+            if borrow_deleted > 0:
+                details.append(f"{borrow_deleted} borrow history record(s)")
+            
+            if details:
+                return True, f"Student '{student_name}' deleted successfully along with {', '.join(details)}"
+            else:
+                return True, f"Student '{student_name}' deleted successfully"
+                
         except Exception as e:
-            return False, f"Error: {str(e)}"
+            conn.rollback()
+            # Provide user-friendly error message
+            error_msg = str(e).lower()
+            if 'foreign key' in error_msg or 'constraint' in error_msg:
+                return False, (
+                    "Cannot delete student due to database constraints.\n\n"
+                    "Please ensure:\n"
+                    "• All books are returned (check Records tab)\n"
+                    "• No pending fines or issues\n\n"
+                    f"Technical error: {str(e)}"
+                )
+            else:
+                return False, f"Error deleting student: {str(e)}"
         finally:
             conn.close()
     
