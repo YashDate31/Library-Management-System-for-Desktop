@@ -67,6 +67,11 @@ LibraryApp/Web-Extension/.secret_key
 # OneDrive temp files
 ~$*
 
+# Environment variables / secrets (never commit)
+.env
+.env.*
+!.env.example
+
 # Local scratch/debug artifacts (do not commit)
 FINAL_COMPREHENSIVE_SOLUTION_REPORT.md
 HTTP_500_FIX_SUMMARY.md
