@@ -2274,13 +2274,34 @@ def api_submit_request():
         return jsonify({'error': 'Unauthorized'}), 401
 
     # Restrict Pass Out students from submitting requests
-    conn_lib = get_library_db()
-    cursor_lib = conn_lib.cursor()
-    cursor_lib.execute("SELECT year FROM students WHERE enrollment_no = ?", (session['student_id'],))
-    student = cursor_lib.fetchone()
-    conn_lib.close()
-    student_year = student['year'] if student and student['year'] else ''
-    if student_year.strip().lower() in ['pass out', 'passout', 'passed out', 'alumni', 'graduate']:
+    def _row_get(row, key, default=None):
+        if row is None:
+            return default
+        try:
+            return row[key]
+        except Exception:
+            try:
+                return row.get(key, default)
+            except Exception:
+                return default
+
+    student_year = ''
+    try:
+        conn_lib = get_library_db()
+        cursor_lib = conn_lib.cursor()
+        cursor_lib.execute("SELECT year FROM students WHERE enrollment_no = ?", (session['student_id'],))
+        student = cursor_lib.fetchone()
+        try:
+            conn_lib.close()
+        except Exception:
+            pass
+
+        student_year = _row_get(student, 'year', '') or ''
+    except Exception:
+        # In deployed environments, library DB tables may be missing; do not block requests.
+        student_year = ''
+
+    if str(student_year).strip().lower() in ['pass out', 'passout', 'passed out', 'alumni', 'graduate']:
         return jsonify({'error': 'Requests are not allowed for Pass Out students.'}), 403
 
     data = request.json
@@ -2297,96 +2318,102 @@ def api_submit_request():
                        (session['student_id'], req_type, json.dumps(details)))
         conn.commit()
         conn.close()
-        
-        # Send Email Notification
-        # Send Email Notification
-        conn_lib = get_library_db()
-        cursor_lib = conn_lib.cursor()
-        
-        # Fetch Name
-        cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (session['student_id'],))
-        student = cursor_lib.fetchone()
-        student_name = student['name'].split()[0] if student and student['name'] else "Student"
-        
-        # Helper to parse book title from string details
-        def get_title_from_details(details_obj):
-            t = req_type
-            if isinstance(details_obj, dict):
-                 if 'title' in details_obj: return details_obj['title']
-                 if 'book_id' in details_obj:
-                     try:
-                        cursor_lib.execute("SELECT title FROM books WHERE book_id = ?", (details_obj['book_id'],))
-                        bd = cursor_lib.fetchone()
-                        if bd: return bd['title']
-                     except: pass
-            elif isinstance(details_obj, str):
-                if "Request for book: " in details_obj:
-                    import re
-                    match = re.search(r"Request for book: (.*?) \(ID:", details_obj)
-                    if match: return match.group(1)
-                    return details_obj.replace("Request for book: ", "")
-            return t
 
-        # Prepare Email Content based on Type
-        email_subject = ""
-        header_title = "Request Received"
-        main_text = ""
-        details_dict = {}
-        theme = 'blue'
-        
-        current_date_str = datetime.now().strftime('%d %b %Y, %I:%M %p')
+        # Send Email Notification (best-effort; never fail the request because email failed)
+        conn_lib = None
+        try:
+            conn_lib = get_library_db()
+            cursor_lib = conn_lib.cursor()
 
-        if req_type == 'book_request':
-            b_title = get_title_from_details(details)
-            email_subject = f"Request Received: {b_title}"
-            header_title = "Reservation Received"
-            main_text = f"We have received your request to reserve <strong>{b_title}</strong>."
-            details_dict = {
-                'Book Title': b_title,
-                'Request Date': current_date_str,
-                'Status': 'Pending Approval'
-            }
-            
-        elif req_type == 'renewal':
-            b_title = get_title_from_details(details)
-            email_subject = f"Renewal Request: {b_title}"
-            header_title = "Renewal Request"
-            main_text = f"We have received your request to renew <strong>{b_title}</strong>."
-            details_dict = {
-                'Book Title': b_title,
-                'Request Date': current_date_str,
-                'Status': 'Pending Approval'
-            }
-            
-        elif req_type == 'profile_update':
-            email_subject = "Profile Update Request"
-            header_title = "Profile Update"
-            main_text = "We have received your request to update your library profile."
-            details_summary = json.dumps(details) if isinstance(details, dict) else str(details)
-            details_dict = {
-                'Requested Changes': details_summary,
-                'Request Date': current_date_str
-            }
-            
-        else:
-            # Generic fallback
-            email_subject = f"Request Received: {req_type}"
-            main_text = f"We have received your {req_type} request."
-            details_dict = {'Details': str(details)}
+            # Fetch Name
+            cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (session['student_id'],))
+            student = cursor_lib.fetchone()
+            full_name = _row_get(student, 'name')
+            student_name = str(full_name).split()[0] if full_name else "Student"
 
-        conn_lib.close()
+            # Helper to parse book title from request details
+            def get_title_from_details(details_obj):
+                t = req_type
+                if isinstance(details_obj, dict):
+                    if 'title' in details_obj:
+                        return details_obj['title']
+                    if 'book_id' in details_obj:
+                        try:
+                            cursor_lib.execute("SELECT title FROM books WHERE book_id = ?", (details_obj['book_id'],))
+                            bd = cursor_lib.fetchone()
+                            if bd:
+                                return _row_get(bd, 'title') or t
+                        except Exception:
+                            pass
+                elif isinstance(details_obj, str):
+                    if "Request for book: " in details_obj:
+                        import re
+                        match = re.search(r"Request for book: (.*?) \(ID:", details_obj)
+                        if match:
+                            return match.group(1)
+                        return details_obj.replace("Request for book: ", "")
+                return t
 
-        email_body = generate_email_template(
-            header_title=header_title,
-            user_name=student_name,
-            main_text=main_text,
-            details_dict=details_dict,
-            theme='blue',
-            footer_note="You will be notified once the librarian reviews your request."
-        )
-        
-        trigger_notification_email(session['student_id'], email_subject, email_body)
-        
+            # Prepare Email Content based on Type
+            email_subject = ""
+            header_title = "Request Received"
+            main_text = ""
+            details_dict = {}
+
+            current_date_str = datetime.now().strftime('%d %b %Y, %I:%M %p')
+
+            if req_type == 'book_request':
+                b_title = get_title_from_details(details)
+                email_subject = f"Request Received: {b_title}"
+                header_title = "Reservation Received"
+                main_text = f"We have received your request to reserve <strong>{b_title}</strong>."
+                details_dict = {
+                    'Book Title': b_title,
+                    'Request Date': current_date_str,
+                    'Status': 'Pending Approval'
+                }
+            elif req_type == 'renewal':
+                b_title = get_title_from_details(details)
+                email_subject = f"Renewal Request: {b_title}"
+                header_title = "Renewal Request"
+                main_text = f"We have received your request to renew <strong>{b_title}</strong>."
+                details_dict = {
+                    'Book Title': b_title,
+                    'Request Date': current_date_str,
+                    'Status': 'Pending Approval'
+                }
+            elif req_type == 'profile_update':
+                email_subject = "Profile Update Request"
+                header_title = "Profile Update"
+                main_text = "We have received your request to update your library profile."
+                details_summary = json.dumps(details) if isinstance(details, dict) else str(details)
+                details_dict = {
+                    'Requested Changes': details_summary,
+                    'Request Date': current_date_str
+                }
+            else:
+                email_subject = f"Request Received: {req_type}"
+                main_text = f"We have received your {req_type} request."
+                details_dict = {'Details': str(details)}
+
+            email_body = generate_email_template(
+                header_title=header_title,
+                user_name=student_name,
+                main_text=main_text,
+                details_dict=details_dict,
+                theme='blue',
+                footer_note="You will be notified once the librarian reviews your request."
+            )
+            trigger_notification_email(session['student_id'], email_subject, email_body)
+        except Exception:
+            pass
+        finally:
+            try:
+                if conn_lib is not None:
+                    conn_lib.close()
+            except Exception:
+                pass
+
         return jsonify({'status': 'success', 'message': 'Request submitted to librarian'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
