@@ -111,6 +111,31 @@ def _is_postgres_connection(conn) -> bool:
         return False
 
 
+def _db_backend_name(conn) -> str:
+    return 'postgres' if _is_postgres_connection(conn) else 'sqlite'
+
+
+def _table_exists(conn, table_name: str) -> bool:
+    """Return True if a table exists in the connected database."""
+    try:
+        cursor = conn.cursor()
+        if _is_postgres_connection(conn):
+            cursor.execute(
+                """
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = %s
+                LIMIT 1
+                """,
+                (table_name,),
+            )
+            return cursor.fetchone() is not None
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
+        return cursor.fetchone() is not None
+    except Exception:
+        return False
+
+
 def _requests_pk_column(conn) -> str:
     """Return the primary key column for the requests table ('req_id' or legacy 'id')."""
     try:
@@ -2304,11 +2329,13 @@ def api_submit_request():
     if str(student_year).strip().lower() in ['pass out', 'passout', 'passed out', 'alumni', 'graduate']:
         return jsonify({'error': 'Requests are not allowed for Pass Out students.'}), 403
 
-    data = request.json
-    req_type = data.get('type') # 'profile_update', 'renewal'
-    details = data.get('details') # e.g., "Change email to x@y.com"
+    data = request.get_json(silent=True) or {}
+    req_type = data.get('type')  # 'profile_update', 'renewal', etc.
+    details = data.get('details')  # can be str/dict; may be empty for some request types
 
-    if not req_type or not details:
+    if not req_type:
+        return jsonify({'error': 'Missing data'}), 400
+    if details is None:
         return jsonify({'error': 'Missing data'}), 400
 
     try:
@@ -2416,7 +2443,80 @@ def api_submit_request():
 
         return jsonify({'status': 'success', 'message': 'Request submitted to librarian'})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        error_id = _log_portal_exception('api_submit_request', e)
+        return jsonify({'error': 'Failed to submit request', 'error_id': error_id}), 500
+
+
+@app.get('/api/admin/diagnostics')
+def api_admin_diagnostics():
+    """Lightweight diagnostics endpoint to debug Render/local mismatches.
+
+    This is intentionally read-only and contains no secrets.
+    """
+    info = {
+        'status': 'ok',
+        'app_version': APP_VERSION,
+        'runtime': {
+            'RENDER': bool(os.getenv('RENDER')),
+            'DYNO': bool(os.getenv('DYNO')),
+            'FLY_APP_NAME': bool(os.getenv('FLY_APP_NAME')),
+            'WEBSITE_INSTANCE_ID': bool(os.getenv('WEBSITE_INSTANCE_ID')),
+        },
+        'postgres_available': bool(POSTGRES_AVAILABLE),
+        'database_url_present': bool(os.getenv('DATABASE_URL')),
+        'portal_use_cloud': os.getenv('PORTAL_USE_CLOUD'),
+        'portal_force_local': os.getenv('PORTAL_FORCE_LOCAL'),
+    }
+
+    try:
+        connp = get_portal_db()
+        info['portal_db'] = {
+            'backend': _db_backend_name(connp),
+            'tables': {
+                'requests': _table_exists(connp, 'requests'),
+                'deletion_requests': _table_exists(connp, 'deletion_requests'),
+                'access_logs': _table_exists(connp, 'access_logs'),
+            },
+        }
+
+        try:
+            cur = connp.cursor()
+            cur.execute("SELECT COUNT(*) AS c FROM requests")
+            row = cur.fetchone()
+            info['portal_db']['requests_total'] = int((row.get('c') if hasattr(row, 'get') else row[0]) or 0)
+            cur.execute("SELECT COUNT(*) AS c FROM requests WHERE status = 'pending'")
+            row = cur.fetchone()
+            info['portal_db']['requests_pending'] = int((row.get('c') if hasattr(row, 'get') else row[0]) or 0)
+            cur.execute("SELECT enrollment_no, request_type, status, created_at FROM requests ORDER BY created_at DESC LIMIT 1")
+            last = cur.fetchone()
+            info['portal_db']['last_request'] = dict(last) if last else None
+        except Exception as e:
+            info['portal_db']['counts_error'] = str(e)
+        finally:
+            try:
+                connp.close()
+            except Exception:
+                pass
+    except Exception as e:
+        info['portal_db_error'] = str(e)
+
+    try:
+        connl = get_library_db()
+        info['library_db'] = {
+            'backend': _db_backend_name(connl),
+            'tables': {
+                'students': _table_exists(connl, 'students'),
+                'books': _table_exists(connl, 'books'),
+            },
+        }
+        try:
+            connl.close()
+        except Exception:
+            pass
+    except Exception as e:
+        info['library_db_error'] = str(e)
+
+    return jsonify(info)
 
 @app.route('/api/books')
 def api_books():
