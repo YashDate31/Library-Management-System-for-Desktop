@@ -5,6 +5,21 @@ Library of Computer Department Management System
 Version v3.7_DEVELOPER_LOGIN - Developer branding on login + visible version label
 """
 
+# Load .env FIRST, before any other imports that might need DATABASE_URL
+try:
+    from dotenv import load_dotenv
+    # Look for .env in project root (one level up from LibraryApp/)
+    import os as _os
+    _env_path = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), '.env')
+    if _os.path.exists(_env_path):
+        load_dotenv(_env_path)
+        print(f"[OK] Loaded environment from {_env_path}")
+    else:
+        # Also try current directory
+        load_dotenv()
+except ImportError:
+    pass
+
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime, timedelta
