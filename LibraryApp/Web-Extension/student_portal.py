@@ -36,11 +36,79 @@ except ImportError:
 # --- Configuration ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads', 'study_materials')
+REGISTRATION_PHOTO_FOLDER = os.path.join(BASE_DIR, 'uploads', 'registration_photos')
 ALLOWED_EXTENSIONS = {'pdf', 'doc', 'docx', 'ppt', 'pptx', 'txt', 'jpg', 'jpeg', 'png', 'zip', 'rar'}
+ALLOWED_PHOTO_EXTENSIONS = {'jpg', 'jpeg', 'png'}
+MAX_PHOTO_BYTES = 50 * 1024  # 50KB
 
 # Create upload folder if it doesn't exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(REGISTRATION_PHOTO_FOLDER, exist_ok=True)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _is_postgres_connection(conn) -> bool:
+    """Best-effort check to determine if this is a PostgresConnectionWrapper."""
+    try:
+        return PostgresConnectionWrapper is not None and isinstance(conn, PostgresConnectionWrapper)
+    except Exception:
+        return False
+
+
+def _requests_pk_column(conn) -> str:
+    """Return the primary key column for the requests table ('req_id' or legacy 'id')."""
+    try:
+        cursor = conn.cursor()
+        if _is_postgres_connection(conn):
+            cursor.execute("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'requests'
+            """)
+            cols = {str(r[0]) for r in cursor.fetchall()}
+        else:
+            cursor.execute("PRAGMA table_info(requests)")
+            cols = {str(r['name']) for r in cursor.fetchall()}
+    except Exception:
+        # Default to modern schema
+        return 'req_id'
+
+    if 'req_id' in cols:
+        return 'req_id'
+    if 'id' in cols:
+        return 'id'
+    # Last resort
+    return 'req_id'
+
+
+def _safe_str(v):
+    return str(v).strip() if v is not None else ''
+
+
+def _normalize_enrollment(enrollment: str) -> str:
+    return _safe_str(enrollment).upper()
+
+
+def _allowed_photo_filename(filename: str) -> bool:
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_PHOTO_EXTENSIONS
+
+
+def _read_file_size_bytes(file_storage) -> int:
+    """Return size of an uploaded file without trusting Content-Length."""
+    try:
+        pos = file_storage.stream.tell()
+        file_storage.stream.seek(0, os.SEEK_END)
+        size = int(file_storage.stream.tell())
+        file_storage.stream.seek(pos, os.SEEK_SET)
+        return size
+    except Exception:
+        # Fallback: read into memory (photo is limited to 50KB anyway)
+        try:
+            data = file_storage.read()
+            file_storage.stream.seek(0)
+            return len(data)
+        except Exception:
+            return 0
 
 # --- Secure Secret Key Management ---
 def get_or_create_secret_key():
@@ -163,6 +231,7 @@ def generate_csrf_token():
 CSRF_EXCLUDED_ENDPOINTS = [
     '/api/login',
     '/api/public/forgot-password',
+    '/api/public/register',
     '/api/change_password',  # Part of first-time login flow
     '/api/request',  # Student requests (session-protected)
     '/api/settings',  # Settings update (session-protected)
@@ -1079,6 +1148,102 @@ def api_change_password():
         'name': student_name,
         'enrollment_no': enrollment
     })
+
+
+# =====================================================================
+# PUBLIC STUDENT REGISTRATION (REQUEST FLOW)
+# =====================================================================
+
+
+@app.route('/api/public/register', methods=['POST'])
+@rate_limit
+def api_public_register_student():
+    """Students can submit a registration request (pending librarian approval)."""
+    try:
+        # Expect multipart/form-data
+        enrollment_no = _normalize_enrollment(request.form.get('enrollment_no', ''))
+        name = _safe_str(request.form.get('name', ''))
+        year = _safe_str(request.form.get('year', ''))
+        department = _safe_str(request.form.get('department', ''))
+        phone = _safe_str(request.form.get('phone', ''))
+        email = _safe_str(request.form.get('email', ''))
+
+        if not enrollment_no or not name or not year or not department or not phone or not email:
+            return jsonify({'status': 'error', 'message': 'All fields are required (except photo).'}), 400
+
+        if len(phone) < 8:
+            return jsonify({'status': 'error', 'message': 'Invalid mobile number.'}), 400
+
+        if '@' not in email or '.' not in email:
+            return jsonify({'status': 'error', 'message': 'Invalid email address.'}), 400
+
+        # 1) Ensure student does NOT already exist in library DB
+        conn_lib = get_library_db()
+        cursor_lib = conn_lib.cursor()
+        cursor_lib.execute("SELECT enrollment_no FROM students WHERE enrollment_no = ?", (enrollment_no,))
+        existing = cursor_lib.fetchone()
+        conn_lib.close()
+        if existing:
+            return jsonify({'status': 'error', 'message': 'You are already registered in the library.'}), 409
+
+        # 2) Prevent duplicate pending registration requests
+        conn_portal = get_portal_db()
+        cursor_p = conn_portal.cursor()
+        cursor_p.execute(
+            """
+            SELECT 1 FROM requests
+            WHERE enrollment_no = ? AND request_type = 'student_registration' AND status = 'pending'
+            LIMIT 1
+            """,
+            (enrollment_no,)
+        )
+        pending = cursor_p.fetchone()
+        if pending:
+            conn_portal.close()
+            return jsonify({'status': 'error', 'message': 'A registration request is already pending. Please wait for librarian approval.'}), 400
+
+        # 3) Optional photo upload (<=50KB)
+        photo_path = None
+        if 'photo' in request.files and request.files['photo'] and request.files['photo'].filename:
+            photo = request.files['photo']
+            if not _allowed_photo_filename(photo.filename):
+                conn_portal.close()
+                return jsonify({'status': 'error', 'message': 'Photo must be JPG or PNG.'}), 400
+
+            size = _read_file_size_bytes(photo)
+            if size > MAX_PHOTO_BYTES:
+                conn_portal.close()
+                return jsonify({'status': 'error', 'message': 'Photo too large. Max size is 50KB.'}), 400
+
+            original_filename = secure_filename(photo.filename)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            unique_filename = f"{timestamp}_{enrollment_no}_{original_filename}"
+            photo_path = os.path.join(REGISTRATION_PHOTO_FOLDER, unique_filename)
+            photo.save(photo_path)
+
+        details = {
+            'name': name,
+            'year': year,
+            'department': department,
+            'phone': phone,
+            'email': email,
+            'photo_filename': os.path.basename(photo_path) if photo_path else None
+        }
+
+        cursor_p.execute(
+            "INSERT INTO requests (enrollment_no, request_type, details) VALUES (?, 'student_registration', ?)",
+            (enrollment_no, json.dumps(details))
+        )
+        conn_portal.commit()
+        conn_portal.close()
+
+        return jsonify({
+            'status': 'success',
+            'message': 'Registration request submitted. Please wait for librarian approval.'
+        })
+    except Exception as e:
+        error_id = _log_portal_exception('api_public_register_student', e)
+        return jsonify({'status': 'error', 'message': 'Registration failed', 'error_id': error_id}), 500
 
 
 @app.route('/api/settings', methods=['POST'])
@@ -2125,9 +2290,10 @@ def api_admin_all_requests():
         conn = get_portal_db()
         cursor = conn.cursor()
 
-        # Fetch general requests (profile_update, renewal, book_reservation, etc.)
-        cursor.execute("""
-            SELECT id as req_id, enrollment_no, request_type, details, status, created_at
+        # Fetch general requests (profile_update, renewal, book_reservation, student_registration, etc.)
+        pk = _requests_pk_column(conn)
+        cursor.execute(f"""
+            SELECT {pk} as req_id, enrollment_no, request_type, details, status, created_at
             FROM requests
             WHERE status = 'pending'
             ORDER BY created_at DESC
@@ -2163,7 +2329,15 @@ def api_admin_all_requests():
             cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (enrollment_no,))
             student = cursor_lib.fetchone()
             if not student:
-                req['student_name'] = 'Unknown'
+                # If this is a registration request, use the submitted name
+                if req.get('request_type') == 'student_registration':
+                    try:
+                        d = req.get('details') or {}
+                        req['student_name'] = d.get('name') or 'New Student'
+                    except Exception:
+                        req['student_name'] = 'New Student'
+                else:
+                    req['student_name'] = 'Unknown'
             else:
                 try:
                     req['student_name'] = student['name']
@@ -2222,18 +2396,20 @@ def api_admin_request_history():
     q = request.args.get('q', '').strip()
     days = request.args.get('days')
     
+    pk = _requests_pk_column(conn)
     # Base query
-    query = """
-        SELECT id as req_id, enrollment_no, request_type, details, status, created_at
+    query = f"""
+        SELECT {pk} as req_id, enrollment_no, request_type, details, status, created_at
         FROM requests
         WHERE status IN ('approved', 'rejected')
     """
     params = []
     
-    # Date filter
+    # Date filter (backend-agnostic)
     if days and days.isdigit():
-        query += " AND created_at >= date('now', '-' || ? || ' days')"
-        params.append(days)
+        cutoff = datetime.now() - timedelta(days=int(days))
+        query += " AND created_at >= ?"
+        params.append(cutoff.strftime('%Y-%m-%d %H:%M:%S'))
     
     query += " ORDER BY created_at DESC LIMIT 100"
     
@@ -2258,7 +2434,18 @@ def api_admin_request_history():
     for req in processed_requests:
         cursor_lib.execute("SELECT name FROM students WHERE enrollment_no = ?", (req['enrollment_no'],))
         student = cursor_lib.fetchone()
-        student_name = student['name'] if student else 'Unknown'
+        if student:
+            student_name = student['name']
+        else:
+            # For registration requests, show the submitted name
+            if req.get('request_type') == 'student_registration':
+                try:
+                    d = req.get('details') or {}
+                    student_name = d.get('name') or 'New Student'
+                except Exception:
+                    student_name = 'New Student'
+            else:
+                student_name = 'Unknown'
         req['student_name'] = student_name
         
         # Apply search filter (if search query exists)
@@ -2304,10 +2491,11 @@ def api_admin_deletion_history():
     """
     params = []
     
-    # Date filter
+    # Date filter (backend-agnostic)
     if days and days.isdigit():
-        query += " AND timestamp >= date('now', '-' || ? || ' days')"
-        params.append(days)
+        cutoff = datetime.now() - timedelta(days=int(days))
+        query += " AND timestamp >= ?"
+        params.append(cutoff.strftime('%Y-%m-%d %H:%M:%S'))
     
     query += " ORDER BY timestamp DESC LIMIT 100"
     
@@ -2357,16 +2545,103 @@ def api_admin_approve_request(req_id):
     conn = get_portal_db()
     cursor = conn.cursor()
     
+    pk = _requests_pk_column(conn)
     # Get the request details
-    cursor.execute("SELECT * FROM requests WHERE id = ?", (req_id,))
+    cursor.execute(f"SELECT * FROM requests WHERE {pk} = ?", (req_id,))
     req = cursor.fetchone()
     
     if not req:
         conn.close()
         return jsonify({'status': 'error', 'message': 'Request not found'}), 404
     
+    # Handle special request types
+    if req['request_type'] == 'student_registration':
+        # Approving a registration inserts into the library DB
+        try:
+            details = json.loads(req['details']) if req['details'] else {}
+        except Exception:
+            details = {}
+
+        enrollment_no = _normalize_enrollment(req['enrollment_no'])
+        name = _safe_str(details.get('name'))
+        year = _safe_str(details.get('year'))
+        department = _safe_str(details.get('department'))
+        phone = _safe_str(details.get('phone'))
+        email = _safe_str(details.get('email'))
+
+        if not enrollment_no or not name:
+            conn.close()
+            return jsonify({'status': 'error', 'message': 'Invalid registration details.'}), 400
+
+        conn_lib = get_library_db()
+        cursor_lib = conn_lib.cursor()
+        cursor_lib.execute("SELECT enrollment_no FROM students WHERE enrollment_no = ?", (enrollment_no,))
+        exists = cursor_lib.fetchone()
+        if exists:
+            conn_lib.close()
+            conn.close()
+            return jsonify({'status': 'error', 'message': 'Student already exists in library.'}), 409
+
+        # Insert into students
+        cursor_lib.execute(
+            """
+            INSERT INTO students (enrollment_no, name, email, phone, department, year)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (enrollment_no, name, email, phone, department, year)
+        )
+        conn_lib.commit()
+        conn_lib.close()
+
+        # Ensure portal user settings has email so notifications can be delivered
+        try:
+            cursor.execute(
+                """
+                INSERT INTO user_settings (enrollment_no, email)
+                VALUES (?, ?)
+                ON CONFLICT(enrollment_no) DO UPDATE SET email=excluded.email
+                """,
+                (enrollment_no, email)
+            )
+        except Exception:
+            pass
+
+        # Update status to approved
+        cursor.execute(f"UPDATE requests SET status = 'approved' WHERE {pk} = ?", (req_id,))
+
+        # Notify student (stored notification for when they login)
+        cursor.execute(
+            """
+            INSERT INTO user_notifications (enrollment_no, type, title, message, link, created_at)
+            VALUES (?, 'request_update', 'Registration Approved', ?, '/login', ?)
+            """,
+            (enrollment_no, "Your library registration has been approved. You can now login.", datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        )
+
+        # Email (best-effort)
+        try:
+            email_body = generate_email_template(
+                header_title="Registration Approved",
+                user_name=name.split()[0] if name else "Student",
+                main_text="Your library registration request has been approved. You can now login to the portal.",
+                details_dict={
+                    'Enrollment No': enrollment_no,
+                    'Status': 'Approved',
+                    'Date': datetime.now().strftime('%d %b %Y')
+                },
+                theme='green',
+                footer_note="Welcome to the library portal."
+            )
+            trigger_notification_email(enrollment_no, "✅ Registration Approved", email_body)
+        except Exception:
+            pass
+
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'success', 'message': 'Registration approved and student added to library.'})
+
     # Update status to approved
-    cursor.execute("UPDATE requests SET status = 'approved' WHERE id = ?", (req_id,))
+    cursor.execute(f"UPDATE requests SET status = 'approved' WHERE {pk} = ?", (req_id,))
     
     # NOTIFICATION TRIGGER: Notify student
     # Parse details to get book name
@@ -2508,10 +2783,11 @@ def api_admin_reject_request(req_id):
     conn = get_portal_db()
     cursor = conn.cursor()
     
-    cursor.execute("UPDATE requests SET status = 'rejected' WHERE id = ?", (req_id,))
+    pk = _requests_pk_column(conn)
+    cursor.execute(f"UPDATE requests SET status = 'rejected' WHERE {pk} = ?", (req_id,))
     
     # Get enrollment to notify
-    cursor.execute("SELECT enrollment_no, request_type, details FROM requests WHERE id = ?", (req_id,))
+    cursor.execute(f"SELECT enrollment_no, request_type, details FROM requests WHERE {pk} = ?", (req_id,))
     req = cursor.fetchone()
     
     if req:
@@ -2555,10 +2831,17 @@ def api_admin_reject_request(req_id):
          except:
              pass
 
+         reject_link = '/requests'
+         reject_title = 'Request Rejected'
+         if req['request_type'] == 'student_registration':
+             reject_link = '/login'
+             reject_title = 'Registration Rejected'
+             message = "Your library registration request was rejected. Please contact the librarian."
+
          cursor.execute("""
             INSERT INTO user_notifications (enrollment_no, type, title, message, link, created_at)
-            VALUES (?, 'request_update', 'Request Rejected', ?, '/requests', ?)
-        """, (req['enrollment_no'], message, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            VALUES (?, 'request_update', ?, ?, ?, ?)
+        """, (req['enrollment_no'], reject_title, message, reject_link, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
 
          # Email Trigger
          conn_lib = get_library_db()

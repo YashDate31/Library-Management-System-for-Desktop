@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Login from './pages/Login';
+import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Catalogue from './pages/Catalogue';
 import BookDetails from './pages/BookDetails';
@@ -23,6 +24,7 @@ function AppRoutes({ user, setUser }) {
   return (
     <Routes location={location} key={location.pathname}>
       <Route path="/login" element={!user ? <Login setUser={setUser} /> : <Navigate to="/" replace />} />
+      <Route path="/register" element={!user ? <Register /> : <Navigate to="/" replace />} />
       
       <Route element={<Layout user={user} setUser={setUser} />}>
         <Route path="/" element={user ? <Dashboard user={user} /> : <Navigate to="/login" replace />} />
