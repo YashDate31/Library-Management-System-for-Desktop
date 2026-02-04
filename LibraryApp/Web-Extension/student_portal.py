@@ -1137,7 +1137,10 @@ def api_forgot_password():
         cursor_portal = conn_portal.cursor()
         
         # Check for existing pending request to avoid spam
-        cursor_portal.execute("SELECT id FROM requests WHERE enrollment_no = ? AND request_type = 'password_reset' AND status = 'pending'", (enrollment,))
+        # Use req_id for PostgreSQL compatibility (primary key column name)
+        pk = _requests_pk_column(conn_portal)
+        cursor_portal.execute(f"SELECT {pk} FROM requests WHERE enrollment_no = ? AND request_type = ? AND status = ?", 
+                             (enrollment, 'password_reset', 'pending'))
         existing = cursor_portal.fetchone()
         if existing:
              conn_portal.close()
@@ -1166,7 +1169,9 @@ def api_forgot_password():
         return jsonify({'status': 'success', 'message': 'Password reset request submitted successfully'})
         
     except Exception as e:
+        import traceback
         print(f"Forgot password error: {e}")
+        print(traceback.format_exc())
         return jsonify({'status': 'error', 'message': 'Internal Server Error'}), 500
 
 @app.route('/api/change_password', methods=['POST'])
