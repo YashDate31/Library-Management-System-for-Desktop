@@ -1148,18 +1148,22 @@ def api_forgot_password():
         conn_portal.commit()
         conn_portal.close()
         
-        # Send Receipt Email
-        email_body = generate_email_template(
-            header_title="Password Reset Requested",
-            user_name=student_name,
-            main_text="We have received your request to reset your password.",
-            details_dict={'Action': 'Account Password Reset', 'Status': 'Pending Librarian Approval'},
-            theme='blue',
-            footer_note="If you did not request this, please contact the library immediately."
-        )
-        trigger_notification_email(enrollment, "Password Reset Request", email_body)
+        # Send Receipt Email (non-blocking)
+        try:
+            email_body = generate_email_template(
+                header_title="Password Reset Requested",
+                user_name=student_name,
+                main_text="We have received your request to reset your password.",
+                details_dict={'Action': 'Account Password Reset', 'Status': 'Pending Librarian Approval'},
+                theme='blue',
+                footer_note="If you did not request this, please contact the library immediately."
+            )
+            trigger_notification_email(enrollment, "Password Reset Request", email_body)
+        except Exception as email_error:
+            print(f"Email notification failed (non-critical): {email_error}")
+            # Continue - request was created successfully even if email fails
         
-        return jsonify({'status': 'success', 'message': 'Request sent to librarian'})
+        return jsonify({'status': 'success', 'message': 'Password reset request submitted successfully'})
         
     except Exception as e:
         print(f"Forgot password error: {e}")

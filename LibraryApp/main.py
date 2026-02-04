@@ -13230,11 +13230,28 @@ Note: This is an automated email. Please find the attached formal overdue letter
         self.deletion_canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
-        # Bind mousewheel
+        # Bind mousewheel - only scroll when content overflows
         def _on_mousewheel(event):
-            self.deletion_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            # Only scroll if content is larger than canvas
+            canvas_height = self.deletion_canvas.winfo_height()
+            content_height = self.deletion_container.winfo_reqheight()
+            if content_height > canvas_height:
+                self.deletion_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+                return "break"  # Prevent event propagation
+            return None
+        
+        # Bind to canvas and container for local scrolling
         self.deletion_canvas.bind("<MouseWheel>", _on_mousewheel)
-        self.deletion_canvas.bind("<Enter>", lambda e: self.deletion_canvas.focus_set())
+        self.deletion_container.bind("<MouseWheel>", _on_mousewheel)
+        
+        # Recursive function to bind mousewheel to all children
+        def bind_mousewheel_recursive(widget):
+            widget.bind("<MouseWheel>", _on_mousewheel)
+            for child in widget.winfo_children():
+                bind_mousewheel_recursive(child)
+        
+        # Store the bind function for later use when adding cards
+        self._bind_deletion_mousewheel = bind_mousewheel_recursive
         
         # Load
         self._refresh_deletion_requests()
@@ -13282,6 +13299,10 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     row = idx // 2
                     col = idx % 2
                     self._create_deletion_card(self.deletion_container, del_data, row, col, idx + 1)
+                
+                # Bind mousewheel to all new cards
+                if hasattr(self, '_bind_deletion_mousewheel'):
+                    self._bind_deletion_mousewheel(self.deletion_container)
                     
         except Exception as e:
             self._show_empty_message(self.deletion_container, "Could not load requests", str(e))
@@ -13359,6 +13380,10 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     row = idx // 2
                     col = idx % 2
                     self._create_deletion_history_card(self.deletion_container, del_data, row, col, idx + 1)
+                
+                # Bind mousewheel to all new cards
+                if hasattr(self, '_bind_deletion_mousewheel'):
+                    self._bind_deletion_mousewheel(self.deletion_container)
                     
         except Exception as e:
             self._show_empty_message(self.deletion_container, "Could not load history", str(e))
