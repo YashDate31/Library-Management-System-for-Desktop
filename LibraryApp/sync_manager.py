@@ -139,15 +139,15 @@ class SyncManager:
                     portal_conn = sqlite3.connect(portal_db_path)
                     portal_conn.row_factory = sqlite3.Row
                     
-                    portal_tables = ['requests', 'notices']
-                    for idx, table in enumerate(portal_tables):
+                    # Tables to sync FROM cloud TO local (student submissions)
+                    portal_tables_pull = ['requests', 'deletion_requests']
+                    for idx, table in enumerate(portal_tables_pull):
                         if progress_callback:
-                            progress = 50 + ((idx + 1) / len(portal_tables)) * 50
+                            progress = 50 + ((idx + 1) / len(portal_tables_pull)) * 25
                             progress_callback(f"portal.{table}", progress)
                         
                         try:
-                            # Only sync from remote to local for portal data
-                            # (students submit on web → desktop admin sees them)
+                            # Sync from remote to local (students submit on web → desktop admin sees them)
                             records = self._sync_portal_table_remote_to_local(
                                 portal_conn, remote_conn, table
                             )
@@ -156,6 +156,23 @@ class SyncManager:
                         except Exception as e:
                             # Don't fail entire sync if portal tables have issues
                             results['errors'].append(f"portal.{table}: {str(e)}")
+                    
+                    # Tables to sync FROM local TO cloud (admin broadcasts)
+                    portal_tables_push = ['notices']
+                    for idx, table in enumerate(portal_tables_push):
+                        if progress_callback:
+                            progress = 75 + ((idx + 1) / len(portal_tables_push)) * 25
+                            progress_callback(f"portal.{table} (push)", progress)
+                        
+                        try:
+                            # Sync from local to remote (admin creates notices → web portal shows them)
+                            records = self._sync_portal_table_local_to_remote(
+                                portal_conn, remote_conn, table
+                            )
+                            results['records_synced'] += records
+                            results['tables_synced'].append(f'portal.{table}')
+                        except Exception as e:
+                            results['errors'].append(f"portal.{table} (push): {str(e)}")
                     
                     portal_conn.commit()
                     portal_conn.close()
@@ -335,6 +352,8 @@ class SyncManager:
             # Define unique key for deduplication based on table
             if table_name == 'requests':
                 unique_key_cols = ['enrollment_no', 'request_type', 'created_at']
+            elif table_name == 'deletion_requests':
+                unique_key_cols = ['student_id', 'timestamp']
             elif table_name == 'notices':
                 unique_key_cols = ['title', 'created_at']
             else:
@@ -400,6 +419,130 @@ class SyncManager:
             
         except Exception as e:
             print(f"Error syncing portal table {table_name} remote to local: {e}")
+            return 0
+    
+    def _sync_portal_table_local_to_remote(self, local_conn, remote_conn, table_name):
+        """Sync portal tables (notices) from local SQLite to remote Postgres.
+        
+        Used for admin broadcasts - notices created on desktop should appear on web portal.
+        Uses content-based deduplication since cloud and local IDs are independent.
+        """
+        try:
+            local_cursor = local_conn.cursor()
+            remote_cursor = remote_conn.cursor()
+            
+            # Check if table exists remotely
+            remote_cursor.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = %s
+                )
+            """, (table_name,))
+            if not remote_cursor.fetchone()[0]:
+                # Create table if it doesn't exist
+                if table_name == 'notices':
+                    remote_cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS notices (
+                            id SERIAL PRIMARY KEY,
+                            title TEXT,
+                            message TEXT,
+                            active INTEGER DEFAULT 1,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """)
+                    remote_conn.commit()
+            
+            # Get records from local
+            local_cursor.execute(f"SELECT * FROM {table_name}")
+            rows = local_cursor.fetchall()
+            
+            if not rows:
+                return 0
+            
+            # Get column names from local
+            local_cursor.execute(f"PRAGMA table_info({table_name})")
+            local_col_info = local_cursor.fetchall()
+            local_columns = [col[1] for col in local_col_info]
+            
+            # Get remote column names
+            remote_cursor.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = %s
+            """, (table_name,))
+            remote_columns = [row[0] for row in remote_cursor.fetchall()]
+            
+            # Column mapping: local → remote (skip ID columns)
+            skip_cols = {'id', 'req_id'}
+            column_map = {}
+            for lc in local_columns:
+                if lc in skip_cols:
+                    continue
+                if lc in remote_columns:
+                    column_map[lc] = lc
+            
+            # Define unique key for deduplication
+            if table_name == 'notices':
+                unique_key_cols = ['title', 'created_at']
+            else:
+                unique_key_cols = ['created_at']
+            
+            unique_key_cols = [c for c in unique_key_cols if c in remote_columns]
+            if not unique_key_cols:
+                return 0
+            
+            synced_count = 0
+            new_count = 0
+            
+            for row in rows:
+                try:
+                    row_dict = dict(row)
+                    
+                    # Build unique key values for deduplication check
+                    unique_vals = [row_dict.get(c) for c in unique_key_cols]
+                    if any(v is None for v in unique_vals):
+                        continue
+                    
+                    # Check if record already exists remotely
+                    where_clause = ' AND '.join([f"{c} = %s" for c in unique_key_cols])
+                    check_query = f"SELECT 1 FROM {table_name} WHERE {where_clause} LIMIT 1"
+                    remote_cursor.execute(check_query, unique_vals)
+                    exists = remote_cursor.fetchone()
+                    
+                    if exists:
+                        synced_count += 1
+                        continue
+                    
+                    # Build insert row with only mapped columns (no ID)
+                    insert_cols = []
+                    insert_vals = []
+                    for lc in local_columns:
+                        if lc in column_map:
+                            insert_cols.append(column_map[lc])
+                            insert_vals.append(row_dict[lc])
+                    
+                    if not insert_cols:
+                        continue
+                    
+                    # Insert new record (let Postgres auto-generate ID)
+                    placeholders = ', '.join(['%s'] * len(insert_cols))
+                    cols = ', '.join(insert_cols)
+                    
+                    query = f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders})"
+                    remote_cursor.execute(query, insert_vals)
+                    remote_conn.commit()
+                    synced_count += 1
+                    new_count += 1
+                    
+                except Exception as e:
+                    print(f"Error pushing portal row in {table_name}: {e}")
+            
+            if new_count > 0:
+                print(f"[Portal Sync] {table_name}: {new_count} new records pushed to cloud")
+            
+            return synced_count
+            
+        except Exception as e:
+            print(f"Error syncing portal table {table_name} local to remote: {e}")
             return 0
             return 0
     

@@ -12249,12 +12249,12 @@ Note: This is an automated email. Please find the attached formal overdue letter
 
     
     def _create_requests_section(self, parent):
-        """Create requests management section"""
+        """Create requests management section with sub-tabs for different request types"""
         # Main container
         container = tk.Frame(parent, bg='white')
         container.pack(fill=tk.BOTH, expand=True)
         
-        # Header frame with stats
+        # Header frame with title and buttons
         header_frame = tk.Frame(container, bg='white')
         header_frame.pack(fill=tk.X, padx=20, pady=(20, 15))
         
@@ -12316,30 +12316,119 @@ Note: This is an automated email. Please find the attached formal overdue letter
         )
         refresh_btn.pack(side=tk.LEFT)
         
-        # Stats summary bar
+        # ═══════════════════════════════════════════════════════════════
+        # SEARCH AND FILTER BAR
+        # ═══════════════════════════════════════════════════════════════
+        search_filter_frame = tk.Frame(container, bg='#f8f9fa', relief='solid', bd=1)
+        search_filter_frame.pack(fill=tk.X, padx=20, pady=(0, 10))
+        
+        search_inner = tk.Frame(search_filter_frame, bg='#f8f9fa')
+        search_inner.pack(fill=tk.X, padx=15, pady=10)
+        
+        # Search entry
+        tk.Label(search_inner, text="🔍 Search:", font=('Segoe UI', 9, 'bold'), bg='#f8f9fa').pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.request_search_var = tk.StringVar()
+        self.request_search_var.trace("w", lambda *args: self.root.after(400, self._apply_request_filters))
+        search_entry = tk.Entry(search_inner, textvariable=self.request_search_var, width=25, font=('Segoe UI', 9))
+        search_entry.pack(side=tk.LEFT, padx=5, ipady=3)
+        
+        # Date range filter
+        tk.Label(search_inner, text="📅 Period:", font=('Segoe UI', 9), bg='#f8f9fa').pack(side=tk.LEFT, padx=(20, 5))
+        
+        self.request_days_var = tk.StringVar(value="All Time")
+        days_combo = ttk.Combobox(search_inner, textvariable=self.request_days_var, state="readonly", width=12, font=('Segoe UI', 9))
+        days_combo['values'] = ("Today", "Last 7 Days", "Last 30 Days", "All Time")
+        days_combo.pack(side=tk.LEFT, padx=5)
+        days_combo.bind("<<ComboboxSelected>>", lambda e: self._apply_request_filters())
+        
+        # Clear filters button
+        clear_btn = tk.Button(
+            search_inner,
+            text="✕ Clear",
+            font=('Segoe UI', 8),
+            bg='#dc3545',
+            fg='white',
+            padx=8,
+            pady=2,
+            cursor='hand2',
+            relief='flat',
+            command=self._clear_request_filters
+        )
+        clear_btn.pack(side=tk.RIGHT)
+        
+        # ═══════════════════════════════════════════════════════════════
+        # REQUEST TYPE SUB-TABS (Filter Tabs)
+        # ═══════════════════════════════════════════════════════════════
+        tabs_frame = tk.Frame(container, bg='white')
+        tabs_frame.pack(fill=tk.X, padx=20, pady=(0, 10))
+        
+        # Current filter type
+        self.request_type_filter = tk.StringVar(value="all")
+        
+        # Define request type tabs with colors and icons
+        self.request_tab_configs = [
+            ("all", "📋 All", "#1a1a2e", "#e2e8f0"),
+            ("student_registration", "📝 Registration", "#0ea5e9", "#e0f2fe"),
+            ("password_reset", "🔑 Password", "#8b5cf6", "#ede9fe"),
+            ("profile_update", "👤 Profile", "#17a2b8", "#cffafe"),
+            ("book_request", "📚 Books", "#6f42c1", "#f3e8ff"),
+            ("renewal", "🔄 Renewal", "#28a745", "#dcfce7"),
+            ("extension", "⏰ Extension", "#fd7e14", "#ffedd5"),
+            ("service", "🛎️ Services", "#ec4899", "#fce7f3")
+        ]
+        
+        self.request_tab_buttons = {}
+        
+        for type_key, label, active_color, bg_color in self.request_tab_configs:
+            btn = tk.Button(
+                tabs_frame,
+                text=label,
+                font=('Segoe UI', 9, 'bold'),
+                bg=bg_color if type_key != "all" else active_color,
+                fg='white' if type_key == "all" else '#333',
+                padx=12,
+                pady=6,
+                cursor='hand2',
+                relief='flat',
+                command=lambda t=type_key: self._set_request_type_filter(t)
+            )
+            btn.pack(side=tk.LEFT, padx=(0, 6))
+            self.request_tab_buttons[type_key] = {
+                'button': btn,
+                'active_color': active_color,
+                'bg_color': bg_color
+            }
+        
+        # ═══════════════════════════════════════════════════════════════
+        # STATS SUMMARY BAR (Counts for each type)
+        # ═══════════════════════════════════════════════════════════════
         stats_frame = tk.Frame(container, bg='#f8f9fa', relief='solid', bd=1)
-        stats_frame.pack(fill=tk.X, padx=20, pady=(0, 15))
+        stats_frame.pack(fill=tk.X, padx=20, pady=(0, 10))
         
         stats_inner = tk.Frame(stats_frame, bg='#f8f9fa')
-        stats_inner.pack(padx=15, pady=10)
+        stats_inner.pack(padx=15, pady=8)
         
         self.request_stats_labels = {}
         stat_types = [
-            ("Profile Updates", "#17a2b8", "profile_update"),
-            ("Book Requests", "#6f42c1", "book_request"),
-            ("Renewals", "#28a745", "renewal"),
-            ("Extensions", "#fd7e14", "extension"),
+            ("Reg", "#0ea5e9", "student_registration"),
+            ("Password", "#8b5cf6", "password_reset"),
+            ("Profile", "#17a2b8", "profile_update"),
+            ("Books", "#6f42c1", "book_request"),
+            ("Renew", "#28a745", "renewal"),
+            ("Extend", "#fd7e14", "extension"),
+            ("Services", "#ec4899", "service"),
             ("Rejected", "#dc3545", "rejected")
         ]
         
         for label, color, key in stat_types:
             stat_item = tk.Frame(stats_inner, bg='#f8f9fa')
-            stat_item.pack(side=tk.LEFT, padx=12)
+            stat_item.pack(side=tk.LEFT, padx=10)
             
             count_label = tk.Label(
                 stat_item,
                 text="0",
-                font=('Segoe UI', 14, 'bold'),
+                font=('Segoe UI', 12, 'bold'),
                 bg='#f8f9fa',
                 fg=color
             )
@@ -12349,45 +12438,23 @@ Note: This is an automated email. Please find the attached formal overdue letter
             tk.Label(
                 stat_item,
                 text=label,
-                font=('Segoe UI', 8),
+                font=('Segoe UI', 7),
                 bg='#f8f9fa',
                 fg='#666'
             ).pack()
         
-        # Description
-        tk.Label(
-            container,
-            text="Profile updates, book reservations, and other requests from students",
-            font=('Segoe UI', 10),
-            bg='white',
-            fg='#666'
-        ).pack(anchor='w', padx=20, pady=(0, 10))
-        
-        # History Filter Frame (Hidden by default)
+        # ═══════════════════════════════════════════════════════════════
+        # HISTORY FILTER FRAME (Hidden by default, shown in history mode)
+        # ═══════════════════════════════════════════════════════════════
         self.request_filters_frame = tk.Frame(container, bg='white')
+        # (Not packed by default - shown when history mode is active)
         
-        filter_inner = tk.Frame(self.request_filters_frame, bg='#f8f9fa', relief='solid', bd=1)
-        filter_inner.pack(fill=tk.X, padx=1)
-        
-        tk.Label(filter_inner, text="🔍 Search:", font=('Segoe UI', 9), bg='#f8f9fa').pack(side=tk.LEFT, padx=(10, 5), pady=8)
-        
-        self.request_search_var = tk.StringVar()
-        self.request_search_var.trace("w", lambda *args: self.root.after(500, self._refresh_request_history))
-        tk.Entry(filter_inner, textvariable=self.request_search_var, width=25, font=('Segoe UI', 9)).pack(side=tk.LEFT, padx=5)
-        
-        tk.Label(filter_inner, text="📅 Period:", font=('Segoe UI', 9), bg='#f8f9fa').pack(side=tk.LEFT, padx=(15, 5))
-        
-        self.request_days_var = tk.StringVar(value="All Time")
-        days_combo = ttk.Combobox(filter_inner, textvariable=self.request_days_var, state="readonly", width=12, font=('Segoe UI', 9))
-        days_combo['values'] = ("Last 7 Days", "Last 30 Days", "Last 90 Days", "All Time")
-        days_combo.pack(side=tk.LEFT, padx=5)
-        days_combo.bind("<<ComboboxSelected>>", lambda e: self._refresh_request_history())
-        
-        # Scrollable request list
+        # ═══════════════════════════════════════════════════════════════
+        # SCROLLABLE REQUEST LIST
+        # ═══════════════════════════════════════════════════════════════
         self.requests_list_frame = tk.Frame(container, bg='white', relief='solid', bd=1)
         self.requests_list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
         
-        # Helper for canvas (use the new instance variable)
         list_frame = self.requests_list_frame
         
         # Canvas for scrolling
@@ -12403,7 +12470,6 @@ Note: This is an automated email. Please find the attached formal overdue letter
         # Create window and bind width updates
         self.requests_canvas_window = self.requests_canvas.create_window((0, 0), window=self.requests_container, anchor="nw")
         
-        # Make container width match canvas width
         def on_canvas_configure(event):
             self.requests_canvas.itemconfig(self.requests_canvas_window, width=event.width)
         self.requests_canvas.bind('<Configure>', on_canvas_configure)
@@ -12413,24 +12479,168 @@ Note: This is an automated email. Please find the attached formal overdue letter
         self.requests_canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
-        # Bind mousewheel scrolling - bind to both canvas and container
+        # Mousewheel scrolling - only scroll when content overflows
         def _on_mousewheel(event):
-            self.requests_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            # Only scroll if content is larger than canvas
+            canvas_height = self.requests_canvas.winfo_height()
+            content_height = self.requests_container.winfo_reqheight()
+            if content_height > canvas_height:
+                self.requests_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+                return "break"  # Prevent event propagation
+            return None
         
-        # Bind to canvas
-        self.requests_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        # Bind to canvas and container for local scrolling
+        self.requests_canvas.bind("<MouseWheel>", _on_mousewheel)
+        self.requests_container.bind("<MouseWheel>", _on_mousewheel)
         
-        # Unbind when leaving the frame to avoid conflicts
-        def _on_leave(event):
-            self.requests_canvas.unbind_all("<MouseWheel>")
-        def _on_enter(event):
-            self.requests_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        # Recursive function to bind mousewheel to all children
+        def bind_mousewheel_recursive(widget):
+            widget.bind("<MouseWheel>", _on_mousewheel)
+            for child in widget.winfo_children():
+                bind_mousewheel_recursive(child)
         
-        list_frame.bind("<Enter>", _on_enter)
-        list_frame.bind("<Leave>", _on_leave)
+        # Store the bind function for later use when adding cards
+        self._bind_requests_mousewheel = bind_mousewheel_recursive
+        
+        # Store all requests for filtering
+        self.all_pending_requests = []
         
         # Load requests
         self._refresh_portal_requests()
+    
+    def _set_request_type_filter(self, type_key):
+        """Set the active request type filter and update tab styling"""
+        self.request_type_filter.set(type_key)
+        
+        # Update tab button styles
+        for key, config in self.request_tab_buttons.items():
+            btn = config['button']
+            if key == type_key:
+                # Active state
+                btn.config(bg=config['active_color'], fg='white')
+            else:
+                # Inactive state
+                btn.config(bg=config['bg_color'], fg='#333')
+        
+        # Apply filter
+        self._apply_request_filters()
+    
+    def _clear_request_filters(self):
+        """Clear all filters and reset to default"""
+        self.request_search_var.set("")
+        self.request_days_var.set("All Time")
+        self.request_type_filter.set("all")
+        
+        # Reset tab styles
+        for key, config in self.request_tab_buttons.items():
+            btn = config['button']
+            if key == "all":
+                btn.config(bg=config['active_color'], fg='white')
+            else:
+                btn.config(bg=config['bg_color'], fg='#333')
+        
+        self._apply_request_filters()
+    
+    def _apply_request_filters(self):
+        """Apply search, date, and type filters to requests"""
+        if self.show_request_history.get():
+            self._refresh_request_history()
+            return
+            
+        # Filter the cached requests
+        filtered = self.all_pending_requests.copy()
+        
+        # Type filter
+        type_filter = self.request_type_filter.get()
+        if type_filter != "all":
+            if type_filter == "service":
+                # Service filter matches multiple service request types
+                service_types = ['Extended Hours Permission', 'Library Opening Request', 
+                                'Study Materials Request', 'General Request', 'service_request',
+                                'extended_hours', 'library_opening', 'study_materials', 'general']
+                filtered = [r for r in filtered if r.get('request_type') in service_types or 
+                           'request' in r.get('request_type', '').lower() and 
+                           r.get('request_type') not in ['book_request', 'password_reset', 'profile_update', 
+                                                          'renewal', 'extension', 'student_registration']]
+            else:
+                filtered = [r for r in filtered if r.get('request_type') == type_filter]
+        
+        # Search filter
+        search_term = self.request_search_var.get().strip().lower()
+        if search_term:
+            filtered = [r for r in filtered if 
+                search_term in r.get('student_name', '').lower() or
+                search_term in r.get('enrollment_no', '').lower() or
+                search_term in r.get('request_type', '').lower() or
+                search_term in str(r.get('details', '')).lower()
+            ]
+        
+        # Date filter
+        days_filter = self.request_days_var.get()
+        if days_filter != "All Time":
+            from datetime import datetime, timedelta
+            try:
+                if days_filter == "Today":
+                    cutoff = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                elif days_filter == "Last 7 Days":
+                    cutoff = datetime.now() - timedelta(days=7)
+                elif days_filter == "Last 30 Days":
+                    cutoff = datetime.now() - timedelta(days=30)
+                else:
+                    cutoff = None
+                
+                if cutoff:
+                    def parse_date(date_str):
+                        try:
+                            for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%d/%m/%Y']:
+                                try:
+                                    return datetime.strptime(str(date_str)[:19], fmt)
+                                except:
+                                    continue
+                            return datetime.now()
+                        except:
+                            return datetime.now()
+                    
+                    filtered = [r for r in filtered if parse_date(r.get('created_at', '')) >= cutoff]
+            except Exception as e:
+                print(f"Date filter error: {e}")
+        
+        # Update display
+        self._display_filtered_requests(filtered)
+    
+    def _display_filtered_requests(self, requests_list):
+        """Display filtered requests in the container"""
+        # Clear existing
+        for w in self.requests_container.winfo_children():
+            w.destroy()
+        
+        # Update count badge
+        if hasattr(self, 'requests_count_badge'):
+            self.requests_count_badge.config(text=str(len(requests_list)))
+        
+        if not requests_list:
+            # Check if we have any requests at all
+            if not self.all_pending_requests:
+                self._show_empty_message(self.requests_container, "No pending requests", 
+                    "All student requests have been processed! 🎉")
+            else:
+                self._show_empty_message(self.requests_container, "No matching requests", 
+                    "No requests match your current filters. Try adjusting your search or filters.")
+            return
+        
+        # Create two-column grid layout
+        self.requests_container.columnconfigure(0, weight=1)
+        self.requests_container.columnconfigure(1, weight=1)
+        
+        # Place cards in grid
+        for idx, req_data in enumerate(requests_list):
+            row = idx // 2
+            col = idx % 2
+            self._create_request_card(self.requests_container, req_data, row, col, idx + 1)
+        
+        # Bind mousewheel to all new cards
+        if hasattr(self, '_bind_requests_mousewheel'):
+            self._bind_requests_mousewheel(self.requests_container)
     
     def _refresh_portal_requests(self):
         """Fetch and display pending requests in two-column layout"""
@@ -12457,16 +12667,25 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 # Debug: Log what we received
                 print(f"[Requests Tab] Loaded {len(requests_list)} pending requests, {len(deletion_requests)} deletion requests")
                 
-                # Update count badge
-                if hasattr(self, 'requests_count_badge'):
-                    self.requests_count_badge.config(text=str(len(requests_list)))
+                # Store all requests for filtering
+                self.all_pending_requests = requests_list.copy()
                 
-                # Update stats by type
+                # Update stats by type (always show full stats)
                 if hasattr(self, 'request_stats_labels'):
                     type_counts = {}
+                    service_count = 0
+                    known_types = ['student_registration', 'password_reset', 'profile_update', 
+                                   'book_request', 'renewal', 'extension']
+                    
                     for req_data in requests_list:
                         req_type = req_data.get('request_type', 'other')
-                        type_counts[req_type] = type_counts.get(req_type, 0) + 1
+                        if req_type in known_types:
+                            type_counts[req_type] = type_counts.get(req_type, 0) + 1
+                        else:
+                            # Count as service request
+                            service_count += 1
+                    
+                    type_counts['service'] = service_count
                     
                     # Get rejected count from API response
                     rejected_count = data.get('rejected_count', 0)
@@ -12475,19 +12694,8 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     for key, label in self.request_stats_labels.items():
                         label.config(text=str(type_counts.get(key, 0)))
                 
-                if not requests_list:
-                    self._show_empty_message(self.requests_container, "No pending requests", "All student requests have been processed! 🎉")
-                    return
-                
-                # Create two-column grid layout
-                self.requests_container.columnconfigure(0, weight=1)
-                self.requests_container.columnconfigure(1, weight=1)
-                
-                # Place cards in grid - alternate between columns
-                for idx, req_data in enumerate(requests_list):
-                    row = idx // 2
-                    col = idx % 2
-                    self._create_request_card(self.requests_container, req_data, row, col, idx + 1)
+                # Apply current filters
+                self._apply_request_filters()
                     
         except Exception as e:
             self._show_empty_message(self.requests_container, "Could not load requests", f"Portal server may not be running.\n{str(e)}")
@@ -12729,14 +12937,20 @@ Note: This is an automated email. Please find the attached formal overdue letter
         
         # Type badge
         type_colors = {
+            'student_registration': '#0ea5e9',
+            'password_reset': '#8b5cf6',
             'profile_update': '#17a2b8',
             'renewal': '#28a745',
             'book_reservation': '#6f42c1',
             'book_request': '#6f42c1',
-            'extension': '#fd7e14'
+            'extension': '#fd7e14',
+            'Extended Hours Permission': '#ec4899',
+            'Library Opening Request': '#ec4899',
+            'Study Materials Request': '#ec4899',
+            'General Request': '#ec4899'
         }
         req_type = req_data.get('request_type', 'request')
-        type_color = type_colors.get(req_type, '#6c757d')
+        type_color = type_colors.get(req_type, '#ec4899')  # Default to pink for service requests
         
         type_badge = tk.Label(
             header_row,
