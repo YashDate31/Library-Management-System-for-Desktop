@@ -594,7 +594,7 @@ class LibraryApp:
 
         # Student Portal Thread
         self.portal_thread = None
-        self.portal_port = 5000
+        self.portal_port = 5001  # Changed to 5001 to avoid conflicts with other apps/previous instances
 
         # Launch login interface
         self.create_login_interface()

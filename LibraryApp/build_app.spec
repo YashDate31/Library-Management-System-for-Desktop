@@ -50,7 +50,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='LibraryManagementSystem_v5.0_FINAL',
+    name='LibraryManagementSystem_v5.1_FINAL',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

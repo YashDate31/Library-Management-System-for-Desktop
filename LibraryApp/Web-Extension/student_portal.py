@@ -2616,7 +2616,7 @@ def api_admin_deletion_history():
         }
     })
 
-@app.route('/api/admin/requests/<int:req_id>/approve', methods=['POST'])
+@app.route('/api/admin/requests/<int:req_id>/approve', methods=['GET', 'POST'])
 def api_admin_approve_request(req_id):
     """Approve a general request"""
     conn = get_portal_db()
@@ -2854,7 +2854,7 @@ def api_admin_approve_request(req_id):
     
     return jsonify({'status': 'success', 'message': 'Request approved'})
 
-@app.route('/api/admin/requests/<int:req_id>/reject', methods=['POST'])
+@app.route('/api/admin/requests/<int:req_id>/reject', methods=['GET', 'POST'])
 def api_admin_reject_request(req_id):
     """Reject a general request"""
     conn = get_portal_db()
@@ -2951,7 +2951,7 @@ def api_admin_reject_request(req_id):
     
     return jsonify({'status': 'success', 'message': 'Request rejected'})
 
-@app.route('/api/admin/deletion/<int:del_id>/approve', methods=['POST'])
+@app.route('/api/admin/deletion/<int:del_id>/approve', methods=['GET', 'POST'])
 def api_admin_approve_deletion(del_id):
     """Approve account deletion request"""
     conn = get_portal_db()
@@ -2984,7 +2984,7 @@ def api_admin_approve_deletion(del_id):
         'student_id': student_id
     })
 
-@app.route('/api/admin/deletion/<int:del_id>/reject', methods=['POST'])
+@app.route('/api/admin/deletion/<int:del_id>/reject', methods=['GET', 'POST'])
 def api_admin_reject_deletion(del_id):
     """Reject account deletion request"""
     conn = get_portal_db()
@@ -2996,7 +2996,7 @@ def api_admin_reject_deletion(del_id):
     
     return jsonify({'status': 'success', 'message': 'Deletion request rejected'})
 
-@app.route('/api/admin/password-reset/<enrollment_no>', methods=['POST'])
+@app.route('/api/admin/password-reset/<enrollment_no>', methods=['GET', 'POST'])
 def api_admin_reset_password(enrollment_no):
     """Reset student password to enrollment number"""
     conn = get_portal_db()
