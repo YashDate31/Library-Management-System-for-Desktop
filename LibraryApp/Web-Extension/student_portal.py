@@ -35,7 +35,16 @@ except ImportError:
 
 
 # --- Configuration ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# --- Configuration ---
+if getattr(sys, 'frozen', False):
+    # Running as PyInstaller executable
+    # Use the directory of the executable for persistence
+    BASE_DIR = os.path.join(os.path.dirname(sys.executable), 'Web-Extension')
+    os.makedirs(BASE_DIR, exist_ok=True)
+else:
+    # Running as script
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads', 'study_materials')
 REGISTRATION_PHOTO_FOLDER = os.path.join(BASE_DIR, 'uploads', 'registration_photos')
 ALLOWED_EXTENSIONS = {'pdf', 'doc', 'docx', 'ppt', 'pptx', 'txt', 'jpg', 'jpeg', 'png', 'zip', 'rar'}
@@ -45,7 +54,6 @@ MAX_PHOTO_BYTES = 50 * 1024  # 50KB
 # Create upload folder if it doesn't exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(REGISTRATION_PHOTO_FOLDER, exist_ok=True)
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def _is_postgres_connection(conn) -> bool:

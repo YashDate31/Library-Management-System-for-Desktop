@@ -14,13 +14,22 @@ a = Analysis(
         ('Web-Extension/student_portal.py', 'Web-Extension'),
         ('Web-Extension/portal.db', 'Web-Extension'),
         ('Web-Extension/frontend/dist', 'Web-Extension/frontend/dist'),
+        # Performance modules
+        ('database_pool.py', '.'),
+        ('email_batch_service.py', '.'),
+        ('sync_manager.py', '.'),
+        ('config_manager.py', '.'),
+        ('sync_log.json', '.'),
     ],
     hiddenimports=[
         'pandas', 'openpyxl', 'docx', 'tkcalendar',
         'tkinter', 'tkinter.ttk', 'tkinter.messagebox', 'tkinter.filedialog',
         'matplotlib', 'matplotlib.pyplot', 'matplotlib.backends.backend_tkagg',
         'matplotlib.figure', 'matplotlib.patches', 'numpy', 'xlsxwriter',
-        'flask', 'werkzeug', 'jinja2', 'click', 'itsdangerous', 'markupsafe'
+        'flask', 'werkzeug', 'jinja2', 'click', 'itsdangerous', 'markupsafe',
+        # Performance modules
+        'database_pool', 'email_batch_service', 'sync_manager', 'config_manager',
+        'psycopg2', 'psycopg2.extensions', 'psycopg2.extras'
     ],
     hookspath=[],
     hooksconfig={},

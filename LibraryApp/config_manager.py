@@ -5,13 +5,25 @@ Determines whether to use local or remote database
 """
 
 import os
+import sys
 import json
+
+def get_app_data_dir():
+    """Get persistent app data directory that works in exe mode"""
+    # If running as exe, use user's AppData or same folder as exe
+    if getattr(sys, 'frozen', False):
+        # Running as compiled exe
+        exe_dir = os.path.dirname(sys.executable)
+        return exe_dir
+    else:
+        # Running as script
+        return os.path.dirname(__file__)
 
 class ConfigManager:
     """Manages application configuration for database mode"""
     
     def __init__(self):
-        self.config_file = os.path.join(os.path.dirname(__file__), 'app_config.json')
+        self.config_file = os.path.join(get_app_data_dir(), 'app_config.json')
         self.config = self._load_config()
     
     def _load_config(self):

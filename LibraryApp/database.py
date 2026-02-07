@@ -682,8 +682,12 @@ class Database:
         import sqlite3
         import os
         
-        # Connect to portal.db
-        portal_db_path = os.path.join(os.path.dirname(__file__), 'Web-Extension', 'portal.db')
+        # Connect to portal.db - handle both exe and script mode
+        if hasattr(sys, '_MEIPASS'):
+            base_path = os.path.dirname(sys.executable)
+        else:
+            base_path = os.path.dirname(__file__)
+        portal_db_path = os.path.join(base_path, 'Web-Extension', 'portal.db')
         if not os.path.exists(portal_db_path):
             return
         

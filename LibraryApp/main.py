@@ -734,6 +734,93 @@ class LibraryApp:
         """Get configurable max books per student from library settings"""
         return self.library_settings.get('max_books_per_student', 5)
 
+    def start_auto_refresh_service(self):
+        """Start the background auto-refresh loop"""
+        # Run immediately once, then schedule loop
+        self.root.after(1000, self._refresh_all_data)
+    
+    def _refresh_all_data(self):
+        """Silent Background Refresh - No Blocking Dialog"""
+        if hasattr(self, '_is_refreshing') and self._is_refreshing:
+            return
+        self._is_refreshing = True
+        
+        # Update status indicator
+        def set_status(text, color='#38BDF8'): # Light blue for active
+            if hasattr(self, 'sync_status_label'):
+                self.sync_status_label.config(text=text, fg=color)
+        
+        set_status("⚡ Syncing...", '#38BDF8')
+        
+        def run_refresh_sequence():
+            try:
+                # STEP 1: Background Sync (Threaded)
+                def sync_task():
+                    try:
+                        if self.sync_manager:
+                            self.sync_manager.sync_now(direction='both')
+                            return True, None
+                        return True, None
+                    except Exception as e:
+                        return False, str(e)
+
+                def on_sync_done(result):
+                    success, error = result
+                    if not success:
+                        print(f"[AutoSync] Error: {error}")
+                        set_status("⚠️ Sync Failed", '#ef4444')
+                    
+                    # Schedule UI updates sequentially
+                    # Using 'after' prevents UI freeze
+                    self.root.after(100, step_students)
+
+                def bg_thread():
+                    res = sync_task()
+                    self.root.after(0, on_sync_done, res)
+
+                threading.Thread(target=bg_thread, daemon=True).start()
+
+            except Exception as e:
+                finish_refresh()
+
+        def step_students():
+            try:
+                if hasattr(self, 'refresh_students'): self.refresh_students()
+                self.root.after(50, step_books)
+            except: self.root.after(50, step_books)
+
+        def step_books():
+            try:
+                if hasattr(self, 'refresh_books'): self.refresh_books()
+                self.root.after(50, step_transactions)
+            except: self.root.after(50, step_transactions)
+
+        def step_transactions():
+            try:
+                if hasattr(self, 'refresh_borrowed'): self.refresh_borrowed()
+                if hasattr(self, 'load_pending_requests'): self.load_pending_requests()
+                if hasattr(self, 'load_deletion_requests'): self.load_deletion_requests()
+                self.root.after(50, step_dashboard)
+            except: self.root.after(50, step_dashboard)
+
+        def step_dashboard():
+            try:
+                if hasattr(self, 'refresh_dashboard'): self.refresh_dashboard()
+            except: pass
+            finish_refresh()
+
+        def finish_refresh():
+            self._is_refreshing = False
+            # Show "Last updated: Time"
+            now = datetime.now().strftime("%I:%M %p")
+            set_status(f"✔️ Updated {now}", '#94a3b8')
+            
+            # Schedule next refresh in 30 seconds
+            self.root.after(30000, self._refresh_all_data)
+
+        # Start the sequence
+        run_refresh_sequence()
+
     def open_email_settings(self):
         """Open email settings dialog with tabs for configuration and history"""
         settings_win = tk.Toplevel(self.root)
@@ -1421,211 +1508,254 @@ Government Polytechnic Awasari (Kh)"""
         thread.start()
 
     def create_login_interface(self):
-        """Render the login screen with dark card design"""
+        """Render the login screen with Refined Split Screen design"""
         for w in self.root.winfo_children():
             w.destroy()
 
-        root = self.root
+        self.root.configure(bg='white')
         
-        # Light gray/white background
-        main_bg = '#e8ecef'
-        bg_frame = tk.Frame(root, bg=main_bg)
-        bg_frame.pack(fill=tk.BOTH, expand=True)
+        # Main container (Split Screen)
+        main_container = tk.Frame(self.root, bg='white')
+        main_container.pack(fill=tk.BOTH, expand=True)
+        main_container.grid_columnconfigure(0, weight=4) # Left side (40%)
+        main_container.grid_columnconfigure(1, weight=6) # Right side (60%)
+        main_container.grid_rowconfigure(0, weight=1)
+
+        # --- LEFT SIDE: Branding (Premium Gradient + Circular Badge) ---
         
-        # Center container frame
-        center_frame = tk.Frame(bg_frame, bg=main_bg)
-        center_frame.place(relx=0.5, rely=0.5, anchor='center')
+        left_canvas = tk.Canvas(main_container, bd=0, highlightthickness=0)
+        left_canvas.grid(row=0, column=0, sticky='nsew')
         
-        # Logo/Branding section (above the card)
-        branding = tk.Frame(center_frame, bg=main_bg)
-        branding.pack(pady=(0, 25))
-        
-        # Try to load college logo
-        logo_loaded = False
+        # Function to draw a vertical gradient
+        def draw_gradient(canvas, color1, color2):
+            # Parse colors
+            r1, g1, b1 = canvas.winfo_rgb(color1)
+            r2, g2, b2 = canvas.winfo_rgb(color2)
+            r_ratio = (r2 - r1) / 1000 # arbitrary height, will resize dynamically
+            g_ratio = (g2 - g1) / 1000
+            b_ratio = (b2 - b1) / 1000
+            
+            w = canvas.winfo_width()
+            h = canvas.winfo_height()
+            
+            # We can't draw thousands of lines efficiently every resize.
+            # Instead, we'll draw ~100 bands
+            steps = 100
+            for i in range(steps):
+                nr = int(r1 + (r_ratio * (i/steps) * 65535)) # interpolated
+                ng = int(g1 + (g_ratio * (i/steps) * 65535))
+                nb = int(b1 + (b_ratio * (i/steps) * 65535))
+                
+                # tkinter rgb is 16-bit, convert to hex
+                color = f'#{nr>>8:02x}{ng>>8:02x}{nb>>8:02x}'
+                
+                y0 = (i / steps) * h
+                y1 = ((i + 1) / steps) * h
+                canvas.create_rectangle(0, y0, w, y1, fill=color, outline='', tags='gradient')
+
+        # Colors for gradient: Deep Blue -> Darker Blue
+        grad_top = '#1E40AF' # Blue-800
+        grad_bot = '#0F172A' # Slate-900
+
+        # --- Content Placement ---
+        def update_canvas_layout(event):
+            w = event.width
+            h = event.height
+            cx = w // 2
+            cy = h // 2
+            
+            left_canvas.delete('all')
+            
+            # 1. Background Gradient
+            # Limit steps to height for performance, simplified linear interpolation
+            if h < 10: return
+            
+            # Simplified Gradient Drawing (Top to Bottom)
+            # Drawing 50 rectangles for smoothness without lag
+            r1, g1, b1 = int(grad_top[1:3], 16), int(grad_top[3:5], 16), int(grad_top[5:7], 16)
+            r2, g2, b2 = int(grad_bot[1:3], 16), int(grad_bot[3:5], 16), int(grad_bot[5:7], 16)
+            
+            steps = 50
+            for i in range(steps):
+                p = i / steps
+                r = int(r1 + (r2 - r1) * p)
+                g = int(g1 + (g2 - g1) * p)
+                b = int(b1 + (b2 - b1) * p)
+                color = f'#{r:02x}{g:02x}{b:02x}'
+                y0 = i * (h / steps)
+                y1 = (i + 1) * (h / steps)
+                left_canvas.create_rectangle(0, y0, w, y1, fill=color, outline='')
+
+            # 2. Logo Badge (Circular White Background)
+            # This looks intentional and premium
+            badge_r = 90
+            left_canvas.create_oval(cx - badge_r, cy - 140 - badge_r, 
+                                  cx + badge_r, cy - 140 + badge_r, 
+                                  fill='white', outline='white')
+            
+            # 3. Logo
+            if hasattr(self, 'login_logo_photo') and self.login_logo_photo:
+                left_canvas.create_image(cx, cy - 140, image=self.login_logo_photo)
+            else:
+                left_canvas.create_text(cx, cy - 140, text="🏫", font=('Segoe UI', 80), fill='#0F172A')
+            
+            # 4. Text Content
+            left_canvas.create_text(cx, cy + 10, text="Government Polytechnic", 
+                                  font=('Segoe UI', 24, 'bold'), fill='white', justify='center')
+            
+            left_canvas.create_text(cx, cy + 55, text="Awasari (Kh)", 
+                                  font=('Segoe UI', 24, 'bold'), fill='white', justify='center')
+            
+            # Divider
+            left_canvas.create_line(cx - 50, cy + 95, cx + 50, cy + 95, fill='#38BDF8', width=3)
+            
+            # Department
+            left_canvas.create_text(cx, cy + 140, text="Department of", 
+                                  font=('Segoe UI', 14), fill='#CBD5E1', justify='center')
+            left_canvas.create_text(cx, cy + 170, text="Computer Engineering", 
+                                  font=('Segoe UI', 16, 'bold'), fill='white', justify='center')
+
+        # Load Logo
         try:
             from PIL import Image, ImageTk
             if hasattr(sys, '_MEIPASS'):
                 base_dir = sys._MEIPASS
             else:
                 base_dir = os.path.dirname(__file__)
+            
+            logo_path = None
             for candidate in ("logo.png", "college_logo.png", "college_logo.jpg"):
                 p = os.path.join(base_dir, candidate)
                 if os.path.exists(p):
-                    img = Image.open(p)
-                    img.thumbnail((90, 90), Image.Resampling.LANCZOS)
-                    self.login_logo_photo = ImageTk.PhotoImage(img)
-                    tk.Label(branding, image=self.login_logo_photo, bg=main_bg).pack(pady=(0, 15))
-                    logo_loaded = True
+                    logo_path = p
                     break
+            
+            if logo_path:
+                img = Image.open(logo_path)
+                # Slightly smaller than badge radius
+                img.thumbnail((140, 140), Image.Resampling.LANCZOS)
+                self.login_logo_photo = ImageTk.PhotoImage(img)
         except Exception:
-            pass
-        
-        # If no logo found, show a decorative book icon
-        if not logo_loaded:
-            tk.Label(
-                branding,
-                text="📚",
-                font=('Segoe UI', 48),
-                bg=main_bg,
-                fg='#2c7a7b'
-            ).pack(pady=(0, 15))
-        
-        # College Name - Teal/Cyan color, italic
-        tk.Label(
-            branding,
-            text="Government Polytechnic Awasari (Kh)",
-            font=('Segoe UI', 20, 'bold italic'),
-            bg=main_bg,
-            fg='#2c7a7b'
-        ).pack()
-        
-        # Subtitle - Library of Computer Department
-        tk.Label(
-            branding,
-            text="Library of Computer Department",
-            font=('Segoe UI', 11),
-            bg=main_bg,
-            fg='#6b7280'
-        ).pack(pady=(5, 0))
-        
-        # Dark blue/slate login card
-        card_color = '#3d5a73'
-        card = tk.Frame(center_frame, bg=card_color, padx=45, pady=35)
-        card.pack()
-        
-        # "Admin Login" header inside card
-        tk.Label(
-            card,
-            text="Admin Login",
-            font=('Segoe UI', 16, 'bold'),
-            bg=card_color,
-            fg='white'
-        ).pack(pady=(0, 25))
-        
-        # Username label and field
-        tk.Label(
-            card,
-            text="Username",
-            font=('Segoe UI', 10),
-            bg=card_color,
-            fg='#d1d5db',
-            anchor='w'
-        ).pack(fill=tk.X, pady=(0, 5))
-        
-        user_entry = tk.Entry(
-            card,
-            font=('Segoe UI', 12),
-            width=30,
-            bg='#4a6a82',
-            fg='white',
-            insertbackground='white',
-            relief='flat',
-            bd=0
-        )
-        user_entry.pack(fill=tk.X, ipady=10, padx=2)
-        
-        # Password label and field
-        tk.Label(
-            card,
-            text="Password",
-            font=('Segoe UI', 10),
-            bg=card_color,
-            fg='#d1d5db',
-            anchor='w'
-        ).pack(fill=tk.X, pady=(20, 5))
-        
-        pass_entry = tk.Entry(
-            card,
-            font=('Segoe UI', 12),
-            width=30,
-            bg='#4a6a82',
-            fg='white',
-            insertbackground='white',
-            relief='flat',
-            bd=0,
-            show='●'
-        )
-        pass_entry.pack(fill=tk.X, ipady=10, padx=2)
+            self.login_logo_photo = None
 
+        left_canvas.bind('<Configure>', update_canvas_layout)
+
+        # --- RIGHT SIDE: Login Form ---
+        right_frame = tk.Frame(main_container, bg='#F8FAFC') # Very light gray for contrast
+        right_frame.grid(row=0, column=1, sticky='nsew')
+
+        # Login "Card" Panel
+        login_panel = tk.Frame(right_frame, bg='white', padx=60, pady=60)
+        login_panel.place(relx=0.5, rely=0.5, anchor='center', relwidth=0.65)
+        
+        # Shadow effect helper (simple border for now)
+        login_panel.configure(highlightbackground='#E2E8F0', highlightthickness=1)
+
+        # Header
+        tk.Label(
+            login_panel, 
+            text="Welcome Back", 
+            font=('Segoe UI', 28, 'bold'), 
+            bg='white', 
+            fg='#1E293B'
+        ).pack(anchor='w', pady=(0, 10))
+        
+        tk.Label(
+            login_panel, 
+            text="Sign in to your dashboard", 
+            font=('Segoe UI', 11), 
+            bg='white', 
+            fg='#64748B'
+        ).pack(anchor='w', pady=(0, 40))
+
+        # --- Form Fields ---
+        
+        def create_entry(label_text, is_password=False):
+            tk.Label(
+                login_panel, 
+                text=label_text, 
+                font=('Segoe UI', 10, 'bold'), 
+                bg='white', 
+                fg='#475569'
+            ).pack(anchor='w', pady=(0, 8))
+            
+            entry = tk.Entry(
+                login_panel, 
+                font=('Segoe UI', 11), 
+                bg='#F1F5F9', 
+                fg='#0F172A', 
+                relief='flat',
+                highlightthickness=1,
+                highlightbackground='#E2E8F0',
+                highlightcolor='#38BDF8' # Sky blue focus
+            )
+            if is_password:
+                entry.config(show='●')
+            
+            entry.pack(fill=tk.X, ipady=10, pady=(0, 20))
+            return entry
+
+        user_entry = create_entry("Username")
+        pass_entry = create_entry("Password", is_password=True)
+
+        # Forgot Password
+        fp_link = tk.Label(
+            login_panel, 
+            text="Forgot Password?", 
+            font=('Segoe UI', 9, 'bold'), 
+            bg='white', 
+            fg='#2563EB', 
+            cursor='hand2'
+        )
+        fp_link.pack(anchor='e', pady=(0, 30))
+        fp_link.bind('<Button-1>', lambda e: messagebox.showinfo("Forgot Password", "Contact administrator for password reset.", parent=self.root))
+
+        # Login Logic
         def do_login():
             username = user_entry.get().strip()
             password = pass_entry.get().strip()
-                
-            stored_password = self.library_settings.get('admin_password', ADMIN_PASSWORD)
+            stored = self.library_settings.get('admin_password', ADMIN_PASSWORD)
             
-            if username == ADMIN_USERNAME and password == stored_password:
-                for w in self.root.winfo_children():
-                    w.destroy()
-                # Go directly to main interface (no loader)
+            if username == ADMIN_USERNAME and password == stored:
+                # Cleanup and launch main
+                for w in self.root.winfo_children(): w.destroy()
                 self.create_main_interface()
             else:
-                messagebox.showerror('Login Error', 'Invalid username or password!', parent=self.root)
+                messagebox.showerror('Access Denied', 'Invalid username or password!', parent=self.root)
 
-        # Cyan Login button with lock icon
-        btn_color = '#22d3ee'
-        btn_hover = '#06b6d4'
+        # Button
         login_btn = tk.Button(
-            card,
-            text='🔒  Login',
-            font=('Segoe UI', 12, 'bold'),
-            bg=btn_color,
-            fg='#1e3a5f',
-            bd=0,
+            login_panel,
+            text='Sign In',
+            font=('Segoe UI', 11, 'bold'),
+            bg='#0284c7', 
+            fg='white',
+            bd=0, 
             relief='flat',
             cursor='hand2',
             command=do_login,
-            activebackground=btn_hover,
-            activeforeground='#1e3a5f',
-            width=28
+            activebackground='#0369a1',
+            activeforeground='white'
         )
-        login_btn.pack(fill=tk.X, ipady=10, pady=(30, 0))
-        
-        # Hover effects for button
-        def on_enter(e):
-            login_btn.config(bg=btn_hover)
-        def on_leave(e):
-            login_btn.config(bg=btn_color)
-        login_btn.bind('<Enter>', on_enter)
-        login_btn.bind('<Leave>', on_leave)
-        
-        # Forgot Password link
-        forgot_link = tk.Label(
-            card,
-            text="Forgot Password?",
-            font=('Segoe UI', 9),
-            bg=card_color,
-            fg='#93c5fd',
-            cursor='hand2'
-        )
-        forgot_link.pack(pady=(15, 0))
-        
-        def on_forgot_enter(e):
-            forgot_link.config(fg='#bfdbfe', font=('Segoe UI', 9, 'underline'))
-        def on_forgot_leave(e):
-            forgot_link.config(fg='#93c5fd', font=('Segoe UI', 9))
-        forgot_link.bind('<Enter>', on_forgot_enter)
-        forgot_link.bind('<Leave>', on_forgot_leave)
-        forgot_link.bind('<Button-1>', lambda e: messagebox.showinfo("Forgot Password", "Please contact the library administrator to reset your password.", parent=self.root))
-        
-        # Version number at bottom of card
-        tk.Label(
-            card,
-            text=f"v{APP_VERSION}",
-            font=('Segoe UI', 8, 'italic'),
-            bg=card_color,
-            fg='#6b7280'
-        ).pack(pady=(15, 0))
+        login_btn.pack(fill=tk.X, ipady=12)
 
+        # Version
+        tk.Label(
+            login_panel, 
+            text=f"Library Management System v{APP_VERSION}", 
+            font=('Segoe UI', 8), 
+            bg='white', 
+            fg='#94A3B8'
+        ).pack(pady=(40, 0))
+
+        # Enter key binidng
         def handle_enter(event):
             try:
-                if not (user_entry.winfo_exists() and pass_entry.winfo_exists()):
-                    return 'break'
-            except Exception:
-                return 'break'
-            do_login()
-            return 'break'
-        
-        card.bind('<Return>', handle_enter)
+                if user_entry.winfo_exists() and pass_entry.winfo_exists():
+                    do_login()
+            except: pass
+            
+        self.root.bind('<Return>', handle_enter)
         user_entry.focus()
     
     def create_main_interface(self):
@@ -1838,7 +1968,19 @@ Government Polytechnic Awasari (Kh)"""
             command=self.open_email_settings
         )
         email_settings_btn.pack(side=tk.LEFT, padx=(10, 0))
-        # Removed version label and duplicate Developer Info button as requested
+        
+        # Auto-Sync Status Indicator (Replacing Refresh Button)
+        self.sync_status_label = tk.Label(
+            user_top_row,
+            text='⚡ Auto-sync',
+            font=('Segoe UI', 9),
+            bg=self.colors['secondary'],
+            fg='#94a3b8' # Grayish
+        )
+        self.sync_status_label.pack(side=tk.LEFT, padx=(15, 0))
+        
+        # Start Auto-Refresh Service
+        self.start_auto_refresh_service()
 
     # Removed "Clear All Data" button from header as requested
     def show_developer_info(self):
@@ -13051,18 +13193,36 @@ Note: This is an automated email. Please find the attached formal overdue letter
         try:
             import urllib.request
             import urllib.error
+            import json
             
             url = f"http://127.0.0.1:{self.portal_port}/api/admin/requests/{req_id}/{action}"
-            req = urllib.request.Request(url, method='POST', data=b'')
+            
+            # Fix 405 Error: Explicitly send JSON data to ensure POST method is respected
+            data = json.dumps({}).encode('utf-8')
+            req = urllib.request.Request(url, method='POST', data=data)
+            req.add_header('Content-Type', 'application/json')
             
             with urllib.request.urlopen(req, timeout=5) as response:
                 result = json.loads(response.read().decode())
                 if result.get('status') == 'success':
                     messagebox.showinfo("Success", f"Request {action}d successfully!")
                     self._refresh_portal_requests()
+                    # Refresh students list immediately if approved
+                    if action == 'approve':
+                        self.refresh_students()
                 else:
                     messagebox.showerror("Error", result.get('message', 'Action failed'))
+        except urllib.error.HTTPError as e:
+            # Detailed error logging for 405/500 errors
+            err_msg = f"HTTP {e.code}: {e.reason}"
+            try:
+                err_body = e.read().decode()
+                print(f"[API Error] Body: {err_body}")
+            except:
+                pass
+            messagebox.showerror("API Error", f"Failed to {action} request.\n\n{err_msg}")
         except Exception as e:
+            print(f"[Request Action Error] {e}")
             messagebox.showerror("Error", f"Failed to {action} request: {str(e)}")
     
     def _create_deletion_section(self, parent):
