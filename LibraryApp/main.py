@@ -4877,12 +4877,12 @@ Current Settings:
         book_col = tk.Frame(input_row, bg=self.colors['primary'])
         book_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(20, 0))
         
-        tk.Label(book_col, text="Book ID:", 
+        tk.Label(book_col, text="Book ID / Barcode:", 
                 font=('Segoe UI', 12, 'bold'), 
                 bg=self.colors['primary'], 
                 fg=self.colors['accent']).pack(anchor='w', pady=(0, 8))
         
-        # Autocomplete for book ID
+        # Autocomplete for book ID - also searches by barcode
         def get_book_suggestions(query):
             try:
                 books = self.db.get_books()
@@ -4892,14 +4892,33 @@ Current Settings:
                     book_id = str(b['book_id']).lower()
                     title = str(b['title']).lower()
                     author = str(b['author']).lower()
-                    if query_lower in book_id or query_lower in title or query_lower in author:
+                    barcode = str(b.get('barcode', '') or '').lower()
+                    if query_lower in book_id or query_lower in title or query_lower in author or query_lower in barcode:
                         matches.append(b)
                 return matches[:10]
             except:
                 return []
         
         def format_book_display(book):
-            return f"{book['book_id']} - {book['title']} by {book['author']}"
+            barcode_str = f" [Barcode: {book.get('barcode')}]" if book.get('barcode') else ""
+            return f"{book['book_id']} - {book['title']} by {book['author']}{barcode_str}"
+        
+        # Helper to find book by barcode and auto-fill book_id
+        def on_borrow_barcode_scan(event):
+            if event.keysym == 'Return':
+                query = self.borrow_book_id_entry.get().strip()
+                if query:
+                    # Check if this is a barcode match
+                    books = self.db.get_books()
+                    for b in books:
+                        barcode = str(b.get('barcode', '') or '')
+                        if barcode and barcode.lower() == query.lower():
+                            # Found barcode match - auto-fill with book_id
+                            self.borrow_book_id_entry.delete(0, tk.END)
+                            self.borrow_book_id_entry.insert(0, b['book_id'])
+                            self.show_book_details('borrow')
+                            print(f"[Barcode Scan] Found book: {b['book_id']} - {b['title']}")
+                            return
         
         self.borrow_book_id_entry = AutocompleteEntry(
             book_col,
@@ -4909,6 +4928,7 @@ Current Settings:
         )
         self.borrow_book_id_entry.pack(fill=tk.X, pady=(0, 8))
         self.borrow_book_id_entry.bind('<KeyRelease>', lambda e: self.show_book_details('borrow'))
+        self.borrow_book_id_entry.bind('<Return>', on_borrow_barcode_scan)
         
         # Book details display
         self.borrow_book_details = tk.Label(book_col, 
@@ -5095,12 +5115,12 @@ Current Settings:
         return_book_col = tk.Frame(return_input_row, bg=self.colors['primary'])
         return_book_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(20, 0))
         
-        tk.Label(return_book_col, text="Book ID:", 
+        tk.Label(return_book_col, text="Book ID / Barcode:", 
                 font=('Segoe UI', 12, 'bold'), 
                 bg=self.colors['primary'], 
                 fg=self.colors['accent']).pack(anchor='w', pady=(0, 8))
         
-        # Autocomplete for return book ID
+        # Autocomplete for return book ID - also searches by barcode
         def get_return_book_suggestions(query):
             try:
                 books = self.db.get_books()
@@ -5110,14 +5130,33 @@ Current Settings:
                     book_id = str(b['book_id']).lower()
                     title = str(b['title']).lower()
                     author = str(b['author']).lower()
-                    if query_lower in book_id or query_lower in title or query_lower in author:
+                    barcode = str(b.get('barcode', '') or '').lower()
+                    if query_lower in book_id or query_lower in title or query_lower in author or query_lower in barcode:
                         matches.append(b)
                 return matches[:10]
             except:
                 return []
         
         def format_return_book_display(book):
-            return f"{book['book_id']} - {book['title']} by {book['author']}"
+            barcode_str = f" [Barcode: {book.get('barcode')}]" if book.get('barcode') else ""
+            return f"{book['book_id']} - {book['title']} by {book['author']}{barcode_str}"
+        
+        # Helper to find book by barcode and auto-fill book_id for return
+        def on_return_barcode_scan(event):
+            if event.keysym == 'Return':
+                query = self.return_book_id_entry.get().strip()
+                if query:
+                    # Check if this is a barcode match
+                    books = self.db.get_books()
+                    for b in books:
+                        barcode = str(b.get('barcode', '') or '')
+                        if barcode and barcode.lower() == query.lower():
+                            # Found barcode match - auto-fill with book_id
+                            self.return_book_id_entry.delete(0, tk.END)
+                            self.return_book_id_entry.insert(0, b['book_id'])
+                            self.show_book_details('return')
+                            print(f"[Barcode Scan] Found book: {b['book_id']} - {b['title']}")
+                            return
         
         self.return_book_id_entry = AutocompleteEntry(
             return_book_col,
@@ -5127,6 +5166,7 @@ Current Settings:
         )
         self.return_book_id_entry.pack(fill=tk.X, pady=(0, 8))
         self.return_book_id_entry.bind('<KeyRelease>', lambda e: self.show_book_details('return'))
+        self.return_book_id_entry.bind('<Return>', on_return_barcode_scan)
         
         self.return_book_details = tk.Label(return_book_col, 
                                           text="", 
@@ -5621,7 +5661,8 @@ Current Settings:
             ("ISBN:", "isbn", book[4] or '', True),
             ("Category:", "category", book[5] or 'Others', True),
             ("Total Copies:", "total_copies", str(book[6]), True),
-            ("Available Copies:", "available_copies", str(book[7]), False)  # Read-only (calculated)
+            ("Available Copies:", "available_copies", str(book[7]), False),  # Read-only (calculated)
+            ("Barcode:", "barcode", book[9] if len(book) > 9 and book[9] else '', True)
         ]
         
         entries = {}
@@ -5701,7 +5742,8 @@ Current Settings:
                 entries['author'].get().strip(),
                 entries['isbn'].get().strip(),
                 entries['category'].get(),
-                total_copies
+                total_copies,
+                entries['barcode'].get().strip() if entries.get('barcode') else ''
             )
             
             if success:
@@ -6275,7 +6317,7 @@ Current Settings:
         """Show add book dialog"""
         dialog = tk.Toplevel(self.root)
         dialog.title("Add New Book")
-        dialog.geometry("500x500")
+        dialog.geometry("500x550")
         dialog.configure(bg='white')
         dialog.transient(self.root)
         dialog.grab_set()
@@ -6304,7 +6346,8 @@ Current Settings:
             ("Author:", "author"),
             ("ISBN:", "isbn"),
             ("Category:", "category"),
-            ("Total Copies:", "copies")
+            ("Total Copies:", "copies"),
+            ("Barcode:", "barcode")
         ]
         
         entries = {}
@@ -6422,7 +6465,8 @@ Current Settings:
                 entries['author'].get().strip() if entries['author'].get().strip() else '',
                 entries['isbn'].get().strip(),
                 entries['category'].get(),
-                copies
+                copies,
+                entries['barcode'].get().strip() if entries.get('barcode') else ''
             )
             if success:
                 # Log the activity

@@ -207,7 +207,8 @@ class Database:
                 category TEXT,
                 total_copies INTEGER DEFAULT 1,
                 available_copies INTEGER DEFAULT 1,
-                date_added DATE DEFAULT CURRENT_DATE
+                date_added DATE DEFAULT CURRENT_DATE,
+                barcode TEXT
             )
         ''', sqlite_sql='''
              CREATE TABLE IF NOT EXISTS books (
@@ -219,7 +220,8 @@ class Database:
                 category TEXT,
                 total_copies INTEGER DEFAULT 1,
                 available_copies INTEGER DEFAULT 1,
-                date_added DATE DEFAULT CURRENT_DATE
+                date_added DATE DEFAULT CURRENT_DATE,
+                barcode TEXT
             )
         ''')
         
@@ -409,6 +411,27 @@ class Database:
         except Exception as e:
             print(f"Migration check warning (date_added): {e}")
 
+        # Migration: ensure barcode column exists on books
+        try:
+            has_barcode = False
+            if self.use_cloud:
+                cursor.execute(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name='books' AND column_name='barcode'"
+                )
+                if cursor.fetchone():
+                    has_barcode = True
+            else:
+                cursor.execute("PRAGMA table_info(books)")
+                columns = [col[1] for col in cursor.fetchall()]
+                has_barcode = 'barcode' in columns
+
+            if not has_barcode:
+                cursor.execute("ALTER TABLE books ADD COLUMN barcode TEXT")
+                conn.commit()
+                print("Migration: Added 'barcode' column to books table")
+        except Exception as e:
+            print(f"Migration check warning (barcode): {e}")
+
         # Indexes: improve performance of common dashboard/report queries
         try:
             # These are safe to run repeatedly
@@ -507,7 +530,7 @@ class Database:
         finally:
             conn.close()
     
-    def add_book(self, book_id, title, author='', isbn='', category='', total_copies=1):
+    def add_book(self, book_id, title, author='', isbn='', category='', total_copies=1, barcode=''):
         """Add a new book to the database"""
         # Validate required fields
         if not book_id or not book_id.strip():
@@ -520,9 +543,9 @@ class Database:
         cursor = conn.cursor()
         try:
             cursor.execute('''
-                INSERT INTO books (book_id, title, author, isbn, category, total_copies, available_copies)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (book_id, title, author, isbn, category, total_copies, total_copies))
+                INSERT INTO books (book_id, title, author, isbn, category, total_copies, available_copies, barcode)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (book_id, title, author, isbn, category, total_copies, total_copies, barcode or None))
             conn.commit()
             return True, "Book added successfully"
         except sqlite3.IntegrityError:
@@ -532,7 +555,7 @@ class Database:
         finally:
             conn.close()
     
-    def update_book(self, book_id, title, author, isbn='', category='', total_copies=1):
+    def update_book(self, book_id, title, author, isbn='', category='', total_copies=1, barcode=''):
         """Update an existing book's information"""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -556,9 +579,9 @@ class Database:
             # Update book information
             cursor.execute('''
                 UPDATE books 
-                SET title=?, author=?, isbn=?, category=?, total_copies=?, available_copies=?
+                SET title=?, author=?, isbn=?, category=?, total_copies=?, available_copies=?, barcode=?
                 WHERE book_id=?
-            ''', (title, author, isbn, category, total_copies, new_available, book_id))
+            ''', (title, author, isbn, category, total_copies, new_available, barcode or None, book_id))
             conn.commit()
             return True, "Book updated successfully"
         except Exception as e:
@@ -766,14 +789,14 @@ class Database:
             conn.close()
 
     def get_books(self, search_term=''):
-        """Get list of books with optional search"""
+        """Get list of books with optional search (also searches barcode)"""
         conn = self.get_connection()
         cursor = conn.cursor()
         if search_term:
             cursor.execute('''
                 SELECT * FROM books 
-                WHERE book_id LIKE ? OR title LIKE ? OR author LIKE ? OR category LIKE ?
-            ''', (f'%{search_term}%', f'%{search_term}%', f'%{search_term}%', f'%{search_term}%'))
+                WHERE book_id LIKE ? OR title LIKE ? OR author LIKE ? OR category LIKE ? OR barcode LIKE ?
+            ''', (f'%{search_term}%', f'%{search_term}%', f'%{search_term}%', f'%{search_term}%', f'%{search_term}%'))
         else:
             cursor.execute('SELECT * FROM books')
         result = cursor.fetchall()
