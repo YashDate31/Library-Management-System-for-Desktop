@@ -56,6 +56,34 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(REGISTRATION_PHOTO_FOLDER, exist_ok=True)
 
 
+# --- Bootstrapping for PyInstaller ---
+if getattr(sys, 'frozen', False):
+    import shutil
+    
+    # 1. Bootstrap portal.db
+    portal_db_path = os.path.join(BASE_DIR, 'portal.db')
+    if not os.path.exists(portal_db_path):
+        try:
+            bundled_portal = os.path.join(sys._MEIPASS, 'Web-Extension', 'portal.db')
+            if os.path.exists(bundled_portal):
+                shutil.copy2(bundled_portal, portal_db_path)
+                print(f"[Bootstrap] Copied bundled portal.db to {portal_db_path}")
+        except Exception as e:
+            print(f"[Bootstrap] Error copying portal.db: {e}")
+
+    # 2. Bootstrap library.db (Parent of Web-Extension)
+    repo_root = os.path.dirname(BASE_DIR)
+    library_db_path = os.path.join(repo_root, 'library.db')
+    if not os.path.exists(library_db_path):
+        try:
+            bundled_library = os.path.join(sys._MEIPASS, 'library.db')
+            if os.path.exists(bundled_library):
+                shutil.copy2(bundled_library, library_db_path)
+                print(f"[Bootstrap] Copied bundled library.db to {library_db_path}")
+        except Exception as e:
+            print(f"[Bootstrap] Error copying library.db: {e}")
+
+
 def _is_postgres_connection(conn) -> bool:
     """Best-effort check to determine if this is a PostgresConnectionWrapper."""
     try:

@@ -3139,6 +3139,7 @@ Government Polytechnic Awasari (Kh)"""
     def _export_to_excel(self, data, columns, title, report_type, filter_value, date_from, date_to):
         """Export report data to Excel format with GPAK branding"""
         try:
+            #
             if not data:
                 messagebox.showwarning("No Data", "No data available to export.")
                 return
@@ -3152,7 +3153,8 @@ Government Polytechnic Awasari (Kh)"""
                 filetypes=[("Excel files", "*.xlsx")],
                 initialfile=default_filename,
                 title=f"Save {title}"
-            )
+            ) 
+            #this is to export data from the excel sheet into the proper data.........
             
             if not filepath:
                 return
@@ -12388,6 +12390,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
         
         if hasattr(self, 'show_url_history') and self.show_url_history.get():
             self._populate_url_history()
+            
 
     
     def _create_requests_section(self, parent):
@@ -13197,10 +13200,9 @@ Note: This is an automated email. Please find the attached formal overdue letter
             
             url = f"http://127.0.0.1:{self.portal_port}/api/admin/requests/{req_id}/{action}"
             
-            # Fix 405 Error: Explicitly send JSON data to ensure POST method is respected
-            data = json.dumps({}).encode('utf-8')
-            req = urllib.request.Request(url, method='POST', data=data)
-            req.add_header('Content-Type', 'application/json')
+            # v5.2 FIX: Use GET request to avoid 405 Method Not Allowed issues with POST
+            req = urllib.request.Request(url, method='GET')
+            # No data or headers needed for GET
             
             with urllib.request.urlopen(req, timeout=5) as response:
                 result = json.loads(response.read().decode())

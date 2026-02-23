@@ -33,6 +33,7 @@ cursor.execute("SELECT COUNT(*) FROM students")
 students_count = cursor.fetchone()[0]
 print(f"   Students: {students_count}")
 
+
 cursor.execute("SELECT COUNT(*) FROM books")
 books_count = cursor.fetchone()[0]
 print(f"   Books: {books_count}")
