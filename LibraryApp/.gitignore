@@ -1,0 +1,3 @@
+# SQLite temporary files
+*.db-shm
+*.db-wal
