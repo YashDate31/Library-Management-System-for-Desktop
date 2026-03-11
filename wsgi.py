@@ -1,8 +1,12 @@
 import sys
 import os
 
-# Add the Web-Extension directory to the python path so we can import student_portal
-sys.path.append(os.path.join(os.path.dirname(__file__), 'LibraryApp', 'Web-Extension'))
+# Add both LibraryApp and Web-Extension directories to sys.path
+# LibraryApp is needed for database.py (PostgresConnectionWrapper)
+# Web-Extension is needed for student_portal.py
+_base = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(_base, 'LibraryApp'))
+sys.path.insert(0, os.path.join(_base, 'LibraryApp', 'Web-Extension'))
 
 from student_portal import app
 

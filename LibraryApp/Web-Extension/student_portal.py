@@ -1187,90 +1187,106 @@ def request_deletion():
         conn.close()
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.errorhandler(500)
+def handle_500(e):
+    import traceback
+    print(f"[500 Error] {e}")
+    print(traceback.format_exc())
+    return jsonify({'status': 'error', 'message': 'Server error. Please try again later.'}), 500
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    import traceback
+    print(f"[Unhandled Exception] {e}")
+    print(traceback.format_exc())
+    return jsonify({'status': 'error', 'message': 'An unexpected error occurred. Please try again.'}), 500
+
 @app.route('/api/login', methods=['POST'])
 @rate_limit
 def api_login():
-    data = request.json
-    enrollment = data.get('enrollment_no', '').strip()
-    password = data.get('password', '').strip()
-    
-    if not enrollment:
-        return jsonify({'status': 'error', 'message': 'Enrollment number required'}), 400
-    
-    # 1. Check if student exists in MAIN DB (Read-Only)
-    conn_lib = get_library_db()
-    cursor_lib = conn_lib.cursor()
-    cursor_lib.execute("SELECT * FROM students WHERE enrollment_no = ?", (enrollment,))
-    student = cursor_lib.fetchone()
-    conn_lib.close()
-    
-    if not student:
-        return jsonify({'status': 'error', 'message': 'Student not found'}), 401
-    
-    # 2. Check Auth Status in PORTAL DB (Shadow Auth)
-    conn_portal = get_portal_db()
-    cursor_p = conn_portal.cursor()
-    cursor_p.execute("SELECT * FROM student_auth WHERE enrollment_no = ?", (enrollment,))
-    auth_record = cursor_p.fetchone()
-    
-    require_change = False
-    
-    if not auth_record:
-        # FIRST LOGIN ATTEMPT EVER for this user
-        # Default behavior: Password MUST be enrollment number
-        if password == enrollment:
-            # Create auth record with HASHED password
-            hashed_pw = generate_password_hash(enrollment)
-            cursor_p.execute("INSERT INTO student_auth (enrollment_no, password, is_first_login) VALUES (?, ?, 1)", 
-                             (enrollment, hashed_pw))
-            conn_portal.commit()
-            require_change = True
-        else:
-            conn_portal.close()
-            return jsonify({'status': 'error', 'message': 'Invalid password (First login? Use Enrollment No.)'}), 401
-    else:
-        # Existing auth record
-        stored_pw = auth_record['password']
+    try:
+        data = request.json or {}
+        enrollment = str(data.get('enrollment_no', '')).strip()
+        password = str(data.get('password', '')).strip()
         
-        # 1. Try verifying hash
-        is_valid = False
-        try:
-            if check_password_hash(stored_pw, password):
-                is_valid = True
-        except:
-            # Not a hash (legacy plain text)
-            if stored_pw == password:
-                is_valid = True
-                # MIGRATION: Upgrade to hash immediatey
-                new_hash = generate_password_hash(password)
-                cursor_p.execute("UPDATE student_auth SET password = ? WHERE enrollment_no = ?", (new_hash, enrollment))
+        if not enrollment:
+            return jsonify({'status': 'error', 'message': 'Enrollment number required'}), 400
+        
+        # 1. Check if student exists in MAIN DB (Read-Only)
+        conn_lib = get_library_db()
+        cursor_lib = conn_lib.cursor()
+        cursor_lib.execute("SELECT * FROM students WHERE enrollment_no = ?", (enrollment,))
+        student = cursor_lib.fetchone()
+        conn_lib.close()
+        
+        if not student:
+            return jsonify({'status': 'error', 'message': 'Student not found. Please register or contact the librarian.'}), 401
+        
+        # 2. Check Auth Status in PORTAL DB (Shadow Auth)
+        conn_portal = get_portal_db()
+        cursor_p = conn_portal.cursor()
+        cursor_p.execute("SELECT * FROM student_auth WHERE enrollment_no = ?", (enrollment,))
+        auth_record = cursor_p.fetchone()
+        
+        require_change = False
+        
+        if not auth_record:
+            # FIRST LOGIN ATTEMPT EVER for this user
+            # Default behavior: Password MUST be enrollment number
+            if password == enrollment:
+                # Create auth record with HASHED password
+                hashed_pw = generate_password_hash(enrollment)
+                cursor_p.execute("INSERT INTO student_auth (enrollment_no, password, is_first_login) VALUES (?, ?, 1)", 
+                                 (enrollment, hashed_pw))
                 conn_portal.commit()
-        
-        if not is_valid:
-            conn_portal.close()
-            return jsonify({'status': 'error', 'message': 'Invalid password'}), 401
+                require_change = True
+            else:
+                conn_portal.close()
+                return jsonify({'status': 'error', 'message': 'Invalid password. First login? Use your Enrollment No. as password.'}), 401
+        else:
+            # Existing auth record
+            stored_pw = auth_record['password']
             
-        if auth_record['is_first_login']:
-            require_change = True
+            is_valid = False
+            try:
+                if check_password_hash(stored_pw, password):
+                    is_valid = True
+            except:
+                if stored_pw == password:
+                    is_valid = True
+                    new_hash = generate_password_hash(password)
+                    cursor_p.execute("UPDATE student_auth SET password = ? WHERE enrollment_no = ?", (new_hash, enrollment))
+                    conn_portal.commit()
+            
+            if not is_valid:
+                conn_portal.close()
+                return jsonify({'status': 'error', 'message': 'Invalid password'}), 401
+                
+            if auth_record['is_first_login']:
+                require_change = True
 
-    # Login Success - Create Session
-    session['student_id'] = enrollment
-    session['logged_in'] = True
-    
-    conn_portal.close()
-    
-    # Return full user details (similar to /api/me) for Profile page consistency
-    student_year = student['year'] if student['year'] else '1st'
-    
-    return jsonify({
-        'status': 'success', 
-        'enrollment_no': enrollment,
-        'name': student['name'],
-        'department': student['department'] if student['department'] else 'General',
-        'year': student_year,
-        'email': student['email'],
-        'require_change': require_change
-    })
+        # Login Success - Create Session
+        session['student_id'] = enrollment
+        session['logged_in'] = True
+        
+        conn_portal.close()
+        
+        student_year = student['year'] if student['year'] else '1st'
+        
+        return jsonify({
+            'status': 'success', 
+            'enrollment_no': enrollment,
+            'name': student['name'],
+            'department': student['department'] if student['department'] else 'General',
+            'year': student_year,
+            'email': student['email'],
+            'require_change': require_change
+        })
+    except Exception as e:
+        import traceback
+        print(f"[Login Error] {e}")
+        print(traceback.format_exc())
+        return jsonify({'status': 'error', 'message': f'Login error: {str(e)}'}), 500
 
 @app.route('/api/public/forgot-password', methods=['POST'])
 @rate_limit

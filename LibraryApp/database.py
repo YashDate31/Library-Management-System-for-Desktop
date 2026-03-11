@@ -40,6 +40,10 @@ class PostgresRow:
         # sqlite3.Row iterates over values
         return iter(self._values)
 
+    def __bool__(self):
+        # Treat an empty row dict as falsy (consistent with sqlite3.Row behaviour)
+        return bool(self._data)
+
 class PostgresCursorWrapper:
     """
     Wrapper to make psycopg2 cursor behave like sqlite3 cursor.
