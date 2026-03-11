@@ -9327,14 +9327,14 @@ Note: This is an automated email. Please find the attached formal overdue letter
                             temp_doc.add_paragraph()
                             
                             to_para = temp_doc.add_paragraph()
-                            to_para.add_run(f'To,\\n{student_name}\\nEnrollment No: {enrollment_no}')
+                            to_para.add_run(f'To,\n{student_name}\nEnrollment No: {enrollment_no}')
                             temp_doc.add_paragraph()
                             
                             body = temp_doc.add_paragraph()
                             body.add_run(
-                                f"Dear {student_name},\\n\\n"
+                                f"Dear {student_name},\n\n"
                                 f"This is to inform you that the following book borrowed from the Library of Computer Department "
-                                f"is overdue and needs to be returned immediately.\\n\\n"
+                                f"is overdue and needs to be returned immediately.\n\n"
                             )
                             
                             temp_doc.add_paragraph('Book Details:', style='Heading 2')
@@ -9354,22 +9354,24 @@ Note: This is an automated email. Please find the attached formal overdue letter
                             temp_doc.add_paragraph()
                             fine_para = temp_doc.add_paragraph()
                             fine_run = fine_para.add_run(
-                                f"As per library rules, a fine of ₹{self.get_fine_per_day()} per day is applicable for overdue books.\\n"
-                                f"Your current fine amount is: ₹{fine}\\n\\n"
+                                f"As per library rules, a fine of ₹{self.get_fine_per_day()} per day is applicable for overdue books.\n"
+                                f"Your current fine amount is: ₹{fine}\n\n"
                             )
                             fine_run.bold = True
                             
                             request_para = temp_doc.add_paragraph()
                             request_para.add_run(
                                 "You are hereby requested to return the book to the library at the earliest and clear the pending fine. "
-                                "Failure to do so may result in restrictions on future borrowing privileges.\\n\\n"
-                                "Please contact the library desk for any queries or clarifications.\\n\\n"
+                                "Failure to do so may result in restrictions on future borrowing privileges.\n\n"
+                                "Please contact the library desk for any queries or clarifications.\n\n"
                             )
                             
                             temp_doc.add_paragraph()
-                            temp_doc.add_paragraph("Thank you for your cooperation.\\n\\nYours sincerely,\\n\\n")
+                            temp_doc.add_paragraph("Thank you for your cooperation.\n\nYours sincerely,\n\n")
                             temp_doc.add_paragraph("__________________________")
-                            temp_doc.add_paragraph("Librarian").runs[0].bold = True
+                            sig_para = temp_doc.add_paragraph("Librarian")
+                            if sig_para.runs:
+                                sig_para.runs[0].bold = True
                             temp_doc.add_paragraph('Departmental Library')
                             temp_doc.add_paragraph('Computer Department')
                             temp_doc.add_paragraph('Government Polytechnic Awasari (Kh)')
