@@ -116,10 +116,17 @@ class SyncManager:
                 
                 try:
                     if direction in ['local_to_remote', 'both']:
+                        # First, sync new/updated records
                         records = self._sync_table_local_to_remote(
                             local_conn, remote_conn, table
                         )
                         results['records_synced'] += records
+                        
+                        # Then, sync deletions (remove records from remote that were deleted locally)
+                        deletions = self._sync_deletions_to_remote(
+                            local_conn, remote_conn, table
+                        )
+                        results['records_synced'] += deletions
                     
                     if direction in ['remote_to_local', 'both']:
                         records = self._sync_table_remote_to_local(
@@ -336,6 +343,55 @@ class SyncManager:
             'notices': 'id'
         }
         return pk_map.get(table_name, 'id')
+    
+    def _sync_deletions_to_remote(self, local_conn, remote_conn, table_name):
+        """Delete records from remote that don't exist in local (sync deletions)"""
+        try:
+            local_cursor = local_conn.cursor()
+            remote_cursor = remote_conn.cursor()
+            
+            primary_key = self._get_primary_key(table_name)
+            
+            # Get all primary keys from local database
+            local_cursor.execute(f"SELECT {primary_key} FROM {table_name}")
+            local_keys = set(row[0] for row in local_cursor.fetchall())
+            
+            # Get all primary keys from remote database
+            try:
+                remote_cursor.execute(f"SELECT {primary_key} FROM {table_name}")
+                remote_keys = set(row[0] for row in remote_cursor.fetchall())
+            except Exception as e:
+                print(f"Warning: Could not fetch remote keys for {table_name}: {e}")
+                return 0
+            
+            # Find keys that exist in remote but not in local (deleted locally)
+            deleted_keys = remote_keys - local_keys
+            
+            if not deleted_keys:
+                return 0
+            
+            # Delete these records from remote
+            deleted_count = 0
+            for key in deleted_keys:
+                try:
+                    remote_cursor.execute(
+                        f"DELETE FROM {table_name} WHERE {primary_key} = %s",
+                        (key,)
+                    )
+                    deleted_count += 1
+                except Exception as e:
+                    print(f"Error deleting {primary_key}={key} from {table_name}: {e}")
+            
+            remote_conn.commit()
+            
+            if deleted_count > 0:
+                print(f"[Sync Deletions] {table_name}: Removed {deleted_count} deleted records from cloud")
+            
+            return deleted_count
+            
+        except Exception as e:
+            print(f"Error syncing deletions for {table_name}: {e}")
+            return 0
     
     def _sync_portal_table_remote_to_local(self, local_conn, remote_conn, table_name):
         """Sync portal tables (requests, notices) from remote Postgres to local SQLite.
