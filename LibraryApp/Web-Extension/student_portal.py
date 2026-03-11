@@ -736,17 +736,27 @@ def api_admin_observability():
 def get_db_connection(local_db_name):
     """Generic connection factory: Postgres (if env) or Local SQLite"""
     def _should_use_cloud_db() -> bool:
-        # On Render (or any cloud platform), ALWAYS use cloud DB regardless of other settings.
-        # The PORTAL_FORCE_LOCAL flag in .env is for local development only.
-        if os.getenv('RENDER') or os.getenv('DYNO') or os.getenv('FLY_APP_NAME') or os.getenv('WEBSITE_INSTANCE_ID'):
+        # Step 1: Explicit cloud platform detection - these env vars are set BY the
+        # platform itself, not from .env. They ALWAYS win over PORTAL_FORCE_LOCAL.
+        cloud_signals = [
+            os.getenv('RENDER'),           # Render.com sets RENDER=true
+            os.getenv('RENDER_SERVICE_ID'), # Also set by Render
+            os.getenv('RENDER_GIT_COMMIT'), # Also set by Render
+            os.getenv('DYNO'),             # Heroku
+            os.getenv('FLY_APP_NAME'),     # Fly.io
+            os.getenv('WEBSITE_INSTANCE_ID'), # Azure
+            os.getenv('K_SERVICE'),        # Google Cloud Run
+            os.getenv('AWS_LAMBDA_FUNCTION_NAME'), # AWS Lambda
+        ]
+        if any(cloud_signals):
             return True
 
-        # Desktop app should default to LOCAL DB even if a cloud DATABASE_URL exists in .env.
-        # Enable cloud explicitly when deploying the portal.
+        # Step 2: Explicit local override (set in .env for desktop development)
         force_local = os.getenv('PORTAL_FORCE_LOCAL', '').strip().lower() in ('1', 'true', 'yes')
         if force_local:
             return False
 
+        # Step 3: Explicit cloud flag
         use_cloud = os.getenv('PORTAL_USE_CLOUD', '').strip().lower() in ('1', 'true', 'yes')
         if use_cloud:
             return True
