@@ -7354,8 +7354,8 @@ Current Settings:
                 self.records_tree.delete(item)
             
             for record in records:
-                # record: (..., status, fine)
-                *base, status, fine = record
+                # record: (enroll, student_name, book_id, title, borrow_date, due_date, return_date, status, fine, academic_year)
+                *base, status, fine, academic_year = record
                 fine_is_num = False
                 if isinstance(fine, str):
                     try:
@@ -7392,28 +7392,36 @@ Current Settings:
         if not values or len(values) < 9:
             return
         
-        # Extract record details
-        enrollment_no = values[0]
-        student_name = values[1]
-        book_id = values[2]
-        book_title = values[3]
-        issue_date = values[4]
-        due_date = values[5]
-        return_date = values[6]
-        status = values[7]
+        # Extract record details (str() needed: Tkinter returns numeric-looking values as int)
+        enrollment_no = str(values[0])
+        student_name = str(values[1])
+        book_id = str(values[2])
+        book_title = str(values[3])
+        issue_date = str(values[4])
+        due_date = str(values[5])
+        return_date = str(values[6])
+        status = str(values[7])
         fine_info = str(values[8])
         
-        # Extract fine amount to check if overdue
-        fine_amount = 0
-        try:
-            # Remove "Rs", "(Late)", and other text to get the number
-            fine_str = fine_info.replace('Rs', '').replace('(Late)', '').strip()
-            fine_amount = int(fine_str)
-        except:
-            fine_amount = 0
+        # Check if this is an overdue record by comparing due date with today
+        is_overdue = False
+        if status.lower() == 'borrowed':
+            try:
+                from datetime import datetime as _dt
+                due_d = _dt.strptime(due_date, '%Y-%m-%d').date()
+                today = _dt.now().date()
+                is_overdue = today > due_d
+            except:
+                # If date parsing fails, fall back to checking fine amount
+                try:
+                    fine_str = fine_info.replace('Rs', '').replace('(Late)', '').strip()
+                    fine_amount = int(fine_str)
+                    is_overdue = fine_amount > 0
+                except:
+                    is_overdue = False
         
-        # Check if this is an overdue record (borrowed + fine > 0)
-        if status.lower() == 'borrowed' and fine_amount > 0:
+        # Check if this is an overdue record (borrowed + past due date)
+        if is_overdue:
             # Show dialog to confirm sending letter
             response = messagebox.askyesno(
                 "Send Overdue Letter",
@@ -7421,6 +7429,7 @@ Current Settings:
                 f"Student: {student_name}\n"
                 f"Enrollment: {enrollment_no}\n"
                 f"Book: {book_title}\n"
+                f"Due Date: {due_date}\n"
                 f"Fine: {fine_info}\n\n"
                 f"Generate Word document?",
                 icon='question'
@@ -7454,7 +7463,7 @@ Current Settings:
             # Extract fine amount
             fine_amount = 0
             try:
-                fine_str = fine_info.replace('(Late)', '').strip()
+                fine_str = str(fine_info).replace('Rs', '').replace('(Late)', '').strip()
                 fine_amount = int(fine_str)
             except:
                 fine_amount = days_overdue * self.get_fine_per_day()
@@ -7653,6 +7662,20 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     message if not success else ''
                 )
             
+            # Always show email status popup first (before save dialog)
+            if self.email_settings.get('enabled', False) and student_email:
+                if email_sent:
+                    messagebox.showinfo(
+                        "Email Sent ✅",
+                        f"📧 Overdue notice email sent successfully!\n\nTo: {student_email}",
+                        icon='info'
+                    )
+                else:
+                    messagebox.showwarning(
+                        "Email Failed ⚠️",
+                        f"Could not send email to {student_email}\n\nReason: {email_message}\n\nThe Word document will still be saved."
+                    )
+            
             # Now ask user where to save the document
             final_filepath = filedialog.asksaveasfilename(
                 defaultextension=".docx",
@@ -7666,27 +7689,7 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 import shutil
                 shutil.copy(temp_filepath, final_filepath)
                 
-                # Show success message with email status
-                if email_sent:
-                    success_msg = (
-                        f"✅ Overdue letter generated and emailed successfully!\n\n"
-                        f"📧 Email sent to: {student_email}\n"
-                        f"💾 Document saved to:\n{final_filepath}"
-                    )
-                elif self.email_settings.get('enabled', False):
-                    success_msg = (
-                        f"⚠️ Document saved but email failed!\n\n"
-                        f"Reason: {email_message}\n\n"
-                        f"💾 Document saved to:\n{final_filepath}"
-                    )
-                else:
-                    success_msg = (
-                        f"✅ Overdue letter generated successfully!\n\n"
-                        f"💾 Saved to:\n{final_filepath}\n\n"
-                        f"💡 Tip: Enable email in Settings to send automatically!"
-                    )
-                
-                messagebox.showinfo("Success", success_msg, icon='info')
+                messagebox.showinfo("Saved ✅", f"💾 Document saved to:\n{final_filepath}", icon='info')
                 
                 # Ask if user wants to open the document
                 if messagebox.askyesno("Open Document", "Do you want to open the document now?"):
@@ -7708,6 +7711,8 @@ Note: This is an automated email. Please find the attached formal overdue letter
                 pass
         
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             messagebox.showerror("Error", f"Failed to generate overdue letter.\n\nError: {e}")
     
     def get_student_email(self, enrollment_no):
@@ -9496,196 +9501,182 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     
                     sent_count = 0
                     failed_count = 0
-                
-                for idx, rec in enumerate(overdue, 1):
-                    enrollment_no = str(rec['Enrollment No'])
-                    student_name = str(rec['Student Name'])
-                    book_id = str(rec['Book ID'])
-                    book_title = str(rec['Book Title'])
-                    issue_date = str(rec['Issue Date'])
-                    due_date = str(rec['Due Date'])
-                    days_overdue = str(rec['Days Overdue'])
-                    fine = str(rec['Accrued Fine'])
                     
-                    status_label.config(text=f"Sending email {idx}/{len(overdue)}\nTo: {student_name} ({enrollment_no})")
-                    progress_win.update()
-                    
-                    # Get student email
-                    student_email = self.get_student_email(enrollment_no)
-                    
-                    if student_email:
-                        # Generate individual letter for this student
-                        temp_doc = Document()
+                    for idx, rec in enumerate(overdue, 1):
+                        enrollment_no = str(rec['Enrollment No'])
+                        student_name = str(rec['Student Name'])
+                        book_id = str(rec['Book ID'])
+                        book_title = str(rec['Book Title'])
+                        issue_date = str(rec['Issue Date'])
+                        due_date = str(rec['Due Date'])
+                        days_overdue = str(rec['Days Overdue'])
+                        fine = str(rec['Accrued Fine'])
                         
-                        # Add same header
-                        if os.path.exists(logo_path):
+                        status_label.config(text=f"Sending email {idx}/{len(overdue)}\nTo: {student_name} ({enrollment_no})")
+                        progress_win.update()
+                        
+                        # Get student email
+                        student_email = self.get_student_email(enrollment_no)
+                        
+                        if student_email:
+                            # Generate individual letter for this student
+                            temp_doc = Document()
+                            
+                            # Add same header
+                            if os.path.exists(logo_path):
+                                try:
+                                    logo_para = temp_doc.add_paragraph()
+                                    logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                    logo_run = logo_para.add_run()
+                                    logo_run.add_picture(logo_path, width=Pt(80))
+                                except:
+                                    pass
+                            
+                            def add_center_temp(text, bold=True, size=16, color=None):
+                                p = temp_doc.add_paragraph()
+                                run = p.add_run(text)
+                                run.bold = bold
+                                run.font.size = Pt(size)
+                                if color:
+                                    from docx.shared import RGBColor
+                                    run.font.color.rgb = RGBColor(*color)
+                                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            
+                            add_center_temp("Government Polytechnic Awasari (Kh)", True, 20, (31, 71, 136))
+                            add_center_temp("Departmental Library", True, 16, (46, 92, 138))
+                            add_center_temp("Computer Department", True, 14, (54, 95, 145))
+                            temp_doc.add_paragraph("_" * 70).alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            temp_doc.add_paragraph()
+                            
+                            date_para = temp_doc.add_paragraph()
+                            date_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                            date_para.add_run(f"Date: {datetime.now().strftime('%B %d, %Y')}")
+                            temp_doc.add_paragraph()
+                            
+                            subject = temp_doc.add_paragraph()
+                            subject.add_run('Subject: Overdue Book Notice').bold = True
+                            subject.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            temp_doc.add_paragraph()
+                            
+                            to_para = temp_doc.add_paragraph()
+                            to_para.add_run(f'To,\n{student_name}\nEnrollment No: {enrollment_no}')
+                            temp_doc.add_paragraph()
+                            
+                            body = temp_doc.add_paragraph()
+                            body.add_run(
+                                f"Dear {student_name},\n\n"
+                                f"This is to inform you that the following book borrowed from the Library of Computer Department "
+                                f"is overdue and needs to be returned immediately.\n\n"
+                            )
+                            
+                            temp_doc.add_paragraph('Book Details:', style='Heading 2')
+                            details_table = temp_doc.add_table(rows=5, cols=2)
+                            details_table.style = 'Light Grid Accent 1'
+                            details_table.cell(0, 0).text = 'Book ID:'
+                            details_table.cell(0, 1).text = book_id
+                            details_table.cell(1, 0).text = 'Book Title:'
+                            details_table.cell(1, 1).text = book_title
+                            details_table.cell(2, 0).text = 'Issue Date:'
+                            details_table.cell(2, 1).text = issue_date
+                            details_table.cell(3, 0).text = 'Due Date:'
+                            details_table.cell(3, 1).text = due_date
+                            details_table.cell(4, 0).text = 'Days Overdue:'
+                            details_table.cell(4, 1).text = days_overdue
+                            
+                            temp_doc.add_paragraph()
+                            fine_para = temp_doc.add_paragraph()
+                            fine_run = fine_para.add_run(
+                                f"As per library rules, a fine of ₹{self.get_fine_per_day()} per day is applicable for overdue books.\n"
+                                f"Your current fine amount is: ₹{fine}\n\n"
+                            )
+                            fine_run.bold = True
+                            
+                            request_para = temp_doc.add_paragraph()
+                            request_para.add_run(
+                                "You are hereby requested to return the book to the library at the earliest and clear the pending fine. "
+                                "Failure to do so may result in restrictions on future borrowing privileges.\n\n"
+                                "Please contact the library desk for any queries or clarifications.\n\n"
+                            )
+                            
+                            temp_doc.add_paragraph()
+                            temp_doc.add_paragraph("Thank you for your cooperation.\n\nYours sincerely,\n\n")
+                            temp_doc.add_paragraph("__________________________")
+                            sig = temp_doc.add_paragraph("Librarian")
+                            if sig.runs:
+                                sig.runs[0].bold = True
+                            temp_doc.add_paragraph('Departmental Library')
+                            temp_doc.add_paragraph('Computer Department')
+                            temp_doc.add_paragraph('Government Polytechnic Awasari (Kh)')
+                            
+                            # Save to temp file
+                            temp_dir = tempfile.gettempdir()
+                            temp_file = os.path.join(temp_dir, f"Overdue_{enrollment_no}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx")
+                            temp_doc.save(temp_file)
+                            
+                            # Send email
+                            email_subject = f"Overdue Book Notice - {book_title}"
+                            email_body = (
+                                f"Dear {student_name},\n\n"
+                                f"This is an automated notification from the Library of Computer Department, Government Polytechnic Awasari (Kh).\n\n"
+                                f"The following book borrowed from our library is overdue and needs to be returned immediately:\n\n"
+                                f"Book ID: {book_id}\nBook Title: {book_title}\nIssue Date: {issue_date}\n"
+                                f"Due Date: {due_date}\nDays Overdue: {days_overdue}\nFine Amount: ₹{fine}\n\n"
+                                f"As per library rules, a fine of ₹{self.get_fine_per_day()} per day is applicable for overdue books.\n\n"
+                                f"Please return the book to the library at the earliest and clear the pending fine.\n\n"
+                                f"For any queries, please contact the library desk.\n\n"
+                                f"Thank you for your cooperation.\n\nLibrarian\nDepartmental Library\nComputer Department\n"
+                                f"Government Polytechnic Awasari (Kh)\n\n---\n"
+                                f"Note: This is an automated email. Please find the attached formal overdue letter."
+                            )
+                            
+                            success, message = self.send_email_with_attachment(
+                                student_email,
+                                email_subject,
+                                email_body,
+                                temp_file
+                            )
+                            
+                            # Log the email
+                            self._log_email_sent(
+                                enrollment_no,
+                                student_name,
+                                student_email,
+                                book_title,
+                                success,
+                                message if not success else ''
+                            )
+                            
+                            if success:
+                                sent_count += 1
+                                email_results.append(f"✅ {student_name} ({enrollment_no})")
+                            else:
+                                failed_count += 1
+                                email_results.append(f"❌ {student_name} ({enrollment_no}) - {message}")
+                            
+                            # Clean up temp file
                             try:
-                                logo_para = temp_doc.add_paragraph()
-                                logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                                logo_run = logo_para.add_run()
-                                logo_run.add_picture(logo_path, width=Pt(80))
+                                os.remove(temp_file)
                             except:
                                 pass
-                        
-                        def add_center_temp(text, bold=True, size=16, color=None):
-                            p = temp_doc.add_paragraph()
-                            run = p.add_run(text)
-                            run.bold = bold
-                            run.font.size = Pt(size)
-                            if color:
-                                from docx.shared import RGBColor
-                                run.font.color.rgb = RGBColor(*color)
-                            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        
-                        add_center_temp("Government Polytechnic Awasari (Kh)", True, 20, (31, 71, 136))
-                        add_center_temp("Departmental Library", True, 16, (46, 92, 138))
-                        add_center_temp("Computer Department", True, 14, (54, 95, 145))
-                        temp_doc.add_paragraph("_" * 70).alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        temp_doc.add_paragraph()
-                        
-                        date_para = temp_doc.add_paragraph()
-                        date_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-                        date_para.add_run(f"Date: {datetime.now().strftime('%B %d, %Y')}")
-                        temp_doc.add_paragraph()
-                        
-                        subject = temp_doc.add_paragraph()
-                        subject.add_run('Subject: Overdue Book Notice').bold = True
-                        subject.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        temp_doc.add_paragraph()
-                        
-                        to_para = temp_doc.add_paragraph()
-                        to_para.add_run(f'To,\n{student_name}\nEnrollment No: {enrollment_no}')
-                        temp_doc.add_paragraph()
-                        
-                        body = temp_doc.add_paragraph()
-                        body.add_run(
-                            f"Dear {student_name},\n\n"
-                            f"This is to inform you that the following book borrowed from the Library of Computer Department "
-                            f"is overdue and needs to be returned immediately.\n\n"
-                        )
-                        
-                        temp_doc.add_paragraph('Book Details:', style='Heading 2')
-                        details_table = temp_doc.add_table(rows=5, cols=2)
-                        details_table.style = 'Light Grid Accent 1'
-                        details_table.cell(0, 0).text = 'Book ID:'
-                        details_table.cell(0, 1).text = book_id
-                        details_table.cell(1, 0).text = 'Book Title:'
-                        details_table.cell(1, 1).text = book_title
-                        details_table.cell(2, 0).text = 'Issue Date:'
-                        details_table.cell(2, 1).text = issue_date
-                        details_table.cell(3, 0).text = 'Due Date:'
-                        details_table.cell(3, 1).text = due_date
-                        details_table.cell(4, 0).text = 'Days Overdue:'
-                        details_table.cell(4, 1).text = days_overdue
-                        
-                        temp_doc.add_paragraph()
-                        fine_para = temp_doc.add_paragraph()
-                        fine_run = fine_para.add_run(
-                            f"As per library rules, a fine of ₹{self.get_fine_per_day()} per day is applicable for overdue books.\n"
-                            f"Your current fine amount is: ₹{fine}\n\n"
-                        )
-                        fine_run.bold = True
-                        
-                        request_para = temp_doc.add_paragraph()
-                        request_para.add_run(
-                            "You are hereby requested to return the book to the library at the earliest and clear the pending fine. "
-                            "Failure to do so may result in restrictions on future borrowing privileges.\n\n"
-                            "Please contact the library desk for any queries or clarifications.\n\n"
-                        )
-                        
-                        temp_doc.add_paragraph()
-                        temp_doc.add_paragraph("Thank you for your cooperation.\n\nYours sincerely,\n\n")
-                        temp_doc.add_paragraph("__________________________")
-                        temp_doc.add_paragraph("Librarian").runs[0].bold = True
-                        temp_doc.add_paragraph('Departmental Library')
-                        temp_doc.add_paragraph('Computer Department')
-                        temp_doc.add_paragraph('Government Polytechnic Awasari (Kh)')
-                        
-                        # Save to temp file
-                        temp_dir = tempfile.gettempdir()
-                        temp_file = os.path.join(temp_dir, f"Overdue_{enrollment_no}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx")
-                        temp_doc.save(temp_file)
-                        
-                        # Send email
-                        email_subject = f"Overdue Book Notice - {book_title}"
-                        email_body = f"""Dear {student_name},
-
-This is an automated notification from the Library of Computer Department, Government Polytechnic Awasari (Kh).
-
-The following book borrowed from our library is overdue and needs to be returned immediately:
-
-Book ID: {book_id}
-Book Title: {book_title}
-Issue Date: {issue_date}
-Due Date: {due_date}
-Days Overdue: {days_overdue}
-Fine Amount: ₹{fine}
-
-As per library rules, a fine of ₹{self.get_fine_per_day()} per day is applicable for overdue books.
-
-Please return the book to the library at the earliest and clear the pending fine. Failure to do so may result in restrictions on future borrowing privileges.
-
-For any queries, please contact the library desk.
-
-Thank you for your cooperation.
-
-Librarian
-Departmental Library
-Computer Department
-Government Polytechnic Awasari (Kh)
-
----
-Note: This is an automated email. Please find the attached formal overdue letter.
-"""
-                        
-                        success, message = self.send_email_with_attachment(
-                            student_email, 
-                            email_subject, 
-                            email_body, 
-                            temp_file
-                        )
-                        
-                        # Log the email
-                        self._log_email_sent(
-                            enrollment_no,
-                            student_name,
-                            student_email,
-                            book_title,
-                            success,
-                            message if not success else ''
-                        )
-                        
-                        if success:
-                            sent_count += 1
-                            email_results.append(f"✅ {student_name} ({enrollment_no})")
                         else:
                             failed_count += 1
-                            email_results.append(f"❌ {student_name} ({enrollment_no}) - {message}")
-                        
-                        # Clean up temp file
-                        try:
-                            os.remove(temp_file)
-                        except:
-                            pass
-                    else:
-                        failed_count += 1
-                        email_results.append(f"❌ {student_name} ({enrollment_no}) - No email address")
-                
-                progress_win.destroy()
-                
-                # Show results
-                result_message = f"📧 Email Sending Complete!\n\n"
-                result_message += f"✅ Successfully sent: {sent_count}\n"
-                result_message += f"❌ Failed: {failed_count}\n\n"
-                
-                if email_results:
-                    result_message += "Details:\n" + "\n".join(email_results[:10])  # Show first 10
-                    if len(email_results) > 10:
-                        result_message += f"\n... and {len(email_results) - 10} more"
-                
-                result_message += f"\n\n💾 Master document saved at:\n{file_path}"
-                
-                messagebox.showinfo("Email Results", result_message)
+                            email_results.append(f"❌ {student_name} ({enrollment_no}) - No email address")
+                    
+                    progress_win.destroy()
+                    
+                    # Show results
+                    result_message = f"📧 Email Sending Complete!\n\n"
+                    result_message += f"✅ Successfully sent: {sent_count}\n"
+                    result_message += f"❌ Failed: {failed_count}\n\n"
+                    
+                    if email_results:
+                        result_message += "Details:\n" + "\n".join(email_results[:10])
+                        if len(email_results) > 10:
+                            result_message += f"\n... and {len(email_results) - 10} more"
+                    
+                    result_message += f"\n\n💾 Master document saved at:\n{file_path}"
+                    
+                    messagebox.showinfo("Email Results", result_message)
             else:
                 messagebox.showinfo("Overdue Notice", f"Word overdue notice exported:\n{file_path}")
             

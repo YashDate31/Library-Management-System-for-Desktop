@@ -219,3 +219,4 @@ class AutocompleteEntry:
     def bind(self, event, callback):
         """Bind event to entry"""
         self.entry.bind(event, callback)
+

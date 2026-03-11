@@ -783,6 +783,18 @@ def get_db_connection(local_db_name):
     
     return conn
 
+def get_fine_per_day():
+    """Read fine_per_day from library_settings.json so portal matches desktop setting"""
+    try:
+        import json as _json
+        settings_path = os.path.join(os.path.dirname(BASE_DIR), 'library_settings.json')
+        if os.path.exists(settings_path):
+            with open(settings_path, 'r') as f:
+                return int(_json.load(f).get('fine_per_day', 1))
+    except Exception:
+        pass
+    return 1  # default fallback
+
 def get_library_db():
     """Read-Only Connection to Core Data"""
     # If generic DB is used, both library and portal data are in the same Postgres DB
@@ -2043,7 +2055,7 @@ def api_dashboard():
                     item['status'] = 'overdue'
                     overdue_days = abs(delta)
                     item['days_msg'] = f"Overdue by {overdue_days} days"
-                    item['fine'] = overdue_days * 5 # ₹5 per day per logic in create_demo_data
+                    item['fine'] = overdue_days * get_fine_per_day()
                     notifications.append({
                         'type': 'danger',
                         'msg': f"'{item['title']}' is OVERDUE! Fine: ₹{item['fine']}"
@@ -2073,7 +2085,7 @@ def api_dashboard():
     # 4. Analytics & Gamification (Computed on Read-Only Data)
     stats = {
         'total_books': len(raw_history) + len(borrows),
-        'total_fines': sum([10 for x in borrows if x.get('status') == 'overdue']), # Estimated current fines
+        'total_fines': sum([x.get('fine', 0) for x in borrows if x.get('status') == 'overdue']),
         'fav_category': 'General',
         'categories': {}
     }

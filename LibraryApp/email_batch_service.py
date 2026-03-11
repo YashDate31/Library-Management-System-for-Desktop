@@ -113,7 +113,8 @@ class EmailBatchService:
         try:
             # Create message
             msg = MIMEMultipart()
-            msg['From'] = email_config.get('from_email', '')
+            sender = email_config.get('sender_email', email_config.get('from_email', ''))
+            msg['From'] = sender
             msg['To'] = email_data['to']
             msg['Subject'] = email_data['subject']
             
@@ -134,9 +135,10 @@ class EmailBatchService:
                         msg.attach(attachment)
             
             # Send email with timeout
+            password = email_config.get('sender_password', email_config.get('password', ''))
             with smtplib.SMTP(email_config['smtp_server'], email_config['smtp_port'], timeout=10) as server:
                 server.starttls()
-                server.login(email_config['from_email'], email_config['password'])
+                server.login(sender, password)
                 server.send_message(msg)
             
             result['success'] = True

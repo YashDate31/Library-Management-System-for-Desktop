@@ -357,6 +357,39 @@ class SyncManager:
             local_cursor = local_conn.cursor()
             remote_cursor = remote_conn.cursor()
             
+            # For notices: use content-based matching (title+created_at) instead of ID,
+            # because local portal.db and Supabase use independent auto-increment IDs.
+            if table_name == 'notices':
+                # Get ACTIVE local notices only (active=0 means deleted by admin)
+                local_cursor.execute("SELECT title, created_at FROM notices WHERE active = 1")
+                local_keys = set((row[0], str(row[1])) for row in local_cursor.fetchall())
+                
+                # Get remote notices by (title, created_at, id)
+                try:
+                    remote_cursor.execute("SELECT id, title, created_at FROM notices")
+                    remote_rows = remote_cursor.fetchall()
+                except Exception as e:
+                    print(f"Warning: Could not fetch remote notices: {e}")
+                    return 0
+                
+                # Find remote notices whose (title, created_at) is not in local
+                deleted_count = 0
+                for row in remote_rows:
+                    r_id, r_title, r_created_at = row[0], row[1], row[2]
+                    content_key = (r_title, str(r_created_at))
+                    if content_key not in local_keys:
+                        try:
+                            remote_cursor.execute("DELETE FROM notices WHERE id = %s", (r_id,))
+                            deleted_count += 1
+                        except Exception as e:
+                            print(f"Error deleting notice id={r_id}: {e}")
+                
+                if deleted_count > 0:
+                    remote_conn.commit()
+                    print(f"[Sync Deletions] notices: Removed {deleted_count} deleted records from cloud")
+                
+                return deleted_count
+            
             primary_key = self._get_primary_key(table_name)
             
             # Get all primary keys from local database
@@ -548,8 +581,11 @@ class SyncManager:
                     """)
                     remote_conn.commit()
             
-            # Get records from local
-            local_cursor.execute(f"SELECT * FROM {table_name}")
+            # Get records from local (only active notices)
+            if table_name == 'notices':
+                local_cursor.execute(f"SELECT * FROM {table_name} WHERE active = 1")
+            else:
+                local_cursor.execute(f"SELECT * FROM {table_name}")
             rows = local_cursor.fetchall()
             
             if not rows:
