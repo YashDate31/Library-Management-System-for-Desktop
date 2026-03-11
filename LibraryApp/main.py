@@ -505,8 +505,10 @@ class LibraryApp:
                 # Start auto-sync if enabled and sync is actually available
                 if self.sync_manager and self.config_manager.is_sync_enabled():
                     sync_interval = self.config_manager.get_sync_interval()
-                    self.sync_manager.auto_sync_daemon(sync_interval)
-                    print(f"[OK] Auto-sync started (interval: {sync_interval} minutes)")
+                    # IMPORTANT: Desktop app is source of truth - only sync local → cloud
+                    # This prevents cloud data from overwriting local deletions
+                    self.sync_manager.auto_sync_daemon(sync_interval, direction='local_to_remote')
+                    print(f"[OK] Auto-sync started (interval: {sync_interval} minutes, direction: local → cloud)")
 
                 print(f"[OK] Performance optimization modules loaded successfully")
             except Exception as e:
@@ -556,7 +558,7 @@ class LibraryApp:
                             if minutes_since >= sync_interval:
                                 print(f"[WARNING]  Sync overdue ({int(minutes_since)} min since last sync)")
                                 print("🔄 Triggering catch-up sync...")
-                                result = self.sync_manager.sync_now(direction='both')
+                                result = self.sync_manager.sync_now(direction='local_to_remote')
                                 if 'error' not in result:
                                     print(f"[OK] Catch-up sync completed: {result.get('records_synced', 0)} records")
                                 else:
@@ -758,7 +760,7 @@ class LibraryApp:
                 def sync_task():
                     try:
                         if self.sync_manager:
-                            self.sync_manager.sync_now(direction='both')
+                            self.sync_manager.sync_now(direction='local_to_remote')
                             return True, None
                         return True, None
                     except Exception as e:
@@ -4110,7 +4112,7 @@ Current Settings:
                 # Run sync in background
                 def run_sync():
                     try:
-                        result = self.sync_manager.sync_now(direction='both')
+                        result = self.sync_manager.sync_now(direction='local_to_remote')
                         return result
                     except Exception as e:
                         return {'error': str(e)}
@@ -15781,6 +15783,17 @@ Note: This is an automated email. Please find the attached formal overdue letter
             # Use waitress for production-ready stable server
             # Listen on all interfaces (0.0.0.0) so other devices can access
             print(f"Starting Student Portal on port {self.portal_port}...")
+            
+            # Check if portal is forced to use local database
+            portal_force_local = os.getenv('PORTAL_FORCE_LOCAL', '').strip().lower() in ('1', 'true', 'yes')
+            if portal_force_local:
+                print("[Portal] ✅ PORTAL_FORCE_LOCAL=true - Portal will use LOCAL database")
+                print(f"[Portal] Books added locally will appear immediately in portal!")
+            elif os.getenv('DATABASE_URL'):
+                print("[Portal] ⚠️  DATABASE_URL set but PORTAL_FORCE_LOCAL not set")
+                print("[Portal] Portal may connect to cloud database instead of local")
+                print("[Portal] Tip: Add PORTAL_FORCE_LOCAL=true to .env to use local database")
+            
             # increased threads to 50 to handle concurrent requests (approx 500 users @ 10% active)
             serve(flask_app, host='0.0.0.0', port=self.portal_port, threads=50)
 

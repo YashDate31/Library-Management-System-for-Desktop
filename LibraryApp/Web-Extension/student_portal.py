@@ -236,6 +236,109 @@ def api_version():
     return jsonify(info)
 
 
+@app.get('/api/debug/database')
+def api_debug_database():
+    """Debug endpoint to check database connectivity and book count"""
+    result = {
+        'status': 'success',
+        'timestamp': datetime.utcnow().isoformat() + 'Z',
+        'library_db': {},
+        'portal_db': {},
+    }
+    
+    # Check library.db (where books are stored)
+    try:
+        # Get the database path
+        lib_db_path = os.path.join(os.path.dirname(BASE_DIR), 'library.db')
+        result['library_db']['path'] = lib_db_path
+        result['library_db']['exists'] = os.path.exists(lib_db_path)
+        
+        if os.path.exists(lib_db_path):
+            # Get file info
+            st = os.stat(lib_db_path)
+            result['library_db']['size_bytes'] = int(st.st_size)
+            result['library_db']['modified_at'] = datetime.utcfromtimestamp(st.st_mtime).isoformat() + 'Z'
+            
+            # Try to connect and get book count
+            conn = get_library_db()
+            cursor = conn.cursor()
+            
+            # Count total books
+            cursor.execute("SELECT COUNT(*) FROM books")
+            result['library_db']['book_count'] = cursor.fetchone()[0]
+            
+            # Get sample books
+            cursor.execute("SELECT book_id, title, author, total_copies, available_copies FROM books LIMIT 5")
+            result['library_db']['sample_books'] = [dict(row) for row in cursor.fetchall()]
+            
+            # Get table list
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+            result['library_db']['tables'] = [row[0] for row in cursor.fetchall()]
+            
+            conn.close()
+    except Exception as e:
+        result['library_db']['error'] = str(e)
+        result['library_db']['error_type'] = type(e).__name__
+    
+    # Check portal.db
+    try:
+        portal_db_path = os.path.join(BASE_DIR, 'portal.db')
+        result['portal_db']['path'] = portal_db_path
+        result['portal_db']['exists'] = os.path.exists(portal_db_path)
+        
+        if os.path.exists(portal_db_path):
+            st = os.stat(portal_db_path)
+            result['portal_db']['size_bytes'] = int(st.st_size)
+            result['portal_db']['modified_at'] = datetime.utcfromtimestamp(st.st_mtime).isoformat() + 'Z'
+            
+            conn = get_portal_db()
+            cursor = conn.cursor()
+            
+            # Get table list
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+            result['portal_db']['tables'] = [row[0] for row in cursor.fetchall()]
+            
+            conn.close()
+    except Exception as e:
+        result['portal_db']['error'] = str(e)
+        result['portal_db']['error_type'] = type(e).__name__
+    
+    return jsonify(result)
+
+
+@app.get('/api/refresh')
+def api_refresh():
+    """Force refresh - clears any caches and returns current book count"""
+    try:
+        conn = get_library_db()
+        cursor = conn.cursor()
+        
+        # Force SQLite to reload from disk
+        if hasattr(conn, 'execute'):
+            try:
+                conn.execute('PRAGMA cache_size = 0')
+                conn.execute('PRAGMA synchronous = FULL')
+            except:
+                pass
+        
+        cursor.execute("SELECT COUNT(*) FROM books")
+        book_count = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Database refreshed',
+            'book_count': book_count,
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
 # --- Rate Limiter (Custom Implementation - No External Dependencies) ---
 class RateLimiter:
     """In-memory sliding window rate limiter"""
@@ -664,9 +767,20 @@ def get_db_connection(local_db_name):
         db_path = os.path.join(os.path.dirname(BASE_DIR), 'library.db')
     else:
         db_path = os.path.join(BASE_DIR, 'portal.db')
-        
-    conn = sqlite3.connect(db_path)
+    
+    # IMPORTANT: Always create a fresh connection to avoid stale data
+    # Use check_same_thread=False to allow multi-threaded access
+    # Use timeout to avoid database locks
+    conn = sqlite3.connect(db_path, check_same_thread=False, timeout=10.0, isolation_level='DEFERRED')
     conn.row_factory = sqlite3.Row
+    
+    # Enable WAL mode for better concurrency (allows reads while writes happen)
+    try:
+        conn.execute('PRAGMA journal_mode=WAL')
+        conn.execute('PRAGMA synchronous=NORMAL')  # Balance between safety and performance
+    except Exception as e:
+        print(f"Warning: Could not set WAL mode: {e}")
+    
     return conn
 
 def get_library_db():
@@ -2351,40 +2465,68 @@ def api_submit_request():
 
 @app.route('/api/books')
 def api_books():
-    # Read-Only Catalogue
+    """Get books from library database - ALWAYS fetch fresh data"""
     query = request.args.get('q', '')
     category = request.args.get('category', '')
     
-    conn = get_library_db()
-    cursor = conn.cursor()
-    
-    sql = "SELECT book_id, title, author, category, total_copies, available_copies FROM books WHERE 1=1"
-    params = []
-    
-    if query:
-        sql += " AND (title LIKE ? OR author LIKE ?)"
-        params.extend([f'%{query}%', f'%{query}%'])
-    if category and category != 'All':
-        sql += " AND category = ?"
-        params.append(category)
+    # IMPORTANT: Create a fresh connection for each request to avoid caching issues
+    conn = None
+    try:
+        conn = get_library_db()
+        cursor = conn.cursor()
         
-    sql += " ORDER BY title LIMIT 50"
-    
-    cursor.execute(sql, params)
-    books = [dict(row) for row in cursor.fetchall()]
-    
-    # Recalculate available_copies in real-time for data consistency
-    for book in books:
-        cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE book_id = ? AND status = 'borrowed'", (book['book_id'],))
-        borrowed_count = cursor.fetchone()[0]
-        book['available_copies'] = book['total_copies'] - borrowed_count
-    
-    # Get distinct categories for filter
-    cursor.execute("SELECT DISTINCT category FROM books WHERE category IS NOT NULL ORDER BY category")
-    categories = [row[0] for row in cursor.fetchall()]
-    
-    conn.close()
-    return jsonify({'books': books, 'categories': categories})
+        # FOR SQLITE: Ensure we read the latest data from disk
+        if hasattr(conn, 'execute'):
+            try:
+                # Disable cache to ensure fresh reads
+                conn.execute('PRAGMA cache_size = 0')
+                conn.execute('PRAGMA synchronous = FULL')
+            except:
+                pass
+        
+        sql = "SELECT book_id, title, author, category, total_copies, available_copies FROM books WHERE 1=1"
+        params = []
+        
+        if query:
+            sql += " AND (title LIKE ? OR author LIKE ?)"
+            params.extend([f'%{query}%', f'%{query}%'])
+        if category and category != 'All':
+            sql += " AND category = ?"
+            params.append(category)
+            
+        sql += " ORDER BY title LIMIT 500"  # Increased limit from 50 to 500
+        
+        cursor.execute(sql, params)
+        books = [dict(row) for row in cursor.fetchall()]
+        
+        # Recalculate available_copies in real-time for data consistency
+        for book in books:
+            cursor.execute("SELECT COUNT(*) FROM borrow_records WHERE book_id = ? AND status = 'borrowed'", (book['book_id'],))
+            result = cursor.fetchone()
+            borrowed_count = result[0] if result else 0
+            book['available_copies'] = book['total_copies'] - borrowed_count
+        
+        # Get distinct categories for filter
+        cursor.execute("SELECT DISTINCT category FROM books WHERE category IS NOT NULL ORDER BY category")
+        categories = [row[0] for row in cursor.fetchall()]
+        
+        # Create response with no-cache headers to prevent browser caching
+        response = jsonify({'books': books, 'categories': categories})
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+    except Exception as e:
+        print(f"Error fetching books: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'books': [], 'categories': []}), 500
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
 
 # --- Admin/Librarian API Endpoints ---
 

@@ -199,7 +199,7 @@ class SyncManager:
         return results
     
     def _sync_table_local_to_remote(self, local_conn, remote_conn, table_name):
-        """Sync a table from local to remote"""
+        """Sync a table from local to remote with schema-aware column matching"""
         try:
             local_cursor = local_conn.cursor()
             remote_cursor = remote_conn.cursor()
@@ -211,10 +211,40 @@ class SyncManager:
             if not rows:
                 return 0
             
-            # Get column names
-            columns = [desc[0] for desc in local_cursor.description]
+            # Get column names from local database
+            local_columns = [desc[0] for desc in local_cursor.description]
+            
+            # Get column names from remote database (PostgreSQL)
+            try:
+                remote_cursor.execute(f"""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = %s
+                    ORDER BY ordinal_position
+                """, (table_name,))
+                remote_columns = [row[0] for row in remote_cursor.fetchall()]
+            except Exception as e:
+                print(f"Warning: Could not get remote schema for {table_name}: {e}")
+                # Fallback: assume all local columns exist remotely
+                remote_columns = local_columns
+            
+            # Only sync columns that exist in BOTH databases
+            common_columns = [col for col in local_columns if col in remote_columns]
+            
+            if not common_columns:
+                print(f"Warning: No common columns found between local and remote for {table_name}")
+                return 0
+            
+            # Show warning if columns are being skipped
+            skipped_columns = [col for col in local_columns if col not in remote_columns]
+            if skipped_columns:
+                print(f"[Sync] Skipping columns not in remote {table_name}: {', '.join(skipped_columns)}")
+            
             primary_key = self._get_primary_key(table_name)
-            pk_idx = columns.index(primary_key) if primary_key in columns else 0
+            
+            # Find column indices for common columns
+            col_indices = [local_columns.index(col) for col in common_columns]
+            pk_idx = local_columns.index(primary_key) if primary_key in local_columns else 0
             
             synced_count = 0
             for row in rows:
@@ -223,12 +253,15 @@ class SyncManager:
                     if row[pk_idx] is None:
                         continue
                     
-                    # Try to insert or update
-                    placeholders = ', '.join(['%s'] * len(row))
-                    cols = ', '.join(columns)
+                    # Extract only the common columns from the row
+                    row_values = [row[i] for i in col_indices]
+                    
+                    # Build UPSERT query
+                    placeholders = ', '.join(['%s'] * len(common_columns))
+                    cols = ', '.join(common_columns)
                     
                     # Use UPSERT (INSERT ... ON CONFLICT)
-                    update_cols = ', '.join([f"{col} = EXCLUDED.{col}" for col in columns if col != primary_key])
+                    update_cols = ', '.join([f"{col} = EXCLUDED.{col}" for col in common_columns if col != primary_key])
                     
                     query = f"""
                         INSERT INTO {table_name} ({cols})
@@ -237,7 +270,7 @@ class SyncManager:
                         DO UPDATE SET {update_cols}
                     """
                     
-                    remote_cursor.execute(query, row)
+                    remote_cursor.execute(query, row_values)
                     synced_count += 1
                     
                 except Exception as e:
@@ -546,14 +579,20 @@ class SyncManager:
             return 0
             return 0
     
-    def auto_sync_daemon(self, interval_minutes=30):
-        """Run automatic sync in background thread"""
+    def auto_sync_daemon(self, interval_minutes=30, direction='local_to_remote'):
+        """Run automatic sync in background thread
+        
+        Args:
+            interval_minutes: Sync interval in minutes
+            direction: 'local_to_remote', 'remote_to_local', or 'both'
+                      Default 'local_to_remote' to prevent cloud from overwriting local deletions
+        """
         def sync_loop():
             while True:
                 time.sleep(interval_minutes * 60)
-                print(f"[Auto-Sync] Starting sync at {datetime.now()}")
+                print(f"[Auto-Sync] Starting sync at {datetime.now()} (direction: {direction})")
                 try:
-                    result = self.sync_now(direction='both')
+                    result = self.sync_now(direction=direction)
                     if result.get('success'):
                         print(f"[Auto-Sync] Completed: {result.get('records_synced', 0)} records")
                     else:
@@ -564,7 +603,7 @@ class SyncManager:
         
         thread = threading.Thread(target=sync_loop, daemon=True)
         thread.start()
-        print(f"[Auto-Sync] Daemon started (every {interval_minutes} minutes)")
+        print(f"[Auto-Sync] Daemon started (every {interval_minutes} minutes, direction: {direction})")
 
 
 def create_sync_manager(db):
