@@ -3011,17 +3011,16 @@ Government Polytechnic Awasari (Kh)"""
             conn = self.db.get_connection()
             c = conn.cursor()
             
-            # PostgreSQL uses CURRENT_DATE instead of date('now')
-            # And uses DATE - DATE for day difference instead of julianday
+            # SQLite-compatible date calculation using julianday
             query = """SELECT 
                 br.enrollment_no, s.name, s.phone, br.book_id, b.title,
                 br.borrow_date, br.due_date,
-                CAST(CURRENT_DATE - br.due_date AS INTEGER) as days_overdue,
-                CAST(CURRENT_DATE - br.due_date AS INTEGER) * ? as fine
+                CAST(julianday('now') - julianday(br.due_date) AS INTEGER) as days_overdue,
+                CAST(julianday('now') - julianday(br.due_date) AS INTEGER) * ? as fine
                 FROM borrow_records br
                 LEFT JOIN students s ON br.enrollment_no = s.enrollment_no
                 LEFT JOIN books b ON br.book_id = b.book_id
-                WHERE br.return_date IS NULL AND CURRENT_DATE > br.due_date"""
+                WHERE br.return_date IS NULL AND julianday('now') > julianday(br.due_date)"""
             
             params = [self.get_fine_per_day()]
             
@@ -3753,7 +3752,7 @@ Government Polytechnic Awasari (Kh)"""
         rules_outer, rules_card = create_card(row1, "Library Rules", "📚", '#2E86AB')
         rules_outer.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
         
-        create_styled_setting(rules_card, "Fine Per Day", "fine_per_day", "₹/day", 1, 500)
+        create_styled_setting(rules_card, "Fine Per Day", "fine_per_day", "₹/day", 0, 500)
         create_styled_setting(rules_card, "Loan Period", "loan_period_days", "days", 1, 30)
         create_styled_setting(rules_card, "Max Books/Student", "max_books_per_student", "books", 1, 20)
         

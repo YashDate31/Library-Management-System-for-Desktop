@@ -177,6 +177,13 @@ class SyncManager:
                                 portal_conn, remote_conn, table
                             )
                             results['records_synced'] += records
+                            
+                            # Sync deletions (remove notices from cloud that were deleted locally)
+                            deletions = self._sync_deletions_to_remote(
+                                portal_conn, remote_conn, table
+                            )
+                            results['records_synced'] += deletions
+                            
                             results['tables_synced'].append(f'portal.{table}')
                         except Exception as e:
                             results['errors'].append(f"portal.{table} (push): {str(e)}")
