@@ -9441,20 +9441,24 @@ Note: This is an automated email. Please find the attached formal overdue letter
                     sent_count = result['sent']
                     failed_count = result['failed']
                     
-                    for email_data, success, message in zip(emails_to_send, result['results'], result['errors']):
+                    # Iterate through results and log each email attempt
+                    for email_data, email_result in zip(emails_to_send, result['details']):
+                        success = email_result['success']
+                        error_message = email_result.get('error', '') if not success else ''
+                        
                         self._log_email_sent(
                             email_data['enrollment_no'],
                             email_data['student_name'],
                             email_data['to'],
                             email_data['book_title'],
                             success,
-                            message if not success else ''
+                            error_message
                         )
                         
                         if success:
                             email_results.append(f"✅ {email_data['student_name']} ({email_data['enrollment_no']})")
                         else:
-                            email_results.append(f"❌ {email_data['student_name']} ({email_data['enrollment_no']}) - {message}")
+                            email_results.append(f"❌ {email_data['student_name']} ({email_data['enrollment_no']}) - {error_message}")
                     
                     # Clean up temp files
                     for temp_file in temp_files:
