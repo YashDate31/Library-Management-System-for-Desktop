@@ -736,6 +736,11 @@ def api_admin_observability():
 def get_db_connection(local_db_name):
     """Generic connection factory: Postgres (if env) or Local SQLite"""
     def _should_use_cloud_db() -> bool:
+        # On Render (or any cloud platform), ALWAYS use cloud DB regardless of other settings.
+        # The PORTAL_FORCE_LOCAL flag in .env is for local development only.
+        if os.getenv('RENDER') or os.getenv('DYNO') or os.getenv('FLY_APP_NAME') or os.getenv('WEBSITE_INSTANCE_ID'):
+            return True
+
         # Desktop app should default to LOCAL DB even if a cloud DATABASE_URL exists in .env.
         # Enable cloud explicitly when deploying the portal.
         force_local = os.getenv('PORTAL_FORCE_LOCAL', '').strip().lower() in ('1', 'true', 'yes')
@@ -744,10 +749,6 @@ def get_db_connection(local_db_name):
 
         use_cloud = os.getenv('PORTAL_USE_CLOUD', '').strip().lower() in ('1', 'true', 'yes')
         if use_cloud:
-            return True
-
-        # Auto-detect common cloud runtimes
-        if os.getenv('DYNO') or os.getenv('RENDER') or os.getenv('FLY_APP_NAME') or os.getenv('WEBSITE_INSTANCE_ID'):
             return True
 
         return False
@@ -1200,6 +1201,32 @@ def handle_exception(e):
     print(f"[Unhandled Exception] {e}")
     print(traceback.format_exc())
     return jsonify({'status': 'error', 'message': 'An unexpected error occurred. Please try again.'}), 500
+
+
+@app.get('/api/health')
+def api_health():
+    """Health check endpoint — shows DB connection mode and table accessibility."""
+    info = {
+        'status': 'ok',
+        'postgres_available': POSTGRES_AVAILABLE,
+        'database_url_set': bool(os.getenv('DATABASE_URL')),
+        'render_env': bool(os.getenv('RENDER')),
+        'portal_force_local': os.getenv('PORTAL_FORCE_LOCAL', ''),
+        'students_table': 'unknown',
+        'db_mode': 'unknown',
+    }
+    try:
+        conn = get_library_db()
+        info['db_mode'] = 'postgres' if _is_postgres_connection(conn) else 'sqlite'
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM students")
+        info['students_count'] = cur.fetchone()[0]
+        info['students_table'] = 'ok'
+        conn.close()
+    except Exception as e:
+        info['students_table'] = str(e)
+        info['status'] = 'degraded'
+    return jsonify(info)
 
 @app.route('/api/login', methods=['POST'])
 @rate_limit
