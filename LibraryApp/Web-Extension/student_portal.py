@@ -313,8 +313,8 @@ def api_refresh():
         conn = get_library_db()
         cursor = conn.cursor()
         
-        # Force SQLite to reload from disk
-        if hasattr(conn, 'execute'):
+        # Force SQLite to reload from disk (skip for Postgres)
+        if hasattr(conn, 'execute') and not _is_postgres_connection(conn):
             try:
                 conn.execute('PRAGMA cache_size = 0')
                 conn.execute('PRAGMA synchronous = FULL')
@@ -2540,10 +2540,9 @@ def api_books():
         conn = get_library_db()
         cursor = conn.cursor()
         
-        # FOR SQLITE: Ensure we read the latest data from disk
-        if hasattr(conn, 'execute'):
+        # FOR SQLITE ONLY: Ensure we read the latest data from disk
+        if hasattr(conn, 'execute') and not _is_postgres_connection(conn):
             try:
-                # Disable cache to ensure fresh reads
                 conn.execute('PRAGMA cache_size = 0')
                 conn.execute('PRAGMA synchronous = FULL')
             except:
