@@ -16,6 +16,7 @@ ENV/
 
 # Logs and caches
 *.log
+LibraryApp/build_log.txt
 pip-log.txt
 pip-delete-this-directory.txt
 .pytest_cache/
