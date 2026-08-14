@@ -57,5 +57,7 @@ LibraryApp/Web-Extension/.secret_key
 # OneDrive temp files
 ~$*
 
-# Environment variables
+# Environment variables (never commit — rotate credentials if leaked)
 .env
+.env.*
+!.env.example
